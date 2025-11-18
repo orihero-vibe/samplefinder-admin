@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import Notification from './Notification'
@@ -15,12 +15,15 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     { path: '/dashboard', label: 'Dashboard', icon: 'mdi:chart-box' },
     { path: '/clients-brands', label: 'Clients & Brands', icon: 'mdi:view-grid' },
     { path: '/app-users', label: 'App Users', icon: 'mdi:account-group' },
-    { path: '/reports', label: 'Reports', icon: 'mdi:file-document-search' },
+    { path: '/reports', label: 'Reports', icon: 'mage:file-2' },
     { path: '/notification-settings', label: 'Notification Settings', icon: 'mdi:bell' },
     { path: '/trivia', label: 'Trivia', icon: 'mdi:school' },
   ]
 
   const isActive = (path: string) => {
+    if (path === '/reports') {
+      return location.pathname === path || location.pathname.startsWith('/reports/')
+    }
     return location.pathname === path
   }
 
@@ -38,37 +41,46 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                isActive(item.path)
-                  ? 'bg-[#1D0A74] text-white'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <Icon icon={item.icon} className="w-5 h-5" />
-              <span className="font-medium">{item.label}</span>
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const active = isActive(item.path)
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                  active
+                    ? 'bg-[#1D0A74] text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <Icon 
+                  icon={item.icon} 
+                  className={`w-5 h-5 ${active ? 'text-white' : 'text-gray-700'}`}
+                />
+                <span className="font-medium">{item.label}</span>
+              </Link>
+            )
+          })}
         </nav>
 
         {/* User Profile */}
         <div className="p-4 border-t border-gray-200">
-          <button
-            onClick={() => navigate('/profile')}
-            className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-100 transition-colors group"
-          >
-            <div className="w-10 h-10 rounded-full bg-[#1D0A74] flex items-center justify-center text-white font-semibold">
+          <div className="w-full flex items-center gap-3 p-3">
+            <div className="w-10 h-10 rounded-full bg-[#1D0A74] flex items-center justify-center text-white font-semibold overflow-hidden flex-shrink-0">
               OR
             </div>
             <div className="flex-1 text-left">
               <p className="text-gray-900 font-medium text-sm">Olivia Rhye</p>
               <p className="text-gray-500 text-xs">olivia@untitledui.com</p>
             </div>
-            <Icon icon="mdi:chevron-right" className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
-          </button>
+            <button
+              onClick={() => navigate('/login')}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+              title="Logout"
+            >
+              <Icon icon="mdi:logout" className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </aside>
 

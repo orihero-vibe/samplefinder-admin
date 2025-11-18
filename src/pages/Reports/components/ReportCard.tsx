@@ -18,16 +18,16 @@ const ReportCard = ({ name, icon, lastGenerated, onPreview }: ReportCardProps) =
           <h3 className="text-lg font-semibold text-gray-900">{name}</h3>
         </div>
       </div>
-      <div className="mb-4">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-gray-600">Last generated: {lastGenerated}</p>
+        <button
+          onClick={onPreview}
+          className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1.5 text-sm text-gray-700 font-medium whitespace-nowrap"
+        >
+          <Icon icon="mdi:eye" className="w-4 h-4" />
+          Preview
+        </button>
       </div>
-      <button
-        onClick={onPreview}
-        className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 text-gray-700 font-medium"
-      >
-        <Icon icon="mdi:eye" className="w-5 h-5" />
-        Preview
-      </button>
     </div>
   )
 }
