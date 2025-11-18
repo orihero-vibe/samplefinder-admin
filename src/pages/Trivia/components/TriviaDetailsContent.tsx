@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react'
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface TriviaQuiz {
   id: string
@@ -144,12 +144,12 @@ const TriviaDetailsContent = ({ trivia }: TriviaDetailsContentProps) => {
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ percentage }) => `${percentage}%`}
+                label={(props: any) => `${props.percentage}%`}
                 outerRadius={120}
                 fill="#8884d8"
                 dataKey="percentage"
               >
-                {chartData.map((entry, index) => (
+                {chartData.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>

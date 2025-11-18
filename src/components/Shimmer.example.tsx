@@ -6,7 +6,6 @@
  */
 
 import {
-  Shimmer,
   ShimmerInput,
   ShimmerTextArea,
   ShimmerButton,
@@ -17,6 +16,7 @@ import {
   ShimmerMetrics,
   ShimmerPage,
 } from './Shimmer'
+import DashboardLayout from './DashboardLayout'
 
 // Example 1: Full Page Loading (Dashboard, Users, ClientsBrands, etc.)
 export const ExamplePageLoading = () => {

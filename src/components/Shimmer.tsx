@@ -1,5 +1,3 @@
-import React from 'react'
-
 interface ShimmerProps {
   className?: string
   width?: string

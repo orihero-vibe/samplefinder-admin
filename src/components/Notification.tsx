@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import { useNotificationStore } from '../stores/notificationStore'
 import type { NotificationType } from '../stores/notificationStore'

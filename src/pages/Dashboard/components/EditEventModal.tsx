@@ -40,9 +40,9 @@ const EditEventModal = ({
   isOpen,
   onClose,
   onSave,
-  onArchive,
-  onHide,
-  onDelete,
+  onArchive: _onArchive,
+  onHide: _onHide,
+  onDelete: _onDelete,
   onShowArchiveConfirm,
   onShowHideConfirm,
   onShowDeleteConfirm,
@@ -70,7 +70,7 @@ const EditEventModal = ({
     eventInfo: '',
   })
 
-  const [newProductType, setNewProductType] = useState('')
+  const [_newProductType, setNewProductType] = useState('')
   const [isProductTypeDropdownOpen, setIsProductTypeDropdownOpen] = useState(false)
   const availableProductTypes = ['Product 1', 'Product 2', 'Product 3', 'Lana', 'Beauty', 'Fashion']
   const productTypeDropdownRef = useRef<HTMLDivElement>(null)

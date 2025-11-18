@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Icon } from '@iconify/react'
 import { DashboardLayout, ShimmerPage } from '../../components'
 import TriviaDetailsHeader from './components/TriviaDetailsHeader'
 import TriviaDetailsContent from './components/TriviaDetailsContent'

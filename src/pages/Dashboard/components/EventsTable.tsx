@@ -22,7 +22,7 @@ interface EventsTableProps {
   onNewEvent: () => void
 }
 
-const EventsTable = ({ events, onEventClick, onEditClick, onViewClick, onHideClick, onDeleteClick, onCSVUpload, onNewEvent }: EventsTableProps) => {
+const EventsTable = ({ events, onEventClick, onEditClick, onViewClick: _onViewClick, onHideClick, onDeleteClick, onCSVUpload, onNewEvent }: EventsTableProps) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="p-6 border-b border-gray-200 flex items-center justify-between">
