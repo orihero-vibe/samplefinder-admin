@@ -1,6 +1,5 @@
-import { useEffect } from 'react'
 import { Icon } from '@iconify/react'
-import { useNotificationStore, NotificationType } from '../stores/notificationStore'
+import { useNotificationStore, type NotificationType } from '../stores/notificationStore'
 
 const Notification = () => {
   const { notifications, removeNotification } = useNotificationStore()

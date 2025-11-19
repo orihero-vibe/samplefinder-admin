@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import Notification from './Notification'
@@ -12,12 +12,12 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const navigate = useNavigate()
 
   const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: 'mdi:chart-box' },
-    { path: '/clients-brands', label: 'Clients & Brands', icon: 'mdi:view-grid' },
-    { path: '/app-users', label: 'App Users', icon: 'mdi:account-group' },
-    { path: '/reports', label: 'Reports', icon: 'mdi:file-document-search' },
-    { path: '/notification-settings', label: 'Notification Settings', icon: 'mdi:bell' },
-    { path: '/trivia', label: 'Trivia', icon: 'mdi:school' },
+    { path: '/dashboard', label: 'Dashboard', icon: 'mdi:poll' },
+    { path: '/clients-brands', label: 'Clients & Brands', icon: 'mdi:layers-outline' },
+    { path: '/app-users', label: 'App Users', icon: 'mdi:account-multiple-outline' },
+    { path: '/reports', label: 'Reports', icon: 'mdi:clipboard-check-outline' },
+    { path: '/notification-settings', label: 'Notification Settings', icon: 'mdi:bell-outline' },
+    { path: '/trivia', label: 'Trivia', icon: 'mdi:school-outline' },
   ]
 
   const isActive = (path: string) => {
@@ -42,11 +42,10 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                isActive(item.path)
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive(item.path)
                   ? 'bg-[#1D0A74] text-white'
                   : 'text-gray-700 hover:bg-gray-100'
-              }`}
+                }`}
             >
               <Icon icon={item.icon} className="w-5 h-5" />
               <span className="font-medium">{item.label}</span>
