@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import ReportCard from './ReportCard'
 
 interface Report {
@@ -12,9 +13,10 @@ interface ReportsListProps {
 }
 
 const ReportsList = ({ reports }: ReportsListProps) => {
+  const navigate = useNavigate()
+
   const handlePreview = (reportId: string) => {
-    console.log('Preview report:', reportId)
-    // TODO: Implement preview functionality
+    navigate(`/reports/preview/${reportId}`)
   }
 
   return (

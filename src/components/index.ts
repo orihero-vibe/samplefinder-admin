@@ -7,6 +7,8 @@ export { default as AuthHeader } from './AuthHeader'
 export { default as DashboardLayout } from './DashboardLayout'
 export { default as ConfirmationModal } from './ConfirmationModal'
 export type { ConfirmationType } from './ConfirmationModal'
+export { default as DownloadModal } from './DownloadModal'
+export type { DownloadFormat } from './DownloadModal'
 export {
   default as Shimmer,
   ShimmerInput,

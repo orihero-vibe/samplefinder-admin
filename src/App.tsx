@@ -9,6 +9,10 @@ import EventReviews from './pages/EventReviews/EventReviews'
 import ClientsBrands from './pages/ClientsBrands/ClientsBrands'
 import Users from './pages/Users/Users'
 import Reports from './pages/Reports/Reports'
+import PreviewReports from './pages/Reports/PreviewReports'
+import Notifications from './pages/Notifications/Notifications'
+import Trivia from './pages/Trivia/Trivia'
+import TriviaDetails from './pages/Trivia/TriviaDetails'
 
 function App() {
   return (
@@ -25,6 +29,10 @@ function App() {
         <Route path="/clients-brands" element={<ClientsBrands />} />
         <Route path="/app-users" element={<Users />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/reports/preview/:reportId" element={<PreviewReports />} />
+        <Route path="/notification-settings" element={<Notifications />} />
+        <Route path="/trivia" element={<Trivia />} />
+        <Route path="/trivia/:triviaId" element={<TriviaDetails />} />
       </Routes>
     </BrowserRouter>
   )
