@@ -22,4 +22,5 @@ export {
   ShimmerMetrics,
   ShimmerPage,
 } from './Shimmer'
+export { ProtectedRoute } from './ProtectedRoute'
 

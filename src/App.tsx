@@ -13,6 +13,7 @@ import PreviewReports from './pages/Reports/PreviewReports'
 import Notifications from './pages/Notifications/Notifications'
 import Trivia from './pages/Trivia/Trivia'
 import TriviaDetails from './pages/Trivia/TriviaDetails'
+import { ProtectedRoute } from './components'
 
 function App() {
   return (
@@ -24,15 +25,78 @@ function App() {
         <Route path="/password-reset" element={<PasswordReset />} />
         <Route path="/password-reset-success" element={<PasswordResetSuccess />} />
         <Route path="/email-confirmation" element={<EmailConfirmation />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/event-reviews" element={<EventReviews />} />
-        <Route path="/clients-brands" element={<ClientsBrands />} />
-        <Route path="/app-users" element={<Users />} />
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/reports/preview/:reportId" element={<PreviewReports />} />
-        <Route path="/notification-settings" element={<Notifications />} />
-        <Route path="/trivia" element={<Trivia />} />
-        <Route path="/trivia/:triviaId" element={<TriviaDetails />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/event-reviews"
+          element={
+            <ProtectedRoute>
+              <EventReviews />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/clients-brands"
+          element={
+            <ProtectedRoute>
+              <ClientsBrands />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app-users"
+          element={
+            <ProtectedRoute>
+              <Users />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute>
+              <Reports />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports/preview/:reportId"
+          element={
+            <ProtectedRoute>
+              <PreviewReports />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/notification-settings"
+          element={
+            <ProtectedRoute>
+              <Notifications />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trivia"
+          element={
+            <ProtectedRoute>
+              <Trivia />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trivia/:triviaId"
+          element={
+            <ProtectedRoute>
+              <TriviaDetails />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
   )

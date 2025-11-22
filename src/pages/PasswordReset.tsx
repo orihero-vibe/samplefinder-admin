@@ -1,18 +1,38 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { AuthLayout, AuthHeader, Input, Button } from '../components'
+import { useAuthStore } from '../stores/authStore'
+import { useNotificationStore } from '../stores/notificationStore'
 
 const PasswordReset = () => {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const { updatePassword, error, clearError } = useAuthStore()
+  const { addNotification } = useNotificationStore()
+
+  const userId = searchParams.get('userId')
+  const secret = searchParams.get('secret')
+
+  useEffect(() => {
+    if (!userId || !secret) {
+      addNotification({
+        type: 'error',
+        title: 'Invalid reset link',
+        message: 'Please use the link from your email.',
+      })
+      navigate('/forgot-password')
+    }
+  }, [userId, secret, navigate, addNotification])
 
   const hasMinLength = password.length >= 8
   const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (password !== confirmPassword) {
@@ -30,10 +50,32 @@ const PasswordReset = () => {
       return
     }
 
+    if (!userId || !secret) {
+      setPasswordError('Invalid reset link')
+      return
+    }
+
     setPasswordError('')
-    // Handle password reset logic here
-    console.log('Password reset for:', password)
-    navigate('/password-reset-success')
+    setIsSubmitting(true)
+
+    try {
+      await updatePassword(userId, secret, password)
+      addNotification({
+        type: 'success',
+        title: 'Password updated',
+        message: 'Your password has been successfully reset.',
+      })
+      navigate('/password-reset-success')
+    } catch (err: any) {
+      setPasswordError(err.message || 'Failed to update password. Please try again.')
+      addNotification({
+        type: 'error',
+        title: 'Failed to update password',
+        message: err.message || 'Please try again.',
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -92,8 +134,8 @@ const PasswordReset = () => {
           </div>
         </div>
 
-        <Button type="submit">
-          Reset password
+        <Button type="submit" disabled={isSubmitting || !userId || !secret}>
+          {isSubmitting ? 'Resetting password...' : 'Reset password'}
         </Button>
       </form>
 

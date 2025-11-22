@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import Notification from './Notification'
+import { useAuthStore } from '../stores/authStore'
+import { useNotificationStore } from '../stores/notificationStore'
 
 interface DashboardLayoutProps {
   children: ReactNode
@@ -10,6 +12,45 @@ interface DashboardLayoutProps {
 const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const location = useLocation()
   const navigate = useNavigate()
+  const { user, logout } = useAuthStore()
+  const { addNotification } = useNotificationStore()
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+      addNotification({
+        type: 'success',
+        title: 'Logged out',
+        message: 'You have been successfully logged out.',
+      })
+      navigate('/login')
+    } catch (error) {
+      addNotification({
+        type: 'error',
+        title: 'Logout failed',
+        message: 'There was an error logging out. Please try again.',
+      })
+    }
+  }
+
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (user?.name) {
+      return user.name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    }
+    if (user?.email) {
+      return user.email[0].toUpperCase()
+    }
+    return 'U'
+  }
+
+  const displayName = user?.name || 'User'
+  const displayEmail = user?.email || ''
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: 'mdi:chart-box' },
@@ -67,15 +108,15 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         <div className="p-4 border-t border-gray-200">
           <div className="w-full flex items-center gap-3 p-3">
             <div className="w-10 h-10 rounded-full bg-[#1D0A74] flex items-center justify-center text-white font-semibold overflow-hidden flex-shrink-0">
-              OR
+              {getUserInitials()}
             </div>
-            <div className="flex-1 text-left">
-              <p className="text-gray-900 font-medium text-sm">Olivia Rhye</p>
-              <p className="text-gray-500 text-xs">olivia@untitledui.com</p>
+            <div className="flex-1 text-left min-w-0">
+              <p className="text-gray-900 font-medium text-sm truncate">{displayName}</p>
+              <p className="text-gray-500 text-xs truncate">{displayEmail}</p>
             </div>
             <button
-              onClick={() => navigate('/login')}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+              onClick={handleLogout}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600 flex-shrink-0"
               title="Logout"
             >
               <Icon icon="mdi:logout" className="w-5 h-5" />

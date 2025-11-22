@@ -2,16 +2,37 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { AuthLayout, AuthHeader, Input, Button } from '../components'
+import { useAuthStore } from '../stores/authStore'
+import { useNotificationStore } from '../stores/notificationStore'
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
+  const { resetPassword, error, clearError } = useAuthStore()
+  const { addNotification } = useNotificationStore()
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Handle forgot password logic here
-    console.log('Forgot password request for:', email)
-    navigate('/email-confirmation')
+    setIsSubmitting(true)
+
+    try {
+      await resetPassword(email)
+      addNotification({
+        type: 'success',
+        title: 'Reset email sent',
+        message: 'Please check your email for password reset instructions.',
+      })
+      navigate('/email-confirmation')
+    } catch (err: any) {
+      addNotification({
+        type: 'error',
+        title: 'Failed to send reset email',
+        message: err.message || 'Please try again later.',
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -36,8 +57,8 @@ const ForgotPassword = () => {
           required
         />
 
-        <Button type="submit">
-          Reset password
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? 'Sending...' : 'Reset password'}
         </Button>
       </form>
 

@@ -1,19 +1,57 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { AuthLayout, Logo, AuthHeader, Input, Checkbox, Button } from '../components'
+import { useAuthStore } from '../stores/authStore'
+import { useNotificationStore } from '../stores/notificationStore'
 
 const Login = () => {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { login, isAuthenticated, isLoading, error, clearError } = useAuthStore()
+  const { addNotification } = useNotificationStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard'
+      navigate(from, { replace: true })
+    }
+  }, [isAuthenticated, navigate, location])
+
+  // Show error notification
+  useEffect(() => {
+    if (error) {
+      addNotification({
+        type: 'error',
+        title: 'Login Failed',
+        message: error,
+      })
+      clearError()
+    }
+  }, [error, addNotification, clearError])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Handle login logic here
-    console.log('Login attempt:', { email, password, rememberMe })
-    // Navigate to dashboard after successful login
-    navigate('/dashboard')
+    setIsSubmitting(true)
+
+    try {
+      await login(email, password)
+      addNotification({
+        type: 'success',
+        title: 'Welcome back!',
+        message: 'You have successfully logged in.',
+      })
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard'
+      navigate(from, { replace: true })
+    } catch {
+      // Error is handled by the store and shown via notification
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -58,8 +96,8 @@ const Login = () => {
           </Link>
         </div>
 
-        <Button type="submit">
-          Sign in
+        <Button type="submit" disabled={isSubmitting || isLoading}>
+          {isSubmitting ? 'Signing in...' : 'Sign in'}
         </Button>
       </form>
     </AuthLayout>
