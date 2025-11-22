@@ -1,6 +1,5 @@
 import { Icon } from '@iconify/react'
-import { useNotificationStore } from '../stores/notificationStore'
-import type { NotificationType } from '../stores/notificationStore'
+import { useNotificationStore, type NotificationType } from '../stores/notificationStore'
 
 const Notification = () => {
   const { notifications, removeNotification } = useNotificationStore()

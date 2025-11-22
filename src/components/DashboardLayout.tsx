@@ -53,12 +53,12 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const displayEmail = user?.email || ''
 
   const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: 'mdi:chart-box' },
-    { path: '/clients-brands', label: 'Clients & Brands', icon: 'mdi:view-grid' },
-    { path: '/app-users', label: 'App Users', icon: 'mdi:account-group' },
-    { path: '/reports', label: 'Reports', icon: 'mage:file-2' },
-    { path: '/notification-settings', label: 'Notification Settings', icon: 'mdi:bell' },
-    { path: '/trivia', label: 'Trivia', icon: 'mdi:school' },
+    { path: '/dashboard', label: 'Dashboard', icon: 'mdi:poll' },
+    { path: '/clients-brands', label: 'Clients & Brands', icon: 'mdi:layers-outline' },
+    { path: '/app-users', label: 'App Users', icon: 'mdi:account-multiple-outline' },
+    { path: '/reports', label: 'Reports', icon: 'mdi:clipboard-check-outline' },
+    { path: '/notification-settings', label: 'Notification Settings', icon: 'mdi:bell-outline' },
+    { path: '/trivia', label: 'Trivia', icon: 'mdi:school-outline' },
   ]
 
   const isActive = (path: string) => {
@@ -82,30 +82,25 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1">
-          {navItems.map((item) => {
-            const active = isActive(item.path)
-            return (
+          {
+            navItems.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  active
-                    ? 'bg-[#1D0A74] text-white'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive(item.path)
+                  ? 'bg-[#1D0A74] text-white'
+                  : 'text-gray-700 hover:bg-gray-100'
+                  }`}
               >
-                <Icon 
-                  icon={item.icon} 
-                  className={`w-5 h-5 ${active ? 'text-white' : 'text-gray-700'}`}
-                />
+                <Icon icon={item.icon} className="w-5 h-5" />
                 <span className="font-medium">{item.label}</span>
               </Link>
-            )
-          })}
-        </nav>
+            ))
+          }
+        </nav >
 
         {/* User Profile */}
-        <div className="p-4 border-t border-gray-200">
+        < div className="p-4 border-t border-gray-200" >
           <div className="w-full flex items-center gap-3 p-3">
             <div className="w-10 h-10 rounded-full bg-[#1D0A74] flex items-center justify-center text-white font-semibold overflow-hidden flex-shrink-0">
               {getUserInitials()}
@@ -122,15 +117,15 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
               <Icon icon="mdi:logout" className="w-5 h-5" />
             </button>
           </div>
-        </div>
-      </aside>
+        </div >
+      </aside >
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-white relative">
+      < main className="flex-1 overflow-y-auto bg-white relative" >
         {children}
-        <Notification />
-      </main>
-    </div>
+        < Notification />
+      </main >
+    </div >
   )
 }
 
