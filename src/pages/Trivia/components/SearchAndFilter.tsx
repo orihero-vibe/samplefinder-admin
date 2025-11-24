@@ -27,7 +27,7 @@ const SearchAndFilter = ({
           />
           <input
             type="text"
-            placeholder="Search by name or e-mail"
+            placeholder="Search by question"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"

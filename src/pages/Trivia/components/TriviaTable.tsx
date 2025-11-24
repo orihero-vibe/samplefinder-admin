@@ -111,83 +111,105 @@ const TriviaTable = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {triviaQuizzes.map((trivia) => (
-              <tr key={trivia.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                  {trivia.question}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {trivia.date}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {trivia.responses.toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    <div className="flex -space-x-2">
-                      {trivia.winners.slice(0, 5).map((winner, index) => (
-                        <div
-                          key={index}
-                          className={`w-8 h-8 rounded-full ${getAvatarColor(
-                            index
-                          )} flex items-center justify-center text-white text-xs font-semibold border-2 border-white`}
-                          title={winner}
-                        >
-                          {getInitials(winner)}
-                        </div>
-                      ))}
-                    </div>
-                    {trivia.winners.length > 5 && (
-                      <span className="text-sm text-gray-600">
-                        +{trivia.winners.length - 5}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {trivia.view.toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {trivia.skip.toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {trivia.incorrect.toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {trivia.winnersCount.toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`text-sm font-medium ${getStatusColor(trivia.status)}`}>
-                    {trivia.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => onViewClick(trivia)}
-                      className="hover:text-blue-600 transition-colors"
-                      title="View"
-                    >
-                      <Icon icon="mdi:eye" className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => onEditClick(trivia)}
-                      className="hover:text-blue-600 transition-colors"
-                      title="Edit"
-                    >
-                      <Icon icon="mdi:pencil" className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => onDeleteClick(trivia)}
-                      className="hover:text-red-600 transition-colors"
-                      title="Delete"
-                    >
-                      <Icon icon="mdi:trash-can" className="w-5 h-5" />
-                    </button>
+            {triviaQuizzes.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="px-6 py-12 text-center">
+                  <div className="flex flex-col items-center justify-center">
+                    <Icon icon="mdi:help-circle-outline" className="w-12 h-12 text-gray-400 mb-4" />
+                    <p className="text-gray-500 text-lg font-medium">No trivia quizzes found</p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      Create your first trivia quiz to get started
+                    </p>
                   </div>
                 </td>
               </tr>
-            ))}
+            ) : (
+              triviaQuizzes.map((trivia) => (
+                <tr key={trivia.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+                    {trivia.question.length > 30 
+                      ? `${trivia.question.substring(0, 30)}...` 
+                      : trivia.question}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {trivia.date}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {trivia.responses.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      {trivia.winners.length > 0 ? (
+                        <>
+                          <div className="flex -space-x-2">
+                            {trivia.winners.slice(0, 5).map((winner, index) => (
+                              <div
+                                key={index}
+                                className={`w-8 h-8 rounded-full ${getAvatarColor(
+                                  index
+                                )} flex items-center justify-center text-white text-xs font-semibold border-2 border-white`}
+                                title={winner}
+                              >
+                                {getInitials(winner)}
+                              </div>
+                            ))}
+                          </div>
+                          {trivia.winners.length > 5 && (
+                            <span className="text-sm text-gray-600">
+                              +{trivia.winners.length - 5}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-sm text-gray-400">No winners yet</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {trivia.view.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {trivia.skip.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {trivia.incorrect.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {trivia.winnersCount.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`text-sm font-medium ${getStatusColor(trivia.status)}`}>
+                      {trivia.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => onViewClick(trivia)}
+                        className="hover:text-blue-600 transition-colors"
+                        title="View"
+                      >
+                        <Icon icon="mdi:eye" className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => onEditClick(trivia)}
+                        className="hover:text-blue-600 transition-colors"
+                        title="Edit"
+                      >
+                        <Icon icon="mdi:pencil" className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => onDeleteClick(trivia)}
+                        className="hover:text-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Icon icon="mdi:trash-can" className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

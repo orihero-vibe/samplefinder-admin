@@ -13,6 +13,9 @@ const Login = () => {
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  // Combined: local state for immediate feedback + store state for async operations
+  const isLoggingIn = isSubmitting || isLoading
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -36,10 +39,20 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Prevent double submission
+    if (isSubmitting || isLoading) {
+      return
+    }
+
+    // Set local state immediately for instant UI feedback
     setIsSubmitting(true)
 
     try {
+      // login() will set isLoading: true in the store
       await login(email, password)
+      // Success - isLoading will be set to false by the store
+      // Keep isSubmitting true until navigation (component will unmount)
       addNotification({
         type: 'success',
         title: 'Welcome back!',
@@ -48,9 +61,10 @@ const Login = () => {
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard'
       navigate(from, { replace: true })
     } catch {
-      // Error is handled by the store and shown via notification
-    } finally {
+      // Error - isLoading will be set to false by the store
+      // Reset local state on error
       setIsSubmitting(false)
+      // Error is handled by the store and shown via notification
     }
   }
 
@@ -96,8 +110,8 @@ const Login = () => {
           </Link>
         </div>
 
-        <Button type="submit" disabled={isSubmitting || isLoading}>
-          {isSubmitting ? 'Signing in...' : 'Sign in'}
+        <Button type="submit" disabled={isLoggingIn}>
+          {isLoggingIn ? 'Signing in...' : 'Sign in'}
         </Button>
       </form>
     </AuthLayout>

@@ -1,0 +1,6 @@
+---
+description: Apply always when working with appwrite
+alwaysApply: false
+---
+Please first read the documentation
+Always use the object based functions in Appwrite since regulars are depricated

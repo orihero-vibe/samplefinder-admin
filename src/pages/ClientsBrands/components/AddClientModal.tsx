@@ -1,5 +1,31 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
+
+// Fix for default marker icon in React-Leaflet
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+delete (L.Icon.Default.prototype as any)._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+})
+
+// Component to handle map clicks
+function MapClickHandler({ 
+  onClick 
+}: { 
+  onClick: (lat: number, lng: number) => void 
+}) {
+  useMapEvents({
+    click: (e) => {
+      onClick(e.latlng.lat, e.latlng.lng)
+    },
+  })
+  return null
+}
 
 interface AddClientModalProps {
   isOpen: boolean
@@ -8,7 +34,9 @@ interface AddClientModalProps {
     logo: File | null
     clientName: string
     productTypes: string[]
-  }) => void
+    latitude?: number
+    longitude?: number
+  }) => Promise<void>
 }
 
 const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
@@ -16,15 +44,77 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
     logo: null as File | null,
     clientName: '',
     productTypes: [] as string[],
+    latitude: '',
+    longitude: '',
   })
 
   const [newProductType, setNewProductType] = useState('')
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'input' | 'map'>('input') // Default: input
+  const [mapCenter, setMapCenter] = useState<[number, number]>([40.7128, -74.0060])
+  const [mapZoom] = useState(10)
+  const [mapMarker, setMapMarker] = useState<[number, number] | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Sync map marker with input fields
+  useEffect(() => {
+    if (formData.latitude && formData.longitude) {
+      const lat = parseFloat(formData.latitude)
+      const lng = parseFloat(formData.longitude)
+      if (!isNaN(lat) && !isNaN(lng)) {
+        // Use requestAnimationFrame to avoid cascading renders
+        requestAnimationFrame(() => {
+          setMapMarker([lat, lng])
+          setMapCenter([lat, lng])
+        })
+      }
+    }
+  }, [formData.latitude, formData.longitude])
+
+  // Reset form when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      // Reset state when modal closes using requestAnimationFrame to avoid cascading renders
+      requestAnimationFrame(() => {
+        setFormData({
+          logo: null,
+          clientName: '',
+          productTypes: [],
+          latitude: '',
+          longitude: '',
+        })
+        setNewProductType('')
+        setLogoPreview(null)
+        setViewMode('input')
+        setMapMarker(null)
+        setIsSubmitting(false)
+      })
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+    // Update map marker when lat/lng inputs change
+    if (field === 'latitude' || field === 'longitude') {
+      const lat = field === 'latitude' ? parseFloat(value) : parseFloat(formData.latitude)
+      const lng = field === 'longitude' ? parseFloat(value) : parseFloat(formData.longitude)
+      if (!isNaN(lat) && !isNaN(lng)) {
+        setMapMarker([lat, lng])
+        setMapCenter([lat, lng])
+      }
+    }
+  }
+
+  const handleMapClick = (lat: number, lng: number) => {
+    setMapMarker([lat, lng])
+    setMapCenter([lat, lng])
+    setFormData((prev) => ({
+      ...prev,
+      latitude: lat.toFixed(6),
+      longitude: lng.toFixed(6),
+    }))
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -57,29 +147,37 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
     }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData)
-    // Reset form
-    setFormData({
-      logo: null,
-      clientName: '',
-      productTypes: [],
-    })
-    setLogoPreview(null)
-    setNewProductType('')
-    onClose()
+    
+    // Prevent double submission
+    if (isSubmitting) {
+      return
+    }
+
+    // Set loading state immediately for instant UI feedback
+    setIsSubmitting(true)
+
+    try {
+      const latitude = formData.latitude ? parseFloat(formData.latitude) : undefined
+      const longitude = formData.longitude ? parseFloat(formData.longitude) : undefined
+      
+      await onSave({
+        ...formData,
+        latitude: !isNaN(latitude ?? 0) ? latitude : undefined,
+        longitude: !isNaN(longitude ?? 0) ? longitude : undefined,
+      })
+      
+      // Success - close modal and reset form
+      onClose()
+    } catch {
+      // Error - keep modal open, error notification is handled by parent
+      setIsSubmitting(false)
+    }
   }
 
   const handleClose = () => {
-    // Reset form on close
-    setFormData({
-      logo: null,
-      clientName: '',
-      productTypes: [],
-    })
-    setLogoPreview(null)
-    setNewProductType('')
+    // Reset is handled by useEffect
     onClose()
   }
 
@@ -176,6 +274,111 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
             />
           </div>
 
+          {/* Location Section */}
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between mb-4">
+              <label className="block text-base font-semibold text-gray-900">
+                Location <span className="text-red-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setViewMode(viewMode === 'input' ? 'map' : 'input')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-[#1D0A74] transition-colors shadow-sm"
+              >
+                <Icon 
+                  icon={viewMode === 'input' ? 'mdi:map' : 'mdi:keyboard'} 
+                  className="w-5 h-5" 
+                />
+                {viewMode === 'input' ? 'Switch to Map View' : 'Switch to Input View'}
+              </button>
+            </div>
+
+            {viewMode === 'input' ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Latitude <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="e.g., 40.7128"
+                      value={formData.latitude}
+                      onChange={(e) => handleInputChange('latitude', e.target.value)}
+                      required
+                      className="w-full px-4 py-3 text-base border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-[#1D0A74] bg-white"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Range: -90 to 90</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Longitude <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="e.g., -74.0060"
+                      value={formData.longitude}
+                      onChange={(e) => handleInputChange('longitude', e.target.value)}
+                      required
+                      className="w-full px-4 py-3 text-base border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-[#1D0A74] bg-white"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Range: -180 to 180</p>
+                  </div>
+                </div>
+                {(formData.latitude || formData.longitude) && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <Icon icon="mdi:information" className="w-4 h-4 inline mr-1" />
+                      Coordinates: {formData.latitude || 'Not set'}, {formData.longitude || 'Not set'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="relative w-full h-96 rounded-lg overflow-hidden border-2 border-gray-300 shadow-sm">
+                  <MapContainer
+                    center={mapCenter}
+                    zoom={mapZoom}
+                    style={{ height: '100%', width: '100%' }}
+                    scrollWheelZoom={true}
+                  >
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    <MapClickHandler onClick={handleMapClick} />
+                    {mapMarker && <Marker position={mapMarker} />}
+                  </MapContainer>
+                  {mapMarker && (
+                    <div className="absolute top-3 left-3 bg-white px-4 py-3 rounded-lg shadow-lg border border-gray-200 z-[1000]">
+                      <div className="text-sm font-semibold text-gray-900 mb-1">Selected Location</div>
+                      <div className="text-xs text-gray-600 space-y-1">
+                        <div>Lat: <span className="font-mono font-medium">{mapMarker[0].toFixed(6)}</span></div>
+                        <div>Lng: <span className="font-mono font-medium">{mapMarker[1].toFixed(6)}</span></div>
+                      </div>
+                    </div>
+                  )}
+                  {!mapMarker && (
+                    <div className="absolute top-3 left-1/2 transform -translate-x-1/2 bg-[#1D0A74] text-white px-4 py-2 rounded-lg shadow-lg text-sm font-medium z-[1000]">
+                      Click on the map to set location
+                    </div>
+                  )}
+                </div>
+                {(formData.latitude || formData.longitude) && (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm text-green-800">
+                      <Icon icon="mdi:check-circle" className="w-4 h-4 inline mr-1" />
+                      Location set: {formData.latitude || 'N/A'}, {formData.longitude || 'N/A'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Product Type Multi-select */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -230,10 +433,15 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
             </button>
             <button
               type="submit"
-              disabled={formData.productTypes.length === 0}
+              disabled={
+                isSubmitting ||
+                formData.productTypes.length === 0 ||
+                !formData.latitude ||
+                !formData.longitude
+              }
               className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Create Client
+              {isSubmitting ? 'Creating client...' : 'Create Client'}
             </button>
           </div>
         </form>

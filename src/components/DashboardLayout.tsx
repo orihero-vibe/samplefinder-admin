@@ -56,6 +56,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     { path: '/dashboard', label: 'Dashboard', icon: 'mdi:poll' },
     { path: '/clients-brands', label: 'Clients & Brands', icon: 'mdi:layers-outline' },
     { path: '/app-users', label: 'App Users', icon: 'mdi:account-multiple-outline' },
+    { path: '/categories', label: 'Categories', icon: 'mdi:tag-multiple-outline' },
     { path: '/reports', label: 'Reports', icon: 'mdi:clipboard-check-outline' },
     { path: '/notification-settings', label: 'Notification Settings', icon: 'mdi:bell-outline' },
     { path: '/trivia', label: 'Trivia', icon: 'mdi:school-outline' },

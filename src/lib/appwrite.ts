@@ -1,18 +1,19 @@
-import { Client, Account, Databases, Storage, Functions, Query } from 'appwrite'
+import { Client, Account, Databases, Storage, Functions, Query, ID } from 'appwrite'
 
 // Appwrite configuration
 export const appwriteConfig = {
   endpoint: import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1',
   projectId: import.meta.env.VITE_APPWRITE_PROJECT_ID || '',
-  databaseId: import.meta.env.VITE_APPWRITE_DATABASE_ID || '',
+  databaseId: import.meta.env.VITE_APPWRITE_DATABASE_ID || '69217af50038b9005a61', // Tables DB ID
   collections: {
     users: import.meta.env.VITE_APPWRITE_COLLECTION_USERS || '',
-    clients: import.meta.env.VITE_APPWRITE_COLLECTION_CLIENTS || '',
-    events: import.meta.env.VITE_APPWRITE_COLLECTION_EVENTS || '',
-    trivia: import.meta.env.VITE_APPWRITE_COLLECTION_TRIVIA || '',
-    reviews: import.meta.env.VITE_APPWRITE_COLLECTION_REVIEWS || '',
+    userProfiles: import.meta.env.VITE_APPWRITE_COLLECTION_USER_PROFILES || 'user_profiles',
+    clients: import.meta.env.VITE_APPWRITE_COLLECTION_CLIENTS || 'clients', // Table ID
+    events: import.meta.env.VITE_APPWRITE_COLLECTION_EVENTS || 'events', // Table ID
+    trivia: import.meta.env.VITE_APPWRITE_COLLECTION_TRIVIA || 'trivia', // Table ID
+    reviews: import.meta.env.VITE_APPWRITE_COLLECTION_REVIEWS || 'reviews', // Table ID
     reports: import.meta.env.VITE_APPWRITE_COLLECTION_REPORTS || '',
-    notifications: import.meta.env.VITE_APPWRITE_COLLECTION_NOTIFICATIONS || '',
+    notifications: import.meta.env.VITE_APPWRITE_COLLECTION_NOTIFICATIONS || 'notifications', // Table ID
   },
   storage: {
     bucketId: import.meta.env.VITE_APPWRITE_STORAGE_BUCKET_ID || '',

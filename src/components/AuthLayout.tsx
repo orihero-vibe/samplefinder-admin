@@ -1,10 +1,13 @@
+import Notification from './Notification'
+
 interface AuthLayoutProps {
   children: React.ReactNode
 }
 
 const AuthLayout = ({ children }: AuthLayoutProps) => {
   return (
-    <div className="flex min-h-screen w-full md:flex-row flex-col">
+    <div className="flex min-h-screen w-full md:flex-row flex-col relative">
+      <Notification />
       <div className="flex-[2] bg-white bg-grid-pattern flex items-center justify-center p-8 md:min-h-screen min-h-[60vh]">
         <div className="w-full max-w-[400px]">
           {children}

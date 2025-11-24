@@ -7,13 +7,12 @@ import {
 import { useNotificationStore } from '../../stores/notificationStore'
 import {
   UsersHeader,
-  StatsCards,
   SearchAndFilter,
   UsersTable,
   AddUserModal,
-  AddAdminModal,
   EditUserModal,
 } from './components'
+import { appUsersService, type AppUser, type UserFormData } from '../../lib/services'
 
 const Users = () => {
   const { addNotification } = useNotificationStore()
@@ -22,141 +21,88 @@ const Users = () => {
   const [sortBy, setSortBy] = useState('Date')
   const [isLoading, setIsLoading] = useState(true)
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
-  const [isAddAdminModalOpen, setIsAddAdminModalOpen] = useState(false)
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
-  const [selectedUser, setSelectedUser] = useState<any>(null)
-  const [userToDelete, setUserToDelete] = useState<any>(null)
+  const [selectedUser, setSelectedUser] = useState<AppUser | null>(null)
+  const [userToDelete, setUserToDelete] = useState<AppUser | null>(null)
+  const [users, setUsers] = useState<AppUser[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch users from Appwrite
+  const fetchUsers = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const usersList = await appUsersService.list()
+      setUsers(usersList)
+    } catch (err) {
+      console.error('Error fetching users:', err)
+      setError('Failed to load users. Please try again.')
+      addNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to load users. Please try again.',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false)
-    }, 1000)
-
-    return () => clearTimeout(timer)
+    fetchUsers()
   }, [])
 
-  const stats = [
-    {
-      label: 'Total Users',
-      value: '5,000',
-      icon: 'mdi:format-list-bulleted',
-      iconBg: 'bg-green-100',
-      iconColor: 'text-green-600',
-    },
-    {
-      label: 'Avg. Points',
-      value: '925',
-      icon: 'mdi:star-outline',
-      iconBg: 'bg-red-100',
-      iconColor: 'text-red-600',
-    },
-    {
-      label: 'New This Week',
-      value: '167',
-      icon: 'mdi:trending-up',
-      iconBg: 'bg-yellow-100',
-      iconColor: 'text-yellow-600',
-    },
-    {
-      label: 'Users in Blacklist',
-      value: '167',
-      icon: 'mdi:chart-line',
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-600',
-    },
-  ]
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <ShimmerPage />
+      </DashboardLayout>
+    )
+  }
 
-  const users = [
-    {
-      firstName: 'Courtney',
-      lastName: 'Henry',
-      username: '@amonk_',
-      phoneNumber: '(480) 555-0103',
-      email: 'willie.jenni...',
-      totalPoints: 24,
-      dateOfBirth: '05/15/2020',
-      checkIns: 24,
-      reviews: 24,
-    },
-    {
-      firstName: 'Ronald',
-      lastName: 'Richards',
-      username: '@mercyCh',
-      phoneNumber: '(270) 555-0117',
-      email: 'alma.laws...',
-      totalPoints: 43,
-      dateOfBirth: '05/15/2020',
-      checkIns: 43,
-      reviews: 43,
-    },
-    {
-      firstName: 'Marvin',
-      lastName: 'McKinney',
-      username: '@bessie',
-      phoneNumber: '(205) 555-0100',
-      email: 'deanna.curt...',
-      totalPoints: 32,
-      dateOfBirth: '05/15/2020',
-      checkIns: 32,
-      reviews: 32,
-    },
-    {
-      firstName: 'Jerome',
-      lastName: 'Bell',
-      username: '@jerome',
-      phoneNumber: '(229) 555-0109',
-      email: 'kathryn.mcc...',
-      totalPoints: 18,
-      dateOfBirth: '05/15/2020',
-      checkIns: 18,
-      reviews: 18,
-    },
-    {
-      firstName: 'Cameron',
-      lastName: 'Williamson',
-      username: '@cameron',
-      phoneNumber: '(505) 555-0125',
-      email: 'felicia.reid...',
-      totalPoints: 56,
-      dateOfBirth: '05/15/2020',
-      checkIns: 56,
-      reviews: 56,
-    },
-    {
-      firstName: 'Leslie',
-      lastName: 'Alexander',
-      username: '@leslie',
-      phoneNumber: '(316) 555-0116',
-      email: 'guy.hawkins...',
-      totalPoints: 29,
-      dateOfBirth: '05/15/2020',
-      checkIns: 29,
-      reviews: 29,
-    },
-    {
-      firstName: 'Kristin',
-      lastName: 'Watson',
-      username: '@kristin',
-      phoneNumber: '(307) 555-0133',
-      email: 'robert.fox...',
-      totalPoints: 41,
-      dateOfBirth: '05/15/2020',
-      checkIns: 41,
-      reviews: 41,
-    },
-    {
-      firstName: 'Floyd',
-      lastName: 'Miles',
-      username: '@floyd',
-      phoneNumber: '(208) 555-0112',
-      email: 'darlene.rober...',
-      totalPoints: 35,
-      dateOfBirth: '05/15/2020',
-      checkIns: 35,
-      reviews: 35,
-    },
-  ]
+  const handleCreateUser = async (userData: UserFormData) => {
+    try {
+      await appUsersService.create(userData)
+      await fetchUsers() // Refresh list
+      setIsAddUserModalOpen(false)
+      addNotification({
+        type: 'success',
+        title: 'User created successfully',
+        message: 'A new user has been added to the system',
+      })
+    } catch (err) {
+      console.error('Error creating user:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create user. Please try again.'
+      addNotification({
+        type: 'error',
+        title: 'Error',
+        message: errorMessage,
+      })
+    }
+  }
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete?.$id || !userToDelete?.authID) return
+
+    try {
+      await appUsersService.delete(userToDelete.$id, userToDelete.authID)
+      await fetchUsers() // Refresh list
+      setIsDeleteModalOpen(false)
+      setUserToDelete(null)
+      addNotification({
+        type: 'success',
+        title: 'User deleted successfully',
+        message: 'User has been removed from the system',
+      })
+    } catch (err) {
+      console.error('Error deleting user:', err)
+      addNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to delete user. Please try again.',
+      })
+    }
+  }
 
   if (isLoading) {
     return (
@@ -169,11 +115,18 @@ const Users = () => {
   return (
     <DashboardLayout>
       <div className="p-8">
-        <UsersHeader
-          onAddAdmin={() => setIsAddAdminModalOpen(true)}
-          onAddUser={() => setIsAddUserModalOpen(true)}
-        />
-        <StatsCards stats={stats} />
+        <UsersHeader onAddUser={() => setIsAddUserModalOpen(true)} />
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+            {error}
+            <button
+              onClick={() => setError(null)}
+              className="ml-2 text-red-500 hover:text-red-700"
+            >
+              ×
+            </button>
+          </div>
+        )}
         <SearchAndFilter
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -199,32 +152,7 @@ const Users = () => {
       <AddUserModal
         isOpen={isAddUserModalOpen}
         onClose={() => setIsAddUserModalOpen(false)}
-        onSave={(userData) => {
-          console.log('User data:', userData)
-          // TODO: Implement save functionality
-          setIsAddUserModalOpen(false)
-          addNotification({
-            type: 'success',
-            title: 'User invited sucessfuly',
-            message: 'A new user added',
-          })
-        }}
-      />
-
-      {/* Add Admin Modal */}
-      <AddAdminModal
-        isOpen={isAddAdminModalOpen}
-        onClose={() => setIsAddAdminModalOpen(false)}
-        onSave={(adminData) => {
-          console.log('Admin data:', adminData)
-          // TODO: Implement save functionality
-          setIsAddAdminModalOpen(false)
-          addNotification({
-            type: 'success',
-            title: 'Admin added successfully',
-            message: 'A new admin has been added to the system',
-          })
-        }}
+        onSave={handleCreateUser}
       />
 
       {/* Edit User Modal */}
@@ -236,7 +164,7 @@ const Users = () => {
         }}
         onSave={(userData) => {
           console.log('Updated user data:', userData)
-          // TODO: Implement save functionality
+          // TODO: Implement update functionality
           setIsEditUserModalOpen(false)
           setSelectedUser(null)
           addNotification({
@@ -260,19 +188,23 @@ const Users = () => {
                 lastName: selectedUser.lastName,
                 zipCode: '',
                 phoneNumber: selectedUser.phoneNumber,
-                userPoints: selectedUser.totalPoints?.toString(),
+                userPoints: '',
                 baBadge: 'Yes',
-                signUpDate: selectedUser.dateOfBirth,
+                signUpDate: selectedUser.$createdAt
+                  ? new Date(selectedUser.$createdAt).toLocaleDateString()
+                  : '',
                 password: '**********',
-                checkIns: selectedUser.checkIns?.toString(),
+                checkIns: '',
                 tierLevel: 'SuperSampler',
                 username: selectedUser.username,
                 email: selectedUser.email,
                 checkInReviewPoints: '750',
                 influencerBadge: 'No',
-                lastLogin: selectedUser.dateOfBirth,
+                lastLogin: selectedUser.$createdAt
+                  ? new Date(selectedUser.$createdAt).toLocaleDateString()
+                  : '',
                 referralCode: '',
-                reviews: selectedUser.reviews?.toString(),
+                reviews: '',
                 triviasWon: '750',
               }
             : undefined
@@ -286,24 +218,7 @@ const Users = () => {
           setIsDeleteModalOpen(false)
           setUserToDelete(null)
         }}
-        onConfirm={() => {
-          if (userToDelete) {
-            console.log('Delete user:', userToDelete)
-            // TODO: Implement delete functionality
-            // Remove from users list or make API call
-            addNotification({
-              type: 'success',
-              title: 'User deleted successfully',
-              message: 'User has been removed from the system',
-            })
-          }
-          setIsDeleteModalOpen(false)
-          setUserToDelete(null)
-          if (isEditUserModalOpen) {
-            setIsEditUserModalOpen(false)
-            setSelectedUser(null)
-          }
-        }}
+        onConfirm={handleDeleteUser}
         type="delete"
         itemName="user"
       />

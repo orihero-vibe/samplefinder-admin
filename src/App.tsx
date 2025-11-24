@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard/Dashboard'
 import EventReviews from './pages/EventReviews/EventReviews'
 import ClientsBrands from './pages/ClientsBrands/ClientsBrands'
 import Users from './pages/Users/Users'
+import Categories from './pages/Categories/Categories'
 import Reports from './pages/Reports/Reports'
 import PreviewReports from './pages/Reports/PreviewReports'
 import Notifications from './pages/Notifications/Notifications'
@@ -54,6 +55,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Users />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/categories"
+          element={
+            <ProtectedRoute>
+              <Categories />
             </ProtectedRoute>
           }
         />

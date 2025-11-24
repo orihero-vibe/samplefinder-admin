@@ -4,12 +4,13 @@ import { Icon } from '@iconify/react'
 interface CSVUploadModalProps {
   isOpen: boolean
   onClose: () => void
-  onUpload: (file: File) => void
+  onUpload: (file: File) => Promise<void>
 }
 
 const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
 
   if (!isOpen) return null
 
@@ -55,20 +56,40 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
     setIsDragging(false)
   }
 
-  const handleUpload = () => {
-    if (selectedFile) {
-      onUpload(selectedFile)
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      alert('Please select a CSV file to upload')
+      return
+    }
+
+    setIsUploading(true)
+    try {
+      await onUpload(selectedFile)
       setSelectedFile(null)
       onClose()
-    } else {
-      alert('Please select a CSV file to upload')
+    } catch (error) {
+      // Error is handled by parent component via notification
+      // Keep modal open so user can retry
+    } finally {
+      setIsUploading(false)
     }
   }
 
   const handleDownloadTemplate = () => {
-    // Create CSV template with headers
+    // Create CSV template with headers and sample data
     const headers = requiredColumns.join(',')
-    const csvContent = `data:text/csv;charset=utf-8,${headers}`
+    const sampleRow = [
+      'Sample Event Name',
+      '2024-12-25',
+      '123 Main Street',
+      'New York',
+      'NY',
+      '10001',
+      'Sample Product',
+      'Sample Brand',
+      '100',
+    ].join(',')
+    const csvContent = `data:text/csv;charset=utf-8,${headers}\n${sampleRow}`
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement('a')
     link.setAttribute('href', encodedUri)
@@ -83,7 +104,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={isUploading ? undefined : onClose}
       />
 
       {/* Modal */}
@@ -99,6 +120,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
+            disabled={isUploading}
           >
             <Icon icon="mdi:close" className="w-6 h-6" />
           </button>
@@ -170,22 +192,31 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
         <div className="flex gap-4 p-6 border-t border-gray-200">
           <button
             onClick={onClose}
-            className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
+            className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isUploading}
           >
             Cancel
           </button>
           <button
             onClick={handleDownloadTemplate}
-            className="px-6 py-3 bg-[#1D0A74]/10 text-[#1D0A74] rounded-lg hover:bg-[#1D0A74]/20 transition-colors font-semibold"
+            className="px-6 py-3 bg-[#1D0A74]/10 text-[#1D0A74] rounded-lg hover:bg-[#1D0A74]/20 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isUploading}
           >
             Download Template
           </button>
           <button
             onClick={handleUpload}
-            disabled={!selectedFile}
-            className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!selectedFile || isUploading}
+            className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Upload Events
+            {isUploading ? (
+              <>
+                <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />
+                Uploading...
+              </>
+            ) : (
+              'Upload Events'
+            )}
           </button>
         </div>
       </div>
