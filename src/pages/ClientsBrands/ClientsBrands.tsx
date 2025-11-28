@@ -12,7 +12,7 @@ import {
   AddClientModal,
   EditClientModal,
 } from './components'
-import { clientsService, type ClientDocument, type Client } from '../../lib/services'
+import { clientsService, type ClientDocument } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 
 // UI Client interface (for display and table)

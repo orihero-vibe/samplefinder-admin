@@ -12,7 +12,7 @@ const PasswordReset = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { updatePassword, error, clearError } = useAuthStore()
+  const { updatePassword } = useAuthStore()
   const { addNotification } = useNotificationStore()
 
   const userId = searchParams.get('userId')

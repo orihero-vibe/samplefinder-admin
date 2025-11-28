@@ -12,7 +12,7 @@ export class DatabaseService {
       appwriteConfig.databaseId,
       collectionId,
       ID.unique(),
-      data
+      data as any
     ) as T
   }
 
@@ -50,7 +50,7 @@ export class DatabaseService {
       appwriteConfig.databaseId,
       collectionId,
       documentId,
-      data
+      data as any
     ) as T
   }
 
@@ -553,7 +553,7 @@ export const appUsersService = {
   },
 
   // Delete user (Auth + user_profiles)
-  delete: async (id: string, authID: string): Promise<void> => {
+  delete: async (id: string, _authID: string): Promise<void> => {
     try {
       // Step 1: Delete user_profiles
       await userProfilesService.delete(id)

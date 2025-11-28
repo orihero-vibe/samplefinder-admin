@@ -144,7 +144,7 @@ const Trivia = () => {
         })
       } else if (sortBy === 'Responses') {
         // For now, all have 0 responses, but keeping the sort structure
-        documents = [...documents].sort((a, b) => {
+        documents = [...documents].sort((_a, _b) => {
           return 0 // TODO: Sort by actual responses when available
         })
       }

@@ -9,7 +9,7 @@ const ForgotPassword = () => {
   const [email, setEmail] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
-  const { resetPassword, error, clearError } = useAuthStore()
+  const { resetPassword } = useAuthStore()
   const { addNotification } = useNotificationStore()
 
   const handleSubmit = async (e: React.FormEvent) => {

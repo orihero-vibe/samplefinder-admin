@@ -4,7 +4,7 @@ import type { Models } from 'appwrite'
 import { DashboardLayout, ShimmerPage, ConfirmationModal } from '../../components'
 import type { ConfirmationType } from '../../components'
 import { eventsService, categoriesService, clientsService } from '../../lib/services'
-import { storage, appwriteConfig, ID, Query } from '../../lib/appwrite'
+import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import {
   MetricsCards,
@@ -52,9 +52,8 @@ const Dashboard = () => {
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false)
   const [isCSVUploadOpen, setIsCSVUploadOpen] = useState(false)
   const [events, setEvents] = useState<Event[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [categories, setCategories] = useState<Models.Document[]>([])
-  const [brands, setBrands] = useState<Models.Document[]>([])
+  const [categories, setCategories] = useState<Array<Models.Document & { title: string }>>([])
+  const [brands, setBrands] = useState<Array<Models.Document & { name: string }>>([])
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({
     start: null,
     end: null,
@@ -142,14 +141,12 @@ const Dashboard = () => {
   const fetchEvents = async () => {
     try {
       setIsLoading(true)
-      setError(null)
       
       const result = await eventsService.list()
       const mappedEvents = result.documents.map(mapEventDocumentToEvent)
       setEvents(mappedEvents)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch events'
-      setError(errorMessage)
       addNotification({
         type: 'error',
         title: 'Error Loading Events',
@@ -591,7 +588,7 @@ const Dashboard = () => {
   const fetchCategories = async () => {
     try {
       const result = await categoriesService.list()
-      setCategories(result.documents)
+      setCategories(result.documents as Array<Models.Document & { title: string }>)
     } catch (err) {
       console.error('Error fetching categories:', err)
       // Don't show notification for categories fetch failure
@@ -602,7 +599,7 @@ const Dashboard = () => {
   const fetchBrands = async () => {
     try {
       const result = await clientsService.list()
-      setBrands(result.documents)
+      setBrands(result.documents as Array<Models.Document & { name: string }>)
     } catch (err) {
       console.error('Error fetching brands:', err)
       // Don't show notification for brands fetch failure

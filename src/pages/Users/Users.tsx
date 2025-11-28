@@ -138,11 +138,11 @@ const Users = () => {
         <UsersTable
           users={users}
           onEditClick={(user) => {
-            setSelectedUser(user)
+            setSelectedUser(user as AppUser)
             setIsEditUserModalOpen(true)
           }}
           onDeleteClick={(user) => {
-            setUserToDelete(user)
+            setUserToDelete(user as AppUser)
             setIsDeleteModalOpen(true)
           }}
         />

@@ -2,12 +2,20 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import type { Models } from 'appwrite'
 
+interface Category extends Models.Document {
+  title: string
+}
+
+interface Brand extends Models.Document {
+  name: string
+}
+
 interface AddEventModalProps {
   isOpen: boolean
   onClose: () => void
   onSave: (eventData: any) => Promise<void>
-  categories?: Models.Document[]
-  brands?: Models.Document[]
+  categories?: Category[]
+  brands?: Brand[]
 }
 
 const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }: AddEventModalProps) => {
