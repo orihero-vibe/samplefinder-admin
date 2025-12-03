@@ -34,13 +34,20 @@ interface EditClientModalProps {
     logo: File | null
     clientName: string
     productTypes: string[]
-    latitude?: number
-    longitude?: number
+    city?: string
+    address?: string
+    state?: string
+    zip?: string
+    location?: [number, number] // Point format: [longitude, latitude]
   }) => void
   initialData?: {
     clientName: string
     productTypes: string[]
     logoUrl?: string
+    city?: string
+    address?: string
+    state?: string
+    zip?: string
     latitude?: number
     longitude?: number
   }
@@ -51,16 +58,18 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
     logo: null as File | null,
     clientName: '',
     productTypes: [] as string[],
-    latitude: '',
-    longitude: '',
+    city: '',
+    address: '',
+    state: '',
+    zip: '',
   })
 
   const [newProductType, setNewProductType] = useState('')
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<'input' | 'map'>('input') // Default: input
   const [mapCenter, setMapCenter] = useState<[number, number]>([40.7128, -74.0060])
   const [mapZoom, setMapZoom] = useState(10)
   const [mapMarker, setMapMarker] = useState<[number, number] | null>(null)
+  const [location, setLocation] = useState<[number, number] | undefined>(undefined)
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
@@ -69,59 +78,39 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
         logo: null,
         clientName: initialData.clientName || '',
         productTypes: initialData.productTypes || [],
-        latitude: initialData.latitude?.toString() || '',
-        longitude: initialData.longitude?.toString() || '',
+        city: initialData.city || '',
+        address: initialData.address || '',
+        state: initialData.state || '',
+        zip: initialData.zip || '',
       })
       setLogoPreview(initialData.logoUrl || null)
       setNewProductType('')
       
       // Set map initial position if lat/lng exists
       if (initialData.latitude && initialData.longitude) {
-        setMapMarker([initialData.latitude, initialData.longitude])
-        setMapCenter([initialData.latitude, initialData.longitude])
+        const lat = initialData.latitude
+        const lng = initialData.longitude
+        setMapMarker([lat, lng])
+        setMapCenter([lat, lng])
         setMapZoom(12)
+        // Convert to point format [longitude, latitude]
+        setLocation([lng, lat])
       }
     }
   }, [isOpen, initialData])
-
-  // Sync map marker with input fields
-  useEffect(() => {
-    if (formData.latitude && formData.longitude) {
-      const lat = parseFloat(formData.latitude)
-      const lng = parseFloat(formData.longitude)
-      if (!isNaN(lat) && !isNaN(lng)) {
-        // Use requestAnimationFrame to avoid cascading renders
-        requestAnimationFrame(() => {
-          setMapMarker([lat, lng])
-          setMapCenter([lat, lng])
-        })
-      }
-    }
-  }, [formData.latitude, formData.longitude])
 
   if (!isOpen) return null
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    // Update map marker when lat/lng inputs change
-    if (field === 'latitude' || field === 'longitude') {
-      const lat = field === 'latitude' ? parseFloat(value) : parseFloat(formData.latitude)
-      const lng = field === 'longitude' ? parseFloat(value) : parseFloat(formData.longitude)
-      if (!isNaN(lat) && !isNaN(lng)) {
-        setMapMarker([lat, lng])
-        setMapCenter([lat, lng])
-      }
-    }
   }
 
   const handleMapClick = (lat: number, lng: number) => {
-    setMapMarker([lat, lng])
+    // Store as [longitude, latitude] point format
+    const point: [number, number] = [lng, lat]
+    setMapMarker([lat, lng]) // Map marker uses [lat, lng] for display
     setMapCenter([lat, lng])
-    setFormData((prev) => ({
-      ...prev,
-      latitude: lat.toFixed(6),
-      longitude: lng.toFixed(6),
-    }))
+    setLocation(point)
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,13 +145,16 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const latitude = formData.latitude ? parseFloat(formData.latitude) : undefined
-    const longitude = formData.longitude ? parseFloat(formData.longitude) : undefined
     
     onSave({
-      ...formData,
-      latitude: !isNaN(latitude ?? 0) ? latitude : undefined,
-      longitude: !isNaN(longitude ?? 0) ? longitude : undefined,
+      logo: formData.logo,
+      clientName: formData.clientName,
+      productTypes: formData.productTypes,
+      city: formData.city || undefined,
+      address: formData.address || undefined,
+      state: formData.state || undefined,
+      zip: formData.zip || undefined,
+      location: location || undefined,
     })
     onClose()
   }
@@ -286,109 +278,109 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
             />
           </div>
 
+          {/* Address Fields */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Address Information
+            </label>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Street Address
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter street address"
+                  value={formData.address}
+                  onChange={(e) => handleInputChange('address', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    City
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter city"
+                    value={formData.city}
+                    onChange={(e) => handleInputChange('city', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    State
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter state"
+                    value={formData.state}
+                    onChange={(e) => handleInputChange('state', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  ZIP Code
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter ZIP code"
+                  value={formData.zip}
+                  onChange={(e) => handleInputChange('zip', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Location Section */}
           <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <label className="block text-base font-semibold text-gray-900">
-                Location <span className="text-red-500">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setViewMode(viewMode === 'input' ? 'map' : 'input')}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-[#1D0A74] transition-colors shadow-sm"
-              >
-                <Icon 
-                  icon={viewMode === 'input' ? 'mdi:map' : 'mdi:keyboard'} 
-                  className="w-5 h-5" 
-                />
-                {viewMode === 'input' ? 'Switch to Map View' : 'Switch to Input View'}
-              </button>
+            <label className="block text-base font-semibold text-gray-900 mb-4">
+              Location <span className="text-red-500">*</span>
+            </label>
+            <div className="space-y-3">
+              <div className="relative w-full h-96 rounded-lg overflow-hidden border-2 border-gray-300 shadow-sm">
+                <MapContainer
+                  center={mapCenter}
+                  zoom={mapZoom}
+                  style={{ height: '100%', width: '100%' }}
+                  scrollWheelZoom={true}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <MapClickHandler onClick={handleMapClick} />
+                  {mapMarker && <Marker position={mapMarker} />}
+                </MapContainer>
+                {mapMarker && (
+                  <div className="absolute top-3 left-3 bg-white px-4 py-3 rounded-lg shadow-lg border border-gray-200 z-[1000]">
+                    <div className="text-sm font-semibold text-gray-900 mb-1">Selected Location</div>
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <div>Lat: <span className="font-mono font-medium">{mapMarker[0].toFixed(6)}</span></div>
+                      <div>Lng: <span className="font-mono font-medium">{mapMarker[1].toFixed(6)}</span></div>
+                    </div>
+                  </div>
+                )}
+                {!mapMarker && (
+                  <div className="absolute top-3 left-1/2 transform -translate-x-1/2 bg-[#1D0A74] text-white px-4 py-2 rounded-lg shadow-lg text-sm font-medium z-[1000]">
+                    Click on the map to set location
+                  </div>
+                )}
+              </div>
+              {location && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800">
+                    <Icon icon="mdi:check-circle" className="w-4 h-4 inline mr-1" />
+                    Location set: {mapMarker?.[0].toFixed(6)}, {mapMarker?.[1].toFixed(6)}
+                  </p>
+                </div>
+              )}
             </div>
-
-            {viewMode === 'input' ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Latitude <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="e.g., 40.7128"
-                      value={formData.latitude}
-                      onChange={(e) => handleInputChange('latitude', e.target.value)}
-                      required
-                      className="w-full px-4 py-3 text-base border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-[#1D0A74] bg-white"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Range: -90 to 90</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Longitude <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="e.g., -74.0060"
-                      value={formData.longitude}
-                      onChange={(e) => handleInputChange('longitude', e.target.value)}
-                      required
-                      className="w-full px-4 py-3 text-base border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-[#1D0A74] bg-white"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Range: -180 to 180</p>
-                  </div>
-                </div>
-                {(formData.latitude || formData.longitude) && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800">
-                      <Icon icon="mdi:information" className="w-4 h-4 inline mr-1" />
-                      Coordinates: {formData.latitude || 'Not set'}, {formData.longitude || 'Not set'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="relative w-full h-96 rounded-lg overflow-hidden border-2 border-gray-300 shadow-sm">
-                  <MapContainer
-                    center={mapCenter}
-                    zoom={mapZoom}
-                    style={{ height: '100%', width: '100%' }}
-                    scrollWheelZoom={true}
-                  >
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    <MapClickHandler onClick={handleMapClick} />
-                    {mapMarker && <Marker position={mapMarker} />}
-                  </MapContainer>
-                  {mapMarker && (
-                    <div className="absolute top-3 left-3 bg-white px-4 py-3 rounded-lg shadow-lg border border-gray-200 z-[1000]">
-                      <div className="text-sm font-semibold text-gray-900 mb-1">Selected Location</div>
-                      <div className="text-xs text-gray-600 space-y-1">
-                        <div>Lat: <span className="font-mono font-medium">{mapMarker[0].toFixed(6)}</span></div>
-                        <div>Lng: <span className="font-mono font-medium">{mapMarker[1].toFixed(6)}</span></div>
-                      </div>
-                    </div>
-                  )}
-                  {!mapMarker && (
-                    <div className="absolute top-3 left-1/2 transform -translate-x-1/2 bg-[#1D0A74] text-white px-4 py-2 rounded-lg shadow-lg text-sm font-medium z-[1000]">
-                      Click on the map to set location
-                    </div>
-                  )}
-                </div>
-                {(formData.latitude || formData.longitude) && (
-                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-sm text-green-800">
-                      <Icon icon="mdi:check-circle" className="w-4 h-4 inline mr-1" />
-                      Location set: {formData.latitude || 'N/A'}, {formData.longitude || 'N/A'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Product Type Multi-select */}
@@ -447,8 +439,7 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
               type="submit"
               disabled={
                 formData.productTypes.length === 0 ||
-                !formData.latitude ||
-                !formData.longitude
+                !location
               }
               className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >

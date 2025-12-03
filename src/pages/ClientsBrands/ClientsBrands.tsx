@@ -26,6 +26,10 @@ interface UIClient {
   joinDate: string
   productTypes?: string[]
   logoUrl?: string
+  city?: string
+  address?: string
+  state?: string
+  zip?: string
   latitude?: number
   longitude?: number
 }
@@ -69,6 +73,14 @@ const ClientsBrands = () => {
 
   // Transform ClientDocument to UIClient for display
   const transformToUIClient = (doc: ClientDocument): UIClient => {
+    // Extract latitude and longitude from location point [longitude, latitude]
+    let latitude: number | undefined = undefined
+    let longitude: number | undefined = undefined
+    if (doc.location && Array.isArray(doc.location) && doc.location.length === 2) {
+      longitude = doc.location[0] // First element is longitude
+      latitude = doc.location[1] // Second element is latitude
+    }
+
     return {
       id: doc.$id,
       clientName: doc.name,
@@ -79,8 +91,12 @@ const ClientsBrands = () => {
       joinDate: doc.$createdAt ? new Date(doc.$createdAt).toLocaleDateString() : '',
       productTypes: doc.productType || [],
       logoUrl: doc.logoURL,
-      latitude: doc.latitude,
-      longitude: doc.longitude,
+      city: doc.city,
+      address: doc.address,
+      state: doc.state,
+      zip: doc.zip,
+      latitude,
+      longitude,
     }
   }
 
@@ -162,8 +178,11 @@ const ClientsBrands = () => {
     logo: File | null
     clientName: string
     productTypes: string[]
-    latitude?: number
-    longitude?: number
+    city?: string
+    address?: string
+    state?: string
+    zip?: string
+    location?: [number, number] // Point format: [longitude, latitude]
   }) => {
     try {
       await clientsService.create(clientData)
@@ -199,8 +218,11 @@ const ClientsBrands = () => {
     logo: File | null
     clientName: string
     productTypes: string[]
-    latitude?: number
-    longitude?: number
+    city?: string
+    address?: string
+    state?: string
+    zip?: string
+    location?: [number, number] // Point format: [longitude, latitude]
   }) => {
     if (!selectedClient?.id) return
 
@@ -269,6 +291,10 @@ const ClientsBrands = () => {
                 clientName: selectedClient.clientName,
                 productTypes: selectedClient.productTypes || [],
                 logoUrl: selectedClient.logoUrl,
+                city: selectedClient.city,
+                address: selectedClient.address,
+                state: selectedClient.state,
+                zip: selectedClient.zip,
                 latitude: selectedClient.latitude,
                 longitude: selectedClient.longitude,
               }

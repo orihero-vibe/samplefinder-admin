@@ -120,8 +120,11 @@ export interface ClientDocument extends Models.Document {
   name: string
   logoURL?: string
   productType?: string[]
-  latitude: number
-  longitude: number
+  city?: string
+  address?: string
+  state?: string
+  zip?: string
+  location?: [number, number] // Point type: [longitude, latitude]
 }
 
 // Client interface for UI with calculated fields
@@ -163,8 +166,11 @@ export interface ClientFormData {
   logo: File | null
   clientName: string
   productTypes: string[]
-  latitude?: number
-  longitude?: number
+  city?: string
+  address?: string
+  state?: string
+  zip?: string
+  location?: [number, number] // Point format: [longitude, latitude]
 }
 
 // Specific service functions for Clients table
@@ -182,10 +188,11 @@ export const clientsService = {
       name: formData.clientName,
       logoURL,
       productType: formData.productTypes.length > 0 ? formData.productTypes : undefined,
-      // Note: latitude and longitude are required in DB but not in UI form
-      // You'll need to add these fields to the UI or provide defaults
-      latitude: formData.latitude ?? 0, // Default to 0 if not provided
-      longitude: formData.longitude ?? 0, // Default to 0 if not provided
+      city: formData.city || undefined,
+      address: formData.address || undefined,
+      state: formData.state || undefined,
+      zip: formData.zip || undefined,
+      location: formData.location,
     }
 
     return await DatabaseService.create<ClientDocument>(
@@ -242,6 +249,11 @@ export const clientsService = {
       logoURL = existingClient.logoURL
     }
 
+    // Use provided location or keep existing
+    const location = formData.location !== undefined 
+      ? formData.location 
+      : existingClient?.location
+
     // Map UI fields to DB fields
     const dbData: Partial<Omit<ClientDocument, keyof Models.Document>> = {
       ...(formData.clientName !== undefined && { name: formData.clientName }),
@@ -249,8 +261,11 @@ export const clientsService = {
       ...(formData.productTypes !== undefined && {
         productType: formData.productTypes.length > 0 ? formData.productTypes : undefined,
       }),
-      ...(formData.latitude !== undefined && { latitude: formData.latitude }),
-      ...(formData.longitude !== undefined && { longitude: formData.longitude }),
+      ...(formData.city !== undefined && { city: formData.city || undefined }),
+      ...(formData.address !== undefined && { address: formData.address || undefined }),
+      ...(formData.state !== undefined && { state: formData.state || undefined }),
+      ...(formData.zip !== undefined && { zip: formData.zip || undefined }),
+      ...(location !== undefined && { location }),
     }
 
     return await DatabaseService.update<ClientDocument>(
