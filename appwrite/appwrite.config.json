@@ -1,0 +1,810 @@
+{
+    "projectId": "691d4a54003b21bf0136",
+    "endpoint": "https://nyc.cloud.appwrite.io/v1",
+    "projectName": "SampleFinder",
+    "settings": {
+        "services": {
+            "account": true,
+            "avatars": true,
+            "databases": true,
+            "locale": true,
+            "health": true,
+            "storage": true,
+            "teams": true,
+            "users": true,
+            "sites": true,
+            "functions": true,
+            "graphql": true,
+            "messaging": true
+        },
+        "auth": {
+            "methods": {
+                "jwt": true,
+                "phone": true,
+                "invites": true,
+                "anonymous": true,
+                "email-otp": true,
+                "magic-url": true,
+                "email-password": true
+            },
+            "security": {
+                "duration": 31536000,
+                "limit": 0,
+                "sessionsLimit": 10,
+                "passwordHistory": 0,
+                "passwordDictionary": false,
+                "personalDataCheck": false,
+                "sessionAlerts": false,
+                "mockNumbers": []
+            }
+        }
+    },
+    "functions": [
+        {
+            "$id": "69308117000e7a96bcbb",
+            "execute": [
+                "any"
+            ],
+            "name": "Event functions",
+            "enabled": true,
+            "logging": true,
+            "runtime": "node-22",
+            "scopes": [
+                "users.read",
+                "databases.read",
+                "databases.write",
+                "policies.read",
+                "policies.write",
+                "archives.read",
+                "archives.write",
+                "restorations.read",
+                "restorations.write",
+                "tables.read",
+                "collections.read",
+                "tables.write",
+                "collections.write",
+                "columns.read",
+                "attributes.read",
+                "columns.write",
+                "attributes.write",
+                "indexes.read",
+                "indexes.write",
+                "rows.read",
+                "documents.read",
+                "rows.write",
+                "documents.write",
+                "files.read",
+                "files.write",
+                "buckets.read",
+                "buckets.write",
+                "functions.read",
+                "functions.write",
+                "execution.read",
+                "execution.write",
+                "targets.read",
+                "targets.write",
+                "providers.read",
+                "providers.write",
+                "messages.read",
+                "messages.write",
+                "topics.read",
+                "topics.write",
+                "subscribers.read",
+                "subscribers.write",
+                "locale.read",
+                "avatars.read",
+                "health.read",
+                "migrations.read",
+                "migrations.write",
+                "tokens.read",
+                "tokens.write",
+                "sites.read",
+                "sites.write",
+                "log.read",
+                "log.write"
+            ],
+            "events": [],
+            "schedule": "",
+            "timeout": 15,
+            "entrypoint": "src/main.js",
+            "commands": "npm install",
+            "specification": "s-0.5vcpu-512mb",
+            "path": "functions/Event functions"
+        },
+        {
+            "$id": "69341ffa001a4ebd28c2",
+            "name": "Statistics functions",
+            "runtime": "node-22",
+            "specification": "s-0.5vcpu-512mb",
+            "execute": [
+                "any"
+            ],
+            "events": [],
+            "scopes": [
+                "users.read"
+            ],
+            "schedule": "",
+            "timeout": 15,
+            "enabled": true,
+            "logging": true,
+            "entrypoint": "src/main.js",
+            "commands": "npm install",
+            "path": "functions/Statistics functions"
+        }
+    ],
+    "tablesDB": [
+        {
+            "$id": "69217af50038b9005a61",
+            "name": "Sample Finder DB",
+            "enabled": true
+        }
+    ],
+    "tables": [
+        {
+            "$id": "user_profiles",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "User profiles",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "phoneNumber",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 15,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "firstname",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 64,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "lastname",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 64,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "dob",
+                    "type": "datetime",
+                    "required": false,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "username",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 32,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "avatarURL",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "format": "url",
+                    "default": null
+                },
+                {
+                    "key": "isBlocked",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
+                },
+                {
+                    "key": "zipCode",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "referalCode",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "role",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "elements": [
+                        "admin",
+                        "user"
+                    ],
+                    "format": "enum",
+                    "default": null
+                },
+                {
+                    "key": "authID",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 36,
+                    "default": null,
+                    "encrypt": false
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "clients",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Brands/Clients",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "logoURL",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "format": "url",
+                    "default": null
+                },
+                {
+                    "key": "name",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "productType",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "city",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "address",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "state",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "zip",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 20,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "location",
+                    "type": "point",
+                    "required": false,
+                    "array": false,
+                    "default": null
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "categories",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Categories",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "title",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "events",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Events",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "name",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "date",
+                    "type": "datetime",
+                    "required": true,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "startTime",
+                    "type": "datetime",
+                    "required": true,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "endTime",
+                    "type": "datetime",
+                    "required": true,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "city",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "address",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "state",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "zipCode",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "categories",
+                    "type": "relationship",
+                    "required": false,
+                    "array": false,
+                    "relatedTable": "categories",
+                    "relationType": "manyToOne",
+                    "twoWay": false,
+                    "twoWayKey": "692188410011c802c0a5",
+                    "onDelete": "setNull",
+                    "side": "parent"
+                },
+                {
+                    "key": "productType",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "products",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "discount",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": -1000,
+                    "max": 1000,
+                    "default": null
+                },
+                {
+                    "key": "discountImageURL",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "format": "url",
+                    "default": null
+                },
+                {
+                    "key": "checkInCode",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "client",
+                    "type": "relationship",
+                    "required": false,
+                    "array": false,
+                    "relatedTable": "clients",
+                    "relationType": "manyToOne",
+                    "twoWay": false,
+                    "twoWayKey": "69218a020033d4e1ba18",
+                    "onDelete": "setNull",
+                    "side": "parent"
+                },
+                {
+                    "key": "checkInPoints",
+                    "type": "double",
+                    "required": true,
+                    "array": false,
+                    "min": -1000,
+                    "max": 1000000,
+                    "default": null
+                },
+                {
+                    "key": "reviewPoints",
+                    "type": "double",
+                    "required": true,
+                    "array": false,
+                    "min": -1000,
+                    "max": 1000000,
+                    "default": null
+                },
+                {
+                    "key": "eventInfo",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 100000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "isArchived",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
+                },
+                {
+                    "key": "isHidden",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "notifications",
+            "$permissions": [],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Notifications",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [],
+            "indexes": []
+        },
+        {
+            "$id": "trivia",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Trivia",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "client",
+                    "type": "relationship",
+                    "required": false,
+                    "array": false,
+                    "relatedTable": "clients",
+                    "relationType": "manyToOne",
+                    "twoWay": false,
+                    "twoWayKey": "trivia",
+                    "onDelete": "cascade",
+                    "side": "parent"
+                },
+                {
+                    "key": "question",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 10000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "answers",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 10000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "correctOptionIndex",
+                    "type": "integer",
+                    "required": true,
+                    "array": false,
+                    "min": 0,
+                    "max": 100,
+                    "default": null
+                },
+                {
+                    "key": "startDate",
+                    "type": "datetime",
+                    "required": true,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "endDate",
+                    "type": "datetime",
+                    "required": true,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "points",
+                    "type": "integer",
+                    "required": true,
+                    "array": false,
+                    "min": 0,
+                    "max": 1000,
+                    "default": null
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "trivia_responses",
+            "$permissions": [],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Trivia Responses",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "trivia",
+                    "type": "relationship",
+                    "required": false,
+                    "array": false,
+                    "relatedTable": "trivia",
+                    "relationType": "manyToOne",
+                    "twoWay": false,
+                    "twoWayKey": "692195b50031915d28d9",
+                    "onDelete": "cascade",
+                    "side": "parent"
+                },
+                {
+                    "key": "answer",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "answerIndex",
+                    "type": "integer",
+                    "required": true,
+                    "array": false,
+                    "min": 0,
+                    "max": 10000,
+                    "default": null
+                },
+                {
+                    "key": "user",
+                    "type": "relationship",
+                    "required": false,
+                    "array": false,
+                    "relatedTable": "user_profiles",
+                    "relationType": "manyToOne",
+                    "twoWay": false,
+                    "twoWayKey": "69219616002f5002d62e",
+                    "onDelete": "cascade",
+                    "side": "parent"
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "reviews",
+            "$permissions": [],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Reviews",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "rating",
+                    "type": "integer",
+                    "required": true,
+                    "array": false,
+                    "min": 0,
+                    "max": 5,
+                    "default": null
+                },
+                {
+                    "key": "liked",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "elements": [
+                        "staff",
+                        "swag",
+                        "sample",
+                        "presentation",
+                        "experience",
+                        "professionalism",
+                        "other"
+                    ],
+                    "format": "enum",
+                    "default": null
+                },
+                {
+                    "key": "hasPurchased",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
+                },
+                {
+                    "key": "review",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 10000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "user",
+                    "type": "relationship",
+                    "required": false,
+                    "array": false,
+                    "relatedTable": "user_profiles",
+                    "relationType": "manyToOne",
+                    "twoWay": false,
+                    "twoWayKey": "6930619f001c38eb71e0",
+                    "onDelete": "cascade",
+                    "side": "parent"
+                },
+                {
+                    "key": "event",
+                    "type": "relationship",
+                    "required": false,
+                    "array": false,
+                    "relatedTable": "events",
+                    "relationType": "manyToOne",
+                    "twoWay": false,
+                    "twoWayKey": "69306204001ec920224a",
+                    "onDelete": "cascade",
+                    "side": "parent"
+                },
+                {
+                    "key": "pointsEarned",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": -9223372036854775808,
+                    "max": 9223372036854775807,
+                    "default": null
+                }
+            ],
+            "indexes": []
+        }
+    ],
+    "buckets": [
+        {
+            "$id": "6921b4ae002feef4b15e",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "fileSecurity": false,
+            "name": "files",
+            "enabled": true,
+            "maximumFileSize": 50000000,
+            "allowedFileExtensions": [],
+            "compression": "none",
+            "encryption": true,
+            "antivirus": true
+        }
+    ]
+}

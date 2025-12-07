@@ -11,8 +11,10 @@ import {
   SearchAndFilter,
   TriviaTable,
   CreateTriviaModal,
+  StatsCards,
 } from './components'
-import { triviaService } from '../../lib/services'
+import { triviaService, statisticsService, type TriviaStats } from '../../lib/services'
+import { useNotificationStore } from '../../stores/notificationStore'
 
 // Database Trivia Document interface - matches Appwrite schema exactly
 interface TriviaDocument extends Models.Document {
@@ -49,6 +51,7 @@ const Trivia = () => {
   const [triviaToDelete, setTriviaToDelete] = useState<TriviaQuiz | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [triviaQuizzes, setTriviaQuizzes] = useState<TriviaQuiz[]>([])
+  const [statistics, setStatistics] = useState<TriviaStats | null>(null)
 
   // Transform TriviaDocument to TriviaQuiz for UI
   const transformToUITrivia = (doc: TriviaDocument): TriviaQuiz => {
@@ -159,8 +162,24 @@ const Trivia = () => {
     }
   }
 
+  // Fetch statistics
+  const fetchStatistics = async () => {
+    try {
+      const stats = await statisticsService.getStatistics<TriviaStats>('trivia')
+      setStatistics(stats)
+    } catch (err) {
+      console.error('Error fetching statistics:', err)
+      addNotification({
+        type: 'error',
+        title: 'Error Loading Statistics',
+        message: 'Failed to load trivia statistics. Please refresh the page.',
+      })
+    }
+  }
+
   useEffect(() => {
     fetchTrivia()
+    fetchStatistics()
   }, [searchQuery, sortBy])
 
   const handleDeleteClick = (trivia: TriviaQuiz) => {
@@ -227,6 +246,40 @@ const Trivia = () => {
     <DashboardLayout>
       <div className="p-8">
         <TriviaHeader onCreateNew={() => setIsCreateModalOpen(true)} />
+        {statistics && (
+          <StatsCards
+            stats={[
+              {
+                label: 'Total Quizzes',
+                value: statistics.totalQuizzes.toLocaleString('en-US'),
+                icon: 'mdi:format-list-bulleted',
+                iconBg: 'bg-green-100',
+                iconColor: 'text-green-600',
+              },
+              {
+                label: 'Scheduled',
+                value: statistics.scheduled.toLocaleString('en-US'),
+                icon: 'mdi:star-four-points',
+                iconBg: 'bg-red-100',
+                iconColor: 'text-red-600',
+              },
+              {
+                label: 'Active',
+                value: statistics.active.toLocaleString('en-US'),
+                icon: 'mdi:trending-up',
+                iconBg: 'bg-orange-100',
+                iconColor: 'text-orange-600',
+              },
+              {
+                label: 'Completed',
+                value: statistics.completed.toLocaleString('en-US'),
+                icon: 'mdi:trending-up',
+                iconBg: 'bg-blue-100',
+                iconColor: 'text-blue-600',
+              },
+            ]}
+          />
+        )}
         {error && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
             {error}

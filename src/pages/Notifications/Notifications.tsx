@@ -8,6 +8,8 @@ import {
   NotificationsTable,
   CreateNotificationModal,
 } from './components'
+import { statisticsService, type NotificationsStats } from '../../lib/services'
+import { useNotificationStore } from '../../stores/notificationStore'
 
 interface Notification {
   id: string
@@ -21,11 +23,13 @@ interface Notification {
 }
 
 const Notifications = () => {
+  const { addNotification } = useNotificationStore()
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('All Types')
   const [sortBy, setSortBy] = useState('Date')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [statistics, setStatistics] = useState<NotificationsStats | null>(null)
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
     type: ConfirmationType
@@ -37,44 +41,92 @@ const Notifications = () => {
     onConfirm: () => {},
   })
 
+  // Fetch statistics
+  const fetchStatistics = async () => {
+    try {
+      const stats = await statisticsService.getStatistics<NotificationsStats>('notifications')
+      setStatistics(stats)
+    } catch (err) {
+      console.error('Error fetching statistics:', err)
+      addNotification({
+        type: 'error',
+        title: 'Error Loading Statistics',
+        message: 'Failed to load notifications statistics. Please refresh the page.',
+      })
+    }
+  }
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsLoading(false)
     }, 1000)
 
+    fetchStatistics()
+
     return () => clearTimeout(timer)
   }, [])
 
-  const stats = [
-    {
-      label: 'Total Sent',
-      value: '2,000',
-      icon: 'mdi:file-document',
-      iconBg: 'bg-green-100',
-      iconColor: 'text-green-600',
-    },
-    {
-      label: 'Avg. Open Rate',
-      value: '65%',
-      icon: 'mdi:star-four-points',
-      iconBg: 'bg-red-100',
-      iconColor: 'text-red-600',
-    },
-    {
-      label: 'Avg. Click Rate',
-      value: '48%',
-      icon: 'mdi:trending-up',
-      iconBg: 'bg-orange-100',
-      iconColor: 'text-orange-600',
-    },
-    {
-      label: 'Scheduled',
-      value: '167',
-      icon: 'mdi:trending-up',
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-600',
-    },
-  ]
+  const stats = statistics
+    ? [
+        {
+          label: 'Total Sent',
+          value: statistics.totalSent.toLocaleString('en-US'),
+          icon: 'mdi:file-document',
+          iconBg: 'bg-green-100',
+          iconColor: 'text-green-600',
+        },
+        {
+          label: 'Avg. Open Rate',
+          value: `${statistics.avgOpenRate}%`,
+          icon: 'mdi:star-four-points',
+          iconBg: 'bg-red-100',
+          iconColor: 'text-red-600',
+        },
+        {
+          label: 'Avg. Click Rate',
+          value: `${statistics.avgClickRate}%`,
+          icon: 'mdi:trending-up',
+          iconBg: 'bg-orange-100',
+          iconColor: 'text-orange-600',
+        },
+        {
+          label: 'Scheduled',
+          value: statistics.scheduled.toLocaleString('en-US'),
+          icon: 'mdi:trending-up',
+          iconBg: 'bg-blue-100',
+          iconColor: 'text-blue-600',
+        },
+      ]
+    : [
+        {
+          label: 'Total Sent',
+          value: '0',
+          icon: 'mdi:file-document',
+          iconBg: 'bg-green-100',
+          iconColor: 'text-green-600',
+        },
+        {
+          label: 'Avg. Open Rate',
+          value: '0%',
+          icon: 'mdi:star-four-points',
+          iconBg: 'bg-red-100',
+          iconColor: 'text-red-600',
+        },
+        {
+          label: 'Avg. Click Rate',
+          value: '0%',
+          icon: 'mdi:trending-up',
+          iconBg: 'bg-orange-100',
+          iconColor: 'text-orange-600',
+        },
+        {
+          label: 'Scheduled',
+          value: '0',
+          icon: 'mdi:trending-up',
+          iconBg: 'bg-blue-100',
+          iconColor: 'text-blue-600',
+        },
+      ]
 
   const notifications: Notification[] = [
     {
