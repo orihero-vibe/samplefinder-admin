@@ -5,7 +5,8 @@
   "main": "src/main.js",
   "type": "module",
   "scripts": {
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build": "tsc && cp dist/main.js src/main.js"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Models } from 'appwrite'
 import { DashboardLayout, ShimmerPage, ConfirmationModal } from '../../components'
 import type { ConfirmationType } from '../../components'
-import { eventsService, categoriesService, clientsService } from '../../lib/services'
+import { eventsService, categoriesService, clientsService, statisticsService, type DashboardStats } from '../../lib/services'
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import {
@@ -70,6 +70,18 @@ const Dashboard = () => {
   })
   
   const { addNotification } = useNotificationStore()
+  const [statistics, setStatistics] = useState<DashboardStats | null>(null)
+
+  // Helper functions for formatting
+  const formatNumber = (num: number): string => {
+    return num.toLocaleString('en-US')
+  }
+
+  const formatPercentage = (change?: number): string => {
+    if (change === undefined || change === null) return '+0%'
+    const sign = change >= 0 ? '+' : ''
+    return `${sign}${change}%`
+  }
 
   // Helper function to map database event document to EventsTable format
   const mapEventDocumentToEvent = (doc: EventDocument): Event => {
@@ -527,62 +539,135 @@ const Dashboard = () => {
     }
   }
 
-  const metrics = [
-    {
-      label: 'Total Clients/Brands',
-      value: '173',
-      change: '+12%',
-      changeLabel: 'from last month',
-      icon: 'mdi:file-document',
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-600',
-    },
-    {
-      label: 'Total Points Awarded',
-      value: '134,215',
-      change: '+8%',
-      changeLabel: 'from last month',
-      icon: 'mdi:ribbon',
-      iconBg: 'bg-green-100',
-      iconColor: 'text-green-600',
-    },
-    {
-      label: 'Total Users',
-      value: '5,000',
-      change: '+15%',
-      changeLabel: 'from last month',
-      icon: 'mdi:account-group',
-      iconBg: 'bg-purple-100',
-      iconColor: 'text-[#1D0A74]',
-    },
-    {
-      label: 'Average PPU',
-      value: '925',
-      change: '+5%',
-      changeLabel: 'from last month',
-      icon: 'mdi:trending-up',
-      iconBg: 'bg-orange-100',
-      iconColor: 'text-orange-600',
-    },
-    {
-      label: 'Total Check-ins',
-      value: '13,000',
-      change: '+10%',
-      changeLabel: 'from last month',
-      icon: 'mdi:check-circle',
-      iconBg: 'bg-teal-100',
-      iconColor: 'text-teal-600',
-    },
-    {
-      label: 'Reviews',
-      value: '11,520',
-      change: '+7%',
-      changeLabel: 'from last month',
-      icon: 'mdi:star',
-      iconBg: 'bg-yellow-100',
-      iconColor: 'text-yellow-600',
-    },
-  ]
+  // Fetch statistics
+  const fetchStatistics = async () => {
+    try {
+      const stats = await statisticsService.getStatistics<DashboardStats>('dashboard')
+      setStatistics(stats)
+    } catch (err) {
+      console.error('Error fetching statistics:', err)
+      addNotification({
+        type: 'error',
+        title: 'Error Loading Statistics',
+        message: 'Failed to load dashboard statistics. Please refresh the page.',
+      })
+    }
+  }
+
+  // Map statistics to metrics format
+  const metrics = statistics
+    ? [
+        {
+          label: 'Total Clients/Brands',
+          value: formatNumber(statistics.totalClientsBrands),
+          change: formatPercentage(statistics.totalClientsBrandsChange),
+          changeLabel: 'from last month',
+          icon: 'mdi:file-document',
+          iconBg: 'bg-blue-100',
+          iconColor: 'text-blue-600',
+        },
+        {
+          label: 'Total Points Awarded',
+          value: formatNumber(statistics.totalPointsAwarded),
+          change: formatPercentage(statistics.totalPointsAwardedChange),
+          changeLabel: 'from last month',
+          icon: 'mdi:ribbon',
+          iconBg: 'bg-green-100',
+          iconColor: 'text-green-600',
+        },
+        {
+          label: 'Total Users',
+          value: formatNumber(statistics.totalUsers),
+          change: formatPercentage(statistics.totalUsersChange),
+          changeLabel: 'from last month',
+          icon: 'mdi:account-group',
+          iconBg: 'bg-purple-100',
+          iconColor: 'text-[#1D0A74]',
+        },
+        {
+          label: 'Average PPU',
+          value: formatNumber(statistics.averagePPU),
+          change: formatPercentage(statistics.averagePPUChange),
+          changeLabel: 'from last month',
+          icon: 'mdi:trending-up',
+          iconBg: 'bg-orange-100',
+          iconColor: 'text-orange-600',
+        },
+        {
+          label: 'Total Check-ins',
+          value: formatNumber(statistics.totalCheckins),
+          change: formatPercentage(statistics.totalCheckinsChange),
+          changeLabel: 'from last month',
+          icon: 'mdi:check-circle',
+          iconBg: 'bg-teal-100',
+          iconColor: 'text-teal-600',
+        },
+        {
+          label: 'Reviews',
+          value: formatNumber(statistics.reviews),
+          change: formatPercentage(statistics.reviewsChange),
+          changeLabel: 'from last month',
+          icon: 'mdi:star',
+          iconBg: 'bg-yellow-100',
+          iconColor: 'text-yellow-600',
+        },
+      ]
+    : [
+        {
+          label: 'Total Clients/Brands',
+          value: '0',
+          change: '+0%',
+          changeLabel: 'from last month',
+          icon: 'mdi:file-document',
+          iconBg: 'bg-blue-100',
+          iconColor: 'text-blue-600',
+        },
+        {
+          label: 'Total Points Awarded',
+          value: '0',
+          change: '+0%',
+          changeLabel: 'from last month',
+          icon: 'mdi:ribbon',
+          iconBg: 'bg-green-100',
+          iconColor: 'text-green-600',
+        },
+        {
+          label: 'Total Users',
+          value: '0',
+          change: '+0%',
+          changeLabel: 'from last month',
+          icon: 'mdi:account-group',
+          iconBg: 'bg-purple-100',
+          iconColor: 'text-[#1D0A74]',
+        },
+        {
+          label: 'Average PPU',
+          value: '0',
+          change: '+0%',
+          changeLabel: 'from last month',
+          icon: 'mdi:trending-up',
+          iconBg: 'bg-orange-100',
+          iconColor: 'text-orange-600',
+        },
+        {
+          label: 'Total Check-ins',
+          value: '0',
+          change: '+0%',
+          changeLabel: 'from last month',
+          icon: 'mdi:check-circle',
+          iconBg: 'bg-teal-100',
+          iconColor: 'text-teal-600',
+        },
+        {
+          label: 'Reviews',
+          value: '0',
+          change: '+0%',
+          changeLabel: 'from last month',
+          icon: 'mdi:star',
+          iconBg: 'bg-yellow-100',
+          iconColor: 'text-yellow-600',
+        },
+      ]
 
   // Fetch categories
   const fetchCategories = async () => {
@@ -611,6 +696,7 @@ const Dashboard = () => {
     fetchEvents()
     fetchCategories()
     fetchBrands()
+    fetchStatistics()
   }, [])
 
   if (isLoading) {

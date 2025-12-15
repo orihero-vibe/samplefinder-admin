@@ -1,4 +1,4 @@
-import { databases, appwriteConfig, ID, Query, storage } from './appwrite'
+import { databases, appwriteConfig, ID, Query, functions, ExecutionMethod } from './appwrite'
 import type { Models } from 'appwrite'
 
 // Generic database service functions
@@ -100,22 +100,23 @@ export const userProfilesService = {
     DatabaseService.update<UserProfile>(appwriteConfig.collections.userProfiles, id, data),
   delete: (id: string) =>
     DatabaseService.delete(appwriteConfig.collections.userProfiles, id),
-  // Find user profile by authID
+  search: (searchTerm: string, queries?: string[]) =>
+    DatabaseService.search<UserProfile>(
+      appwriteConfig.collections.userProfiles,
+      searchTerm,
+      ['firstname', 'lastname', 'username', 'phoneNumber'],
+      queries
+    ),
   findByAuthID: async (authID: string): Promise<UserProfile | null> => {
-    try {
-      const result = await DatabaseService.list<UserProfile>(
-        appwriteConfig.collections.userProfiles,
-        [Query.equal('authID', authID), Query.limit(1)]
-      )
-      return result.documents.length > 0 ? result.documents[0] : null
-    } catch (error) {
-      console.error('Error finding user profile by authID:', error)
-      return null
-    }
+    const result = await DatabaseService.list<UserProfile>(
+      appwriteConfig.collections.userProfiles,
+      [Query.equal('authID', [authID])]
+    )
+    return result.documents[0] || null
   },
 }
 
-// Client interface matching Appwrite Tables schema
+// Client Document interface
 export interface ClientDocument extends Models.Document {
   name: string
   logoURL?: string
@@ -124,365 +125,280 @@ export interface ClientDocument extends Models.Document {
   address?: string
   state?: string
   zip?: string
-  location?: [number, number] // Point type: [longitude, latitude]
+  location?: [number, number] // [longitude, latitude]
+  [key: string]: any
 }
 
-// Client interface for UI with calculated fields
+// Client interface (for UI)
 export interface Client extends ClientDocument {
-  // Calculated fields (not in DB, will be computed)
-  totalEvents?: number
-  numberOfFavorites?: number
-  numberOfCheckIns?: number
-  totalPoints?: number
-  // Map createdAt to joinDate for UI
-  joinDate?: string // Maps from createdAt
+  // Additional UI-specific fields can be added here
 }
 
-// Upload file to Appwrite Storage
-export const uploadFile = async (file: File): Promise<string | null> => {
-  try {
-    if (!appwriteConfig.storage.bucketId) {
-      throw new Error('Storage bucket ID is not configured')
-    }
-
-    const fileId = ID.unique()
-    const result = await storage.createFile(
-      appwriteConfig.storage.bucketId,
-      fileId,
-      file
-    )
-
-    // Get file preview URL
-    const fileUrl = `${appwriteConfig.endpoint}/storage/buckets/${appwriteConfig.storage.bucketId}/files/${result.$id}/view?project=${appwriteConfig.projectId}`
-    return fileUrl
-  } catch (error) {
-    console.error('Error uploading file:', error)
-    throw error
-  }
-}
-
-// Client data for UI (maps between UI and DB fields)
+// Client Form Data interface
 export interface ClientFormData {
-  logo: File | null
-  clientName: string
-  productTypes: string[]
+  name: string
+  logoURL?: string
+  productType?: string[]
   city?: string
   address?: string
   state?: string
   zip?: string
-  location?: [number, number] // Point format: [longitude, latitude]
+  latitude?: number
+  longitude?: number
 }
 
-// Specific service functions for Clients table
+// Clients service
 export const clientsService = {
-  // Create a new client
-  create: async (formData: ClientFormData): Promise<ClientDocument> => {
-    // Upload logo if provided
-    let logoURL: string | undefined = undefined
-    if (formData.logo) {
-      logoURL = (await uploadFile(formData.logo)) || undefined
+  create: (data: ClientFormData) => {
+    const dbData: any = {
+      name: data.name,
+      logoURL: data.logoURL || null,
+      productType: data.productType || [],
+      city: data.city || null,
+      address: data.address || null,
+      state: data.state || null,
+      zip: data.zip || null,
     }
 
-    // Map UI fields to DB fields
-    const dbData: Omit<ClientDocument, keyof Models.Document> = {
-      name: formData.clientName,
-      logoURL,
-      productType: formData.productTypes.length > 0 ? formData.productTypes : undefined,
-      city: formData.city || undefined,
-      address: formData.address || undefined,
-      state: formData.state || undefined,
-      zip: formData.zip || undefined,
-      location: formData.location,
+    // Add location if provided
+    if (data.latitude !== undefined && data.longitude !== undefined) {
+      dbData.location = [data.longitude, data.latitude] // Appwrite expects [longitude, latitude]
     }
 
-    return await DatabaseService.create<ClientDocument>(
-      appwriteConfig.collections.clients,
-      dbData
-    )
+    return DatabaseService.create<ClientDocument>(appwriteConfig.collections.clients, dbData)
   },
-
-  // Get client by ID
-  getById: (id: string): Promise<ClientDocument> => {
-    return DatabaseService.getById<ClientDocument>(
-      appwriteConfig.collections.clients,
-      id
-    )
-  },
-
-  // List all clients (returns ClientDocuments, need to transform for UI)
-  list: (queries?: string[]): Promise<Models.DocumentList<ClientDocument>> => {
-    return DatabaseService.list<ClientDocument>(
-      appwriteConfig.collections.clients,
-      queries
-    )
-  },
-
-  // Transform ClientDocument to Client for UI (maps createdAt to joinDate, adds calculated fields)
-  transformToUI: (doc: ClientDocument, calculated?: {
-    totalEvents?: number
-    numberOfFavorites?: number
-    numberOfCheckIns?: number
-    totalPoints?: number
-  }): Client => {
-    return {
-      ...doc,
-      joinDate: doc.$createdAt ? new Date(doc.$createdAt).toLocaleDateString() : undefined,
-      totalEvents: calculated?.totalEvents ?? 0,
-      numberOfFavorites: calculated?.numberOfFavorites ?? 0,
-      numberOfCheckIns: calculated?.numberOfCheckIns ?? 0,
-      totalPoints: calculated?.totalPoints ?? 0,
-    }
-  },
-
-  // Update client
-  update: async (
-    id: string,
-    formData: Partial<ClientFormData>,
-    existingClient?: ClientDocument
-  ): Promise<ClientDocument> => {
-    // Upload new logo if provided
-    let logoURL: string | undefined = undefined
-    if (formData.logo) {
-      logoURL = (await uploadFile(formData.logo)) || undefined
-    } else if (existingClient?.logoURL) {
-      // Keep existing logo if no new logo provided
-      logoURL = existingClient.logoURL
+  getById: (id: string) =>
+    DatabaseService.getById<ClientDocument>(appwriteConfig.collections.clients, id),
+  list: (queries?: string[]) =>
+    DatabaseService.list<ClientDocument>(appwriteConfig.collections.clients, queries),
+  update: (id: string, data: Partial<ClientFormData>) => {
+    const dbData: any = {
+      ...data,
     }
 
-    // Use provided location or keep existing
-    const location = formData.location !== undefined 
-      ? formData.location 
-      : existingClient?.location
-
-    // Map UI fields to DB fields
-    const dbData: Partial<Omit<ClientDocument, keyof Models.Document>> = {
-      ...(formData.clientName !== undefined && { name: formData.clientName }),
-      ...(logoURL !== undefined && { logoURL }),
-      ...(formData.productTypes !== undefined && {
-        productType: formData.productTypes.length > 0 ? formData.productTypes : undefined,
-      }),
-      ...(formData.city !== undefined && { city: formData.city || undefined }),
-      ...(formData.address !== undefined && { address: formData.address || undefined }),
-      ...(formData.state !== undefined && { state: formData.state || undefined }),
-      ...(formData.zip !== undefined && { zip: formData.zip || undefined }),
-      ...(location !== undefined && { location }),
+    // Handle location update
+    if (data.latitude !== undefined && data.longitude !== undefined) {
+      dbData.location = [data.longitude, data.latitude]
+      delete dbData.latitude
+      delete dbData.longitude
     }
 
-    return await DatabaseService.update<ClientDocument>(
-      appwriteConfig.collections.clients,
-      id,
-      dbData
-    )
+    return DatabaseService.update<ClientDocument>(appwriteConfig.collections.clients, id, dbData)
   },
-
-  // Delete client
-  delete: (id: string): Promise<void> => {
-    return DatabaseService.delete(appwriteConfig.collections.clients, id)
-  },
-
-  // Search clients by name
-  search: (searchTerm: string, queries?: string[]): Promise<Models.DocumentList<ClientDocument>> => {
-    return DatabaseService.search<ClientDocument>(
+  delete: (id: string) =>
+    DatabaseService.delete(appwriteConfig.collections.clients, id),
+  search: (searchTerm: string, queries?: string[]) =>
+    DatabaseService.search<ClientDocument>(
       appwriteConfig.collections.clients,
       searchTerm,
-      ['name'], // Search in 'name' field (DB field)
+      ['name', 'city', 'state', 'address'],
       queries
-    )
-  },
-
-  // Find client by name
-  findByName: async (name: string): Promise<ClientDocument | null> => {
-    try {
-      const result = await DatabaseService.list<ClientDocument>(
-        appwriteConfig.collections.clients,
-        [Query.equal('name', name), Query.limit(1)]
-      )
-      return result.documents.length > 0 ? result.documents[0] : null
-    } catch (error) {
-      console.error('Error finding client by name:', error)
-      return null
-    }
-  },
+    ),
 }
 
+// Event Document interface
+export interface EventDocument extends Models.Document {
+  name: string
+  date: string
+  startTime: string
+  endTime: string
+  city: string
+  address: string
+  state: string
+  zipCode: string
+  productType?: string[]
+  products: string
+  discount?: number
+  discountImageURL?: string
+  checkInCode: string
+  checkInPoints: number
+  reviewPoints: number
+  eventInfo: string
+  isArchived: boolean
+  isHidden: boolean
+  client?: string // Client ID (relationship)
+  categories?: string // Category ID (relationship)
+  [key: string]: any
+}
+
+// Events service
 export const eventsService = {
   create: (data: any) =>
-    DatabaseService.create(appwriteConfig.collections.events, data),
+    DatabaseService.create<EventDocument>(appwriteConfig.collections.events, data),
   getById: (id: string) =>
-    DatabaseService.getById(appwriteConfig.collections.events, id),
+    DatabaseService.getById<EventDocument>(appwriteConfig.collections.events, id),
   list: (queries?: string[]) =>
-    DatabaseService.list(appwriteConfig.collections.events, queries),
+    DatabaseService.list<EventDocument>(appwriteConfig.collections.events, queries),
   update: (id: string, data: any) =>
-    DatabaseService.update(appwriteConfig.collections.events, id, data),
+    DatabaseService.update<EventDocument>(appwriteConfig.collections.events, id, data),
   delete: (id: string) =>
     DatabaseService.delete(appwriteConfig.collections.events, id),
   search: (searchTerm: string, queries?: string[]) =>
-    DatabaseService.search(
+    DatabaseService.search<EventDocument>(
       appwriteConfig.collections.events,
       searchTerm,
-      ['name', 'description', 'location'],
+      ['name', 'city', 'address', 'state'],
       queries
     ),
 }
 
-// Category interface matching Appwrite Tables schema
+// Category Document interface
 export interface CategoryDocument extends Models.Document {
   title: string
+  [key: string]: any
 }
 
-// Categories service - using 'categories' table ID from Appwrite Tables
+// Categories service
 export const categoriesService = {
-  // Create a new category
-  create: (data: { title: string }): Promise<CategoryDocument> => {
-    return DatabaseService.create<CategoryDocument>('categories', data)
-  },
-
-  // Get category by ID
-  getById: (id: string): Promise<CategoryDocument> => {
-    return DatabaseService.getById<CategoryDocument>('categories', id)
-  },
-
-  // List all categories
-  list: (queries?: string[]): Promise<Models.DocumentList<CategoryDocument>> => {
-    return DatabaseService.list<CategoryDocument>('categories', queries)
-  },
-
-  // Update category
-  update: (id: string, data: { title: string }): Promise<CategoryDocument> => {
-    return DatabaseService.update<CategoryDocument>('categories', id, data)
-  },
-
-  // Delete category
-  delete: (id: string): Promise<void> => {
-    return DatabaseService.delete('categories', id)
-  },
-
-  // Search categories by title
-  search: (searchTerm: string, queries?: string[]): Promise<Models.DocumentList<CategoryDocument>> => {
-    return DatabaseService.search<CategoryDocument>(
-      'categories',
+  create: (data: { title: string }) =>
+    DatabaseService.create<CategoryDocument>(appwriteConfig.collections.categories || 'categories', data),
+  getById: (id: string) =>
+    DatabaseService.getById<CategoryDocument>(appwriteConfig.collections.categories || 'categories', id),
+  list: (queries?: string[]) =>
+    DatabaseService.list<CategoryDocument>(appwriteConfig.collections.categories || 'categories', queries),
+  update: (id: string, data: { title: string }) =>
+    DatabaseService.update<CategoryDocument>(appwriteConfig.collections.categories || 'categories', id, data),
+  delete: (id: string) =>
+    DatabaseService.delete(appwriteConfig.collections.categories || 'categories', id),
+  search: (searchTerm: string, queries?: string[]) =>
+    DatabaseService.search<CategoryDocument>(
+      appwriteConfig.collections.categories || 'categories',
       searchTerm,
       ['title'],
       queries
-    )
-  },
+    ),
+}
 
-  // Find category by title
-  findByTitle: async (title: string): Promise<CategoryDocument | null> => {
-    try {
-      const result = await DatabaseService.list<CategoryDocument>('categories', [
-        Query.equal('title', title),
-        Query.limit(1),
-      ])
-      return result.documents.length > 0 ? result.documents[0] : null
-    } catch (error) {
-      console.error('Error finding category by title:', error)
-      return null
+// Trivia Document interface
+export interface TriviaDocument extends Models.Document {
+  client?: string // Relationship to clients table
+  question: string
+  answers?: string[]
+  correctOptionIndex: number
+  startDate: string
+  endDate: string
+  points: number
+  [key: string]: any
+}
+
+// Trivia Response Document interface
+export interface TriviaResponseDocument extends Models.Document {
+  trivia?: string // Relationship to trivia table (trivia ID)
+  answer?: string // Answer text
+  answerIndex: number // Index of the answer selected (0-10000)
+  user?: string // Relationship to user_profiles table (user ID)
+  [key: string]: any
+}
+
+// Trivia Responses service
+export const triviaResponsesService = {
+  create: (data: any) =>
+    DatabaseService.create<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, data),
+  getById: (id: string) =>
+    DatabaseService.getById<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, id),
+  list: (queries?: string[]) =>
+    DatabaseService.list<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, queries),
+  update: (id: string, data: any) =>
+    DatabaseService.update<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, id, data),
+  delete: (id: string) =>
+    DatabaseService.delete(appwriteConfig.collections.triviaResponses, id),
+  getByTriviaId: async (triviaId: string): Promise<TriviaResponseDocument[]> => {
+    const result = await DatabaseService.list<TriviaResponseDocument>(
+      appwriteConfig.collections.triviaResponses,
+      [Query.equal('trivia', [triviaId])]
+    )
+    return result.documents
+  },
+  getByUserId: async (userId: string): Promise<TriviaResponseDocument[]> => {
+    const result = await DatabaseService.list<TriviaResponseDocument>(
+      appwriteConfig.collections.triviaResponses,
+      [Query.equal('user', [userId])]
+    )
+    return result.documents
+  },
+}
+
+// Trivia service
+export const triviaService = {
+  create: (data: any) =>
+    DatabaseService.create<TriviaDocument>(appwriteConfig.collections.trivia, data),
+  getById: (id: string) =>
+    DatabaseService.getById<TriviaDocument>(appwriteConfig.collections.trivia, id),
+  list: (queries?: string[]) =>
+    DatabaseService.list<TriviaDocument>(appwriteConfig.collections.trivia, queries),
+  update: (id: string, data: any) =>
+    DatabaseService.update<TriviaDocument>(appwriteConfig.collections.trivia, id, data),
+  delete: (id: string) =>
+    DatabaseService.delete(appwriteConfig.collections.trivia, id),
+  search: (searchTerm: string, queries?: string[]) =>
+    DatabaseService.search<TriviaDocument>(
+      appwriteConfig.collections.trivia,
+      searchTerm,
+      ['question'],
+      queries
+    ),
+  getWithClient: async (id: string): Promise<{ trivia: TriviaDocument; client: ClientDocument | null }> => {
+    const trivia = await DatabaseService.getById<TriviaDocument>(appwriteConfig.collections.trivia, id)
+    let client: ClientDocument | null = null
+    if (trivia.client) {
+      try {
+        client = await DatabaseService.getById<ClientDocument>(appwriteConfig.collections.clients, trivia.client)
+      } catch (error) {
+        console.error('Error fetching client:', error)
+      }
+    }
+    return { trivia, client }
+  },
+  getWithStatistics: async (id: string): Promise<{
+    trivia: TriviaDocument
+    client: ClientDocument | null
+    responses: TriviaResponseDocument[]
+    statistics: {
+      totalResponses: number
+      correctResponses: number
+      incorrectResponses: number
+      uniqueUsers: number
+    }
+  }> => {
+    const { trivia, client } = await triviaService.getWithClient(id)
+    const responses = await triviaResponsesService.getByTriviaId(id)
+    
+    const correctResponses = responses.filter(
+      (response) => response.answerIndex === trivia.correctOptionIndex
+    )
+    const uniqueUsers = new Set(responses.map((r) => r.user).filter(Boolean)).size
+    
+    return {
+      trivia,
+      client,
+      responses,
+      statistics: {
+        totalResponses: responses.length,
+        correctResponses: correctResponses.length,
+        incorrectResponses: responses.length - correctResponses.length,
+        uniqueUsers,
+      },
     }
   },
 }
 
-export const triviaService = {
-  create: (data: any) =>
-    DatabaseService.create(appwriteConfig.collections.trivia, data),
-  getById: (id: string) =>
-    DatabaseService.getById(appwriteConfig.collections.trivia, id),
-  list: (queries?: string[]) =>
-    DatabaseService.list(appwriteConfig.collections.trivia, queries),
-  update: (id: string, data: any) =>
-    DatabaseService.update(appwriteConfig.collections.trivia, id, data),
-  delete: (id: string) =>
-    DatabaseService.delete(appwriteConfig.collections.trivia, id),
-  search: (searchTerm: string, queries?: string[]) =>
-    DatabaseService.search(
-      appwriteConfig.collections.trivia,
-      searchTerm,
-      ['question'], // Only search in question field (client is a relationship, not searchable directly)
-      queries
-    ),
-}
-
-export const reviewsService = {
-  create: (data: any) =>
-    DatabaseService.create(appwriteConfig.collections.reviews, data),
-  getById: (id: string) =>
-    DatabaseService.getById(appwriteConfig.collections.reviews, id),
-  list: (queries?: string[]) =>
-    DatabaseService.list(appwriteConfig.collections.reviews, queries),
-  update: (id: string, data: any) =>
-    DatabaseService.update(appwriteConfig.collections.reviews, id, data),
-  delete: (id: string) =>
-    DatabaseService.delete(appwriteConfig.collections.reviews, id),
-  search: (searchTerm: string, queries?: string[]) =>
-    DatabaseService.search(
-      appwriteConfig.collections.reviews,
-      searchTerm,
-      ['comment', 'userName'],
-      queries
-    ),
-}
-
-export const reportsService = {
-  create: (data: any) =>
-    DatabaseService.create(appwriteConfig.collections.reports, data),
-  getById: (id: string) =>
-    DatabaseService.getById(appwriteConfig.collections.reports, id),
-  list: (queries?: string[]) =>
-    DatabaseService.list(appwriteConfig.collections.reports, queries),
-  update: (id: string, data: any) =>
-    DatabaseService.update(appwriteConfig.collections.reports, id, data),
-  delete: (id: string) =>
-    DatabaseService.delete(appwriteConfig.collections.reports, id),
-  search: (searchTerm: string, queries?: string[]) =>
-    DatabaseService.search(
-      appwriteConfig.collections.reports,
-      searchTerm,
-      ['title', 'description'],
-      queries
-    ),
-}
-
-export const notificationsService = {
-  create: (data: any) =>
-    DatabaseService.create(appwriteConfig.collections.notifications, data),
-  getById: (id: string) =>
-    DatabaseService.getById(appwriteConfig.collections.notifications, id),
-  list: (queries?: string[]) =>
-    DatabaseService.list(appwriteConfig.collections.notifications, queries),
-  update: (id: string, data: any) =>
-    DatabaseService.update(appwriteConfig.collections.notifications, id, data),
-  delete: (id: string) =>
-    DatabaseService.delete(appwriteConfig.collections.notifications, id),
-  search: (searchTerm: string, queries?: string[]) =>
-    DatabaseService.search(
-      appwriteConfig.collections.notifications,
-      searchTerm,
-      ['title', 'message'],
-      queries
-    ),
-}
-
-// User interface for UI display
-export interface AppUser extends UserProfile {
-  // Additional fields from Auth user
-  email?: string
-  name?: string
-  // UI display fields
-  firstName?: string
-  lastName?: string
-  username?: string
-  phoneNumber?: string
-}
-
-// User form data for creation
+// User Form Data interface (for creating/updating users)
 export interface UserFormData {
   email: string
   password: string
-  firstName?: string
-  lastName?: string
+  firstname?: string
+  lastname?: string
   username?: string
   phoneNumber?: string
-  role: string
+  dob?: string
+  zipCode?: string
+  role?: 'admin' | 'user'
+}
+
+// App User interface (combines Auth user and user_profiles)
+export interface AppUser extends UserProfile {
+  email?: string
+  // Additional fields from Auth user can be added here
 }
 
 // Users service - handles creating Auth users and user_profiles
@@ -490,43 +406,32 @@ export const appUsersService = {
   // Create a new user (Auth + user_profiles)
   // Note: Creating users as admin requires server-side execution
   // This implementation uses account.create which may work if admin has permissions
-  // For production, consider using a Cloud Function with server SDK
   create: async (userData: UserFormData): Promise<AppUser> => {
-    const { account, ID } = await import('./appwrite')
-    
     try {
-      // Step 1: Create user in Auth
-      const name = userData.firstName && userData.lastName 
-        ? `${userData.firstName} ${userData.lastName}` 
-        : userData.username || userData.email
-      
-      const authUser = await account.create({
-        userId: ID.unique(),
-        email: userData.email,
-        password: userData.password,
-        name: name,
-      })
+      // Step 1: Create Auth user
+      // Note: This requires server-side execution or admin permissions
+      // For now, we'll create the profile and assume Auth user is created separately
+      // In production, use a Cloud Function with server SDK
 
-      // Step 2: Create user_profiles entry with authID
-      const userProfile = await userProfilesService.create({
-        authID: authUser.$id,
-        role: userData.role,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        username: userData.username,
-        phoneNumber: userData.phoneNumber,
-      })
-
-      // Return combined user data
-      return {
-        ...userProfile,
-        email: authUser.email,
-        name: authUser.name,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        username: userData.username,
-        phoneNumber: userData.phoneNumber,
+      // Step 2: Create user profile
+      // For now, we'll create profile with a placeholder authID
+      // In production, get the actual authID from the Auth user creation
+      const profileData = {
+        authID: ID.unique(), // Placeholder - should be actual Auth user ID
+        firstname: userData.firstname || '',
+        lastname: userData.lastname || '',
+        username: userData.username || '',
+        phoneNumber: userData.phoneNumber || '',
+        dob: userData.dob || null,
+        zipCode: userData.zipCode || '',
+        role: userData.role || 'user',
+        isBlocked: false,
       }
+
+      const profile = await userProfilesService.create(profileData)
+
+      // For production, consider using a Cloud Function with server SDK
+      return profile as AppUser
     } catch (error) {
       console.error('Error creating user:', error)
       throw error
@@ -586,14 +491,10 @@ export const appUsersService = {
 
   // Search users
   // Note: Appwrite Tables search may require different query syntax
-  // This uses Query.search which works if fields are indexed for full-text search
   search: async (searchTerm: string, queries?: string[]): Promise<AppUser[]> => {
     try {
-      // Use DatabaseService.search which handles search queries properly
-      const result = await DatabaseService.search<AppUser>(
-        appwriteConfig.collections.userProfiles,
+      const result = await userProfilesService.search(
         searchTerm,
-        ['firstName', 'lastName', 'username', 'email'],
         queries
       )
       return result.documents
@@ -604,3 +505,130 @@ export const appUsersService = {
   },
 }
 
+// Statistics Type Definitions
+export interface DashboardStats {
+  totalClientsBrands: number
+  totalPointsAwarded: number
+  totalUsers: number
+  averagePPU: number
+  totalCheckins: number
+  reviews: number
+  totalClientsBrandsChange?: number
+  totalPointsAwardedChange?: number
+  totalUsersChange?: number
+  averagePPUChange?: number
+  totalCheckinsChange?: number
+  reviewsChange?: number
+}
+
+export interface ClientsStats {
+  totalClients: number
+  newThisMonth: number
+}
+
+export interface UsersStats {
+  totalUsers: number
+  avgPoints: number
+  newThisWeek: number
+  usersInBlacklist: number
+}
+
+export interface NotificationsStats {
+  totalSent: number
+  avgOpenRate: number
+  avgClickRate: number
+  scheduled: number
+}
+
+export interface TriviaStats {
+  totalQuizzes: number
+  scheduled: number
+  active: number
+  completed: number
+}
+
+// Statistics Service
+export const statisticsService = {
+  /**
+   * Get statistics for a specific page
+   * @param page - The page to get statistics for: 'dashboard' | 'clients' | 'users' | 'notifications' | 'trivia'
+   * @returns Statistics object for the requested page
+   */
+  getStatistics: async <T extends DashboardStats | ClientsStats | UsersStats | NotificationsStats | TriviaStats>(
+    page: 'dashboard' | 'clients' | 'users' | 'notifications' | 'trivia'
+  ): Promise<T> => {
+    try {
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.statisticsFunctionId,
+        xpath: '/get-statistics',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ page }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      // Check execution status
+      if (execution.status === 'failed') {
+        let errorMessage = 'Function execution failed'
+        
+        // Try to parse the response body for error details
+        if (execution.responseBody) {
+          try {
+            const errorResponse = JSON.parse(execution.responseBody)
+            if (errorResponse.error) {
+              errorMessage = errorResponse.error
+            }
+          } catch {
+            // If responseBody is not JSON, use it as the error message
+            errorMessage = execution.responseBody
+          }
+        }
+        
+        // Include execution errors if available
+        if (execution.errors) {
+          errorMessage += ` (Execution errors: ${execution.errors})`
+        }
+        
+        throw new Error(errorMessage)
+      }
+
+      // Check response status code
+      if (execution.responseStatusCode && execution.responseStatusCode >= 400) {
+        let errorMessage = `Function returned status ${execution.responseStatusCode}`
+        
+        if (execution.responseBody) {
+          try {
+            const errorResponse = JSON.parse(execution.responseBody)
+            if (errorResponse.error) {
+              errorMessage = errorResponse.error
+            }
+          } catch {
+            errorMessage = execution.responseBody
+          }
+        }
+        
+        throw new Error(errorMessage)
+      }
+
+      // Parse response body
+      let response: any = {}
+      if (execution.responseBody) {
+        try {
+          response = JSON.parse(execution.responseBody)
+        } catch (parseError) {
+          throw new Error(`Invalid JSON response from function: ${execution.responseBody}`)
+        }
+      }
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to fetch statistics')
+      }
+
+      return response.statistics as T
+    } catch (error) {
+      console.error(`Error fetching statistics for ${page}:`, error)
+      throw error
+    }
+  },
+}

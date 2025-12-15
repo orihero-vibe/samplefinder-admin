@@ -12,7 +12,7 @@ import {
   AddClientModal,
   EditClientModal,
 } from './components'
-import { clientsService, type ClientDocument } from '../../lib/services'
+import { clientsService, type ClientDocument, statisticsService, type ClientsStats } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 
 // UI Client interface (for display and table)
@@ -117,39 +117,62 @@ const ClientsBrands = () => {
   }
 
   const [clients, setClients] = useState<UIClient[]>([])
+  const [statistics, setStatistics] = useState<ClientsStats | null>(null)
+
+  // Fetch statistics
+  const fetchStatistics = async () => {
+    try {
+      const stats = await statisticsService.getStatistics<ClientsStats>('clients')
+      setStatistics(stats)
+    } catch (err) {
+      console.error('Error fetching statistics:', err)
+      addNotification({
+        type: 'error',
+        title: 'Error Loading Statistics',
+        message: 'Failed to load clients statistics. Please refresh the page.',
+      })
+    }
+  }
 
   useEffect(() => {
     fetchClients()
+    fetchStatistics()
   }, [])
 
-  // Calculate summary statistics
-  const totalClients = clients.length
-  const newThisMonth = clients.filter((client) => {
-    if (!client.joinDate) return false
-    const joinDate = new Date(client.joinDate)
-    const now = new Date()
-    return (
-      joinDate.getMonth() === now.getMonth() &&
-      joinDate.getFullYear() === now.getFullYear()
-    )
-  }).length
-
-  const summaryCards = [
-    {
-      label: 'Total Clients',
-      value: totalClients.toString(),
-      icon: 'mdi:format-list-bulleted',
-      iconBg: 'bg-green-100',
-      iconColor: 'text-green-600',
-    },
-    {
-      label: 'New This Month',
-      value: newThisMonth.toString(),
-      icon: 'mdi:chart-line',
-      iconBg: 'bg-orange-100',
-      iconColor: 'text-orange-600',
-    },
-  ]
+  // Map statistics to summary cards format
+  const summaryCards = statistics
+    ? [
+        {
+          label: 'Total Clients',
+          value: statistics.totalClients.toLocaleString('en-US'),
+          icon: 'mdi:format-list-bulleted',
+          iconBg: 'bg-green-100',
+          iconColor: 'text-green-600',
+        },
+        {
+          label: 'New This Month',
+          value: statistics.newThisMonth.toLocaleString('en-US'),
+          icon: 'mdi:chart-line',
+          iconBg: 'bg-orange-100',
+          iconColor: 'text-orange-600',
+        },
+      ]
+    : [
+        {
+          label: 'Total Clients',
+          value: '0',
+          icon: 'mdi:format-list-bulleted',
+          iconBg: 'bg-green-100',
+          iconColor: 'text-green-600',
+        },
+        {
+          label: 'New This Month',
+          value: '0',
+          icon: 'mdi:chart-line',
+          iconBg: 'bg-orange-100',
+          iconColor: 'text-orange-600',
+        },
+      ]
 
   const handleEditClick = (client: UIClient) => {
     setSelectedClient(client)
@@ -185,7 +208,30 @@ const ClientsBrands = () => {
     location?: [number, number] // Point format: [longitude, latitude]
   }) => {
     try {
-      await clientsService.create(clientData)
+      // Transform data to match ClientFormData interface
+      const formData: {
+        name: string
+        productType: string[]
+        city?: string
+        address?: string
+        state?: string
+        zip?: string
+        longitude?: number
+        latitude?: number
+        logoURL?: string
+      } = {
+        name: clientData.clientName,
+        productType: clientData.productTypes,
+        city: clientData.city,
+        address: clientData.address,
+        state: clientData.state,
+        zip: clientData.zip,
+        longitude: clientData.location?.[0],
+        latitude: clientData.location?.[1],
+        // TODO: Handle logo upload to get logoURL before creating client
+      }
+      
+      await clientsService.create(formData)
       await fetchClients() // Refresh list
       
       // Show success notification
@@ -227,8 +273,30 @@ const ClientsBrands = () => {
     if (!selectedClient?.id) return
 
     try {
-      const existingClient = await clientsService.getById(selectedClient.id)
-      await clientsService.update(selectedClient.id, clientData, existingClient)
+      // Transform data to match ClientFormData interface
+      const formData: Partial<{
+        name: string
+        productType: string[]
+        city?: string
+        address?: string
+        state?: string
+        zip?: string
+        longitude?: number
+        latitude?: number
+        logoURL?: string
+      }> = {
+        name: clientData.clientName,
+        productType: clientData.productTypes,
+        city: clientData.city,
+        address: clientData.address,
+        state: clientData.state,
+        zip: clientData.zip,
+        longitude: clientData.location?.[0],
+        latitude: clientData.location?.[1],
+        // TODO: Handle logo upload to get logoURL before updating client
+      }
+      
+      await clientsService.update(selectedClient.id, formData)
       await fetchClients() // Refresh list
       setIsEditModalOpen(false)
       setSelectedClient(null)

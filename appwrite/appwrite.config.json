@@ -51,25 +51,95 @@
             "runtime": "node-22",
             "scopes": [
                 "users.read",
-                "databases.read"
+                "databases.read",
+                "databases.write",
+                "policies.read",
+                "policies.write",
+                "archives.read",
+                "archives.write",
+                "restorations.read",
+                "restorations.write",
+                "tables.read",
+                "collections.read",
+                "tables.write",
+                "collections.write",
+                "columns.read",
+                "attributes.read",
+                "columns.write",
+                "attributes.write",
+                "indexes.read",
+                "indexes.write",
+                "rows.read",
+                "documents.read",
+                "rows.write",
+                "documents.write",
+                "files.read",
+                "files.write",
+                "buckets.read",
+                "buckets.write",
+                "functions.read",
+                "functions.write",
+                "execution.read",
+                "execution.write",
+                "targets.read",
+                "targets.write",
+                "providers.read",
+                "providers.write",
+                "messages.read",
+                "messages.write",
+                "topics.read",
+                "topics.write",
+                "subscribers.read",
+                "subscribers.write",
+                "locale.read",
+                "avatars.read",
+                "health.read",
+                "migrations.read",
+                "migrations.write",
+                "tokens.read",
+                "tokens.write",
+                "sites.read",
+                "sites.write",
+                "log.read",
+                "log.write"
             ],
             "events": [],
             "schedule": "",
             "timeout": 15,
             "entrypoint": "src/main.js",
-            "commands": "npm install && npm run build",
+            "commands": "npm install",
             "specification": "s-0.5vcpu-512mb",
             "path": "functions/Event functions"
+        },
+        {
+            "$id": "69341ffa001a4ebd28c2",
+            "name": "Statistics functions",
+            "runtime": "node-22",
+            "specification": "s-0.5vcpu-512mb",
+            "execute": [
+                "any"
+            ],
+            "events": [],
+            "scopes": [
+                "users.read"
+            ],
+            "schedule": "",
+            "timeout": 15,
+            "enabled": true,
+            "logging": true,
+            "entrypoint": "src/main.js",
+            "commands": "npm install",
+            "path": "functions/Statistics functions"
         }
     ],
-    "databases": [
+    "tablesDB": [
         {
             "$id": "69217af50038b9005a61",
             "name": "Sample Finder DB",
             "enabled": true
         }
     ],
-    "collections": [
+    "tables": [
         {
             "$id": "user_profiles",
             "$permissions": [
@@ -81,8 +151,8 @@
             "databaseId": "69217af50038b9005a61",
             "name": "User profiles",
             "enabled": true,
-            "documentSecurity": false,
-            "attributes": [
+            "rowSecurity": false,
+            "columns": [
                 {
                     "key": "phoneNumber",
                     "type": "string",
@@ -193,10 +263,10 @@
                 "delete(\"users\")"
             ],
             "databaseId": "69217af50038b9005a61",
-            "name": "Clients",
+            "name": "Brands/Clients",
             "enabled": true,
-            "documentSecurity": false,
-            "attributes": [
+            "rowSecurity": false,
+            "columns": [
                 {
                     "key": "logoURL",
                     "type": "string",
@@ -280,8 +350,8 @@
             "databaseId": "69217af50038b9005a61",
             "name": "Categories",
             "enabled": true,
-            "documentSecurity": false,
-            "attributes": [
+            "rowSecurity": false,
+            "columns": [
                 {
                     "key": "title",
                     "type": "string",
@@ -305,8 +375,8 @@
             "databaseId": "69217af50038b9005a61",
             "name": "Events",
             "enabled": true,
-            "documentSecurity": false,
-            "attributes": [
+            "rowSecurity": false,
+            "columns": [
                 {
                     "key": "name",
                     "type": "string",
@@ -381,7 +451,7 @@
                     "type": "relationship",
                     "required": false,
                     "array": false,
-                    "relatedCollection": "categories",
+                    "relatedTable": "categories",
                     "relationType": "manyToOne",
                     "twoWay": false,
                     "twoWayKey": "692188410011c802c0a5",
@@ -437,7 +507,7 @@
                     "type": "relationship",
                     "required": false,
                     "array": false,
-                    "relatedCollection": "clients",
+                    "relatedTable": "clients",
                     "relationType": "manyToOne",
                     "twoWay": false,
                     "twoWayKey": "69218a020033d4e1ba18",
@@ -494,8 +564,8 @@
             "databaseId": "69217af50038b9005a61",
             "name": "Notifications",
             "enabled": true,
-            "documentSecurity": false,
-            "attributes": [],
+            "rowSecurity": false,
+            "columns": [],
             "indexes": []
         },
         {
@@ -509,14 +579,14 @@
             "databaseId": "69217af50038b9005a61",
             "name": "Trivia",
             "enabled": true,
-            "documentSecurity": false,
-            "attributes": [
+            "rowSecurity": false,
+            "columns": [
                 {
                     "key": "client",
                     "type": "relationship",
                     "required": false,
                     "array": false,
-                    "relatedCollection": "clients",
+                    "relatedTable": "clients",
                     "relationType": "manyToOne",
                     "twoWay": false,
                     "twoWayKey": "trivia",
@@ -584,14 +654,14 @@
             "databaseId": "69217af50038b9005a61",
             "name": "Trivia Responses",
             "enabled": true,
-            "documentSecurity": false,
-            "attributes": [
+            "rowSecurity": false,
+            "columns": [
                 {
                     "key": "trivia",
                     "type": "relationship",
                     "required": false,
                     "array": false,
-                    "relatedCollection": "trivia",
+                    "relatedTable": "trivia",
                     "relationType": "manyToOne",
                     "twoWay": false,
                     "twoWayKey": "692195b50031915d28d9",
@@ -621,7 +691,7 @@
                     "type": "relationship",
                     "required": false,
                     "array": false,
-                    "relatedCollection": "user_profiles",
+                    "relatedTable": "user_profiles",
                     "relationType": "manyToOne",
                     "twoWay": false,
                     "twoWayKey": "69219616002f5002d62e",
@@ -637,8 +707,8 @@
             "databaseId": "69217af50038b9005a61",
             "name": "Reviews",
             "enabled": true,
-            "documentSecurity": false,
-            "attributes": [
+            "rowSecurity": false,
+            "columns": [
                 {
                     "key": "rating",
                     "type": "integer",
@@ -686,7 +756,7 @@
                     "type": "relationship",
                     "required": false,
                     "array": false,
-                    "relatedCollection": "user_profiles",
+                    "relatedTable": "user_profiles",
                     "relationType": "manyToOne",
                     "twoWay": false,
                     "twoWayKey": "6930619f001c38eb71e0",
@@ -698,7 +768,7 @@
                     "type": "relationship",
                     "required": false,
                     "array": false,
-                    "relatedCollection": "events",
+                    "relatedTable": "events",
                     "relationType": "manyToOne",
                     "twoWay": false,
                     "twoWayKey": "69306204001ec920224a",

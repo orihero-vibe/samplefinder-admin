@@ -11,8 +11,9 @@ import {
   UsersTable,
   AddUserModal,
   EditUserModal,
+  StatsCards,
 } from './components'
-import { appUsersService, type AppUser, type UserFormData } from '../../lib/services'
+import { appUsersService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
 
 const Users = () => {
   const { addNotification } = useNotificationStore()
@@ -27,6 +28,7 @@ const Users = () => {
   const [userToDelete, setUserToDelete] = useState<AppUser | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [statistics, setStatistics] = useState<UsersStats | null>(null)
 
   // Fetch users from Appwrite
   const fetchUsers = async () => {
@@ -48,8 +50,24 @@ const Users = () => {
     }
   }
 
+  // Fetch statistics
+  const fetchStatistics = async () => {
+    try {
+      const stats = await statisticsService.getStatistics<UsersStats>('users')
+      setStatistics(stats)
+    } catch (err) {
+      console.error('Error fetching statistics:', err)
+      addNotification({
+        type: 'error',
+        title: 'Error Loading Statistics',
+        message: 'Failed to load users statistics. Please refresh the page.',
+      })
+    }
+  }
+
   useEffect(() => {
     fetchUsers()
+    fetchStatistics()
   }, [])
 
   if (isLoading) {
@@ -116,6 +134,40 @@ const Users = () => {
     <DashboardLayout>
       <div className="p-8">
         <UsersHeader onAddUser={() => setIsAddUserModalOpen(true)} />
+        {statistics && (
+          <StatsCards
+            stats={[
+              {
+                label: 'Total Users',
+                value: statistics.totalUsers.toLocaleString('en-US'),
+                icon: 'mdi:account-group',
+                iconBg: 'bg-green-100',
+                iconColor: 'text-green-600',
+              },
+              {
+                label: 'Avg. Points',
+                value: statistics.avgPoints.toLocaleString('en-US'),
+                icon: 'mdi:star-four-points',
+                iconBg: 'bg-red-100',
+                iconColor: 'text-red-600',
+              },
+              {
+                label: 'New This Week',
+                value: statistics.newThisWeek.toLocaleString('en-US'),
+                icon: 'mdi:trending-up',
+                iconBg: 'bg-orange-100',
+                iconColor: 'text-orange-600',
+              },
+              {
+                label: 'Users in Blacklist',
+                value: statistics.usersInBlacklist.toLocaleString('en-US'),
+                icon: 'mdi:trending-up',
+                iconBg: 'bg-gray-100',
+                iconColor: 'text-gray-600',
+              },
+            ]}
+          />
+        )}
         {error && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
             {error}

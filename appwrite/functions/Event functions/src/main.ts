@@ -1,24 +1,92 @@
-import { Client, Databases } from 'node-appwrite';
+import { Client, Databases, Query } from 'node-appwrite';
 
-/**
- * Convert degrees to radians
- * @param degrees - Angle in degrees
- * @returns Angle in radians
- */
-function toRadians(degrees: number): number {
-  return degrees * (Math.PI / 180);
+// Type definitions
+interface RequestBody {
+  latitude: number;
+  longitude: number;
+  page?: number;
+  pageSize?: number;
 }
 
+interface ClientData {
+  $id: string;
+  name: string;
+  logoURL?: string;
+  productType?: string[];
+  city?: string;
+  address?: string;
+  state?: string;
+  zip?: string;
+  location?: [number, number]; // [longitude, latitude]
+  [key: string]: any;
+}
+
+interface EventData {
+  $id: string;
+  name: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  city: string;
+  address: string;
+  state: string;
+  zipCode: string;
+  productType?: string[];
+  products: string;
+  discount?: number;
+  discountImageURL?: string;
+  checkInCode: string;
+  checkInPoints: number;
+  reviewPoints: number;
+  eventInfo: string;
+  isArchived: boolean;
+  isHidden: boolean;
+  client?: string; // Client ID (relationship)
+  categories?: string;
+  [key: string]: any;
+}
+
+interface EventWithClient extends Omit<EventData, 'client'> {
+  client: ClientData | null;
+  distance: number;
+}
+
+interface PaginationMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+interface ResponseData {
+  events: EventWithClient[];
+  pagination: PaginationMeta;
+}
+
+// Constants
+const DATABASE_ID = '69217af50038b9005a61';
+const EVENTS_TABLE_ID = 'events';
+const CLIENTS_TABLE_ID = 'clients';
+const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE = 1;
+
 /**
- * Calculate the distance between two points on Earth using the Haversine formula
- * @param lat1 - Latitude of first point
- * @param lon1 - Longitude of first point
- * @param lat2 - Latitude of second point
- * @param lon2 - Longitude of second point
+ * Calculate distance between two coordinates using Haversine formula
+ * @param lat1 Latitude of first point
+ * @param lon1 Longitude of first point
+ * @param lat2 Latitude of second point
+ * @param lon2 Longitude of second point
  * @returns Distance in kilometers
  */
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+function haversineDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const toRadians = (angle: number) => (Math.PI / 180) * angle;
   const R = 6371; // Earth's radius in kilometers
+
   const dLat = toRadians(lat2 - lat1);
   const dLon = toRadians(lon2 - lon1);
 
@@ -30,295 +98,292 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
       Math.sin(dLon / 2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c;
 
-  return distance;
+  return R * c; // Distance in kilometers
 }
 
 /**
- * Validate coordinates
- * @param latitude - Latitude value
- * @param longitude - Longitude value
- * @returns True if coordinates are valid
+ * Validate request body
  */
-function isValidCoordinate(latitude: number, longitude: number): boolean {
-  return (
-    typeof latitude === 'number' &&
-    typeof longitude === 'number' &&
-    latitude >= -90 &&
-    latitude <= 90 &&
-    longitude >= -180 &&
-    longitude <= 180
+function validateRequestBody(body: any): RequestBody {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Request body is required');
+  }
+
+  if (typeof body.latitude !== 'number' || isNaN(body.latitude)) {
+    throw new Error('latitude must be a valid number');
+  }
+
+  if (typeof body.longitude !== 'number' || isNaN(body.longitude)) {
+    throw new Error('longitude must be a valid number');
+  }
+
+  if (body.latitude < -90 || body.latitude > 90) {
+    throw new Error('latitude must be between -90 and 90');
+  }
+
+  if (body.longitude < -180 || body.longitude > 180) {
+    throw new Error('longitude must be between -180 and 180');
+  }
+
+  const page = body.page !== undefined ? Number(body.page) : DEFAULT_PAGE;
+  const pageSize = body.pageSize !== undefined ? Number(body.pageSize) : DEFAULT_PAGE_SIZE;
+
+  if (page < 1 || !Number.isInteger(page)) {
+    throw new Error('page must be a positive integer');
+  }
+
+  if (pageSize < 1 || !Number.isInteger(pageSize) || pageSize > 100) {
+    throw new Error('pageSize must be a positive integer between 1 and 100');
+  }
+
+  return {
+    latitude: body.latitude,
+    longitude: body.longitude,
+    page,
+    pageSize,
+  };
+}
+
+/**
+ * Get events sorted by location
+ */
+async function getEventsByLocation(
+  databases: Databases,
+  userLat: number,
+  userLon: number,
+  page: number,
+  pageSize: number,
+  log: (message: string) => void
+): Promise<ResponseData> {
+  // Get current date for filtering upcoming events
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayISO = today.toISOString();
+
+  // Build queries for filtering events
+  // Use Query.select to populate the client relationship
+  const queries = [
+    Query.equal('isArchived', false),
+    Query.equal('isHidden', false),
+    Query.greaterThanEqual('date', todayISO),
+    Query.orderAsc('date'), // Order by date first
+    Query.select(['*', 'client.*']), // Populate client relationship
+  ];
+
+  // Fetch all matching events (we need all to calculate distances)
+  // Using table ID instead of collection ID for TablesDB
+  const eventsResponse = await databases.listDocuments(
+    DATABASE_ID,
+    EVENTS_TABLE_ID,
+    queries
   );
-}
 
-/**
- * Interface for request payload
- */
-interface RequestPayload {
-  latitude?: number;
-  longitude?: number;
-  limit?: number; // Deprecated: use page and pageSize instead
-  page?: number; // Page number (1-based)
-  pageSize?: number; // Number of items per page
-}
+  const events = eventsResponse.documents as unknown as EventData[];
 
-/**
- * Interface for event with distance
- */
-interface EventWithDistance {
-  [key: string]: any;
-  distance: number;
-}
+  // Fetch client data for each event and calculate distances
+  const eventsWithClients: EventWithClient[] = [];
 
-/**
- * Interface for client document
- */
-interface ClientDocument {
-  $id: string;
-  location?: [number, number]; // Point type: [longitude, latitude]
-  [key: string]: any;
-}
+  for (const event of events) {
+    let clientData: ClientData | null = null;
+    let distance: number = Infinity;
 
-/**
- * Interface for event document
- */
-interface EventDocument {
-  $id: string;
-  client?: string; // Client relationship ID
-  [key: string]: any;
-}
+    if (event.client) {
+      try {
+        // Handle relationship field - could be string ID or populated object
+        if (typeof event.client === 'string') {
+          // It's a string ID, fetch the client
+          const clientResponse = await databases.getDocument(
+            DATABASE_ID,
+            CLIENTS_TABLE_ID,
+            event.client
+          );
+          clientData = clientResponse as unknown as ClientData;
+        } else if (event.client && typeof event.client === 'object') {
+          // Relationship is already populated as an object (from Query.select)
+          const clientObj = event.client as any;
+          // Check if it has the structure of a populated relationship
+          if (clientObj.$id || clientObj.name) {
+            // It's a populated relationship object, use it directly
+            clientData = clientObj as unknown as ClientData;
+          } else {
+            // Try to extract ID from object
+            const clientId = clientObj.id || clientObj.$id;
+            if (clientId && typeof clientId === 'string') {
+              const clientResponse = await databases.getDocument(
+                DATABASE_ID,
+                CLIENTS_TABLE_ID,
+                clientId
+              );
+              clientData = clientResponse as unknown as ClientData;
+            }
+          }
+        }
 
-/**
- * Appwrite Cloud Function: Get Events Sorted by User Location
- *
- * This function fetches events from the database and sorts them by distance
- * from the user's provided location using the related client's location.
- */
-export default async ({ req, res, log, error }) => {
-  try {
-    // Parse request body using req.bodyJson (following Appwrite documentation)
-    let payload: RequestPayload = {};
-    try {
-      if (req.bodyJson) {
-        payload = req.bodyJson as RequestPayload;
-      } else if (req.bodyText) {
-        payload = JSON.parse(req.bodyText) as RequestPayload;
+        // Calculate distance if client has location
+        if (clientData && clientData.location && Array.isArray(clientData.location) && clientData.location.length === 2) {
+          const [clientLon, clientLat] = clientData.location;
+          distance = haversineDistance(userLat, userLon, clientLat, clientLon);
+        }
+      } catch (err: any) {
+        // Client not found or error fetching - skip this event or use null
+        const clientInfo = typeof event.client === 'string' 
+          ? event.client 
+          : (event.client as any)?.$id || JSON.stringify(event.client).substring(0, 50);
+        log(`Error fetching client ${clientInfo}: ${err?.message || err}`);
       }
-    } catch (parseError) {
-      log('Error parsing request body: ' + (parseError as Error).message);
-      return res.json(
-        {
-          success: false,
-          error: 'Invalid JSON in request body',
-        },
-        400
-      );
     }
 
-    const { latitude, longitude, limit, page, pageSize } = payload;
+    eventsWithClients.push({
+      ...event,
+      client: clientData,
+      distance,
+    });
+  }
 
-    // Validate required parameters
-    if (latitude === undefined || longitude === undefined) {
-      return res.json(
-        {
-          success: false,
-          error: 'Missing required parameters: latitude and longitude are required',
-        },
-        400
-      );
-    }
+  // Filter out events without valid client locations
+  const validEvents = eventsWithClients.filter(
+    (event) => event.client !== null && event.distance !== Infinity
+  );
 
-    // Validate coordinate values
-    if (!isValidCoordinate(latitude, longitude)) {
-      return res.json(
-        {
-          success: false,
-          error:
-            'Invalid coordinates: latitude must be between -90 and 90, longitude must be between -180 and 180',
-        },
-        400
-      );
-    }
+  // Sort by distance (nearest first)
+  validEvents.sort((a, b) => a.distance - b.distance);
 
-    // Validate and set pagination parameters
-    const defaultPageSize = 20;
-    const maxPageSize = 100;
-    const minPageSize = 1;
+  // Calculate pagination
+  const total = validEvents.length;
+  const totalPages = Math.ceil(total / pageSize);
+  const startIndex = (page - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedEvents = validEvents.slice(startIndex, endIndex);
+
+  return {
+    events: paginatedEvents,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages,
+    },
+  };
+}
+
+// Main function handler
+export default async function handler({ req, res, log, error }: any) {
+  try {
+    // Initialize Appwrite client
+    // Use environment variables provided by Appwrite Cloud Functions
+    const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT || 'https://nyc.cloud.appwrite.io/v1';
+    const projectId = process.env.APPWRITE_FUNCTION_PROJECT_ID || '691d4a54003b21bf0136';
     
-    let currentPage = page !== undefined ? Math.max(1, Math.floor(page)) : 1;
-    let itemsPerPage = pageSize !== undefined 
-      ? Math.max(minPageSize, Math.min(maxPageSize, Math.floor(pageSize))) 
-      : defaultPageSize;
-
-    // If legacy limit is provided, use it as pageSize and set page to 1
-    if (limit !== undefined && limit > 0 && page === undefined && pageSize === undefined) {
-      itemsPerPage = Math.max(minPageSize, Math.min(maxPageSize, Math.floor(limit)));
-      currentPage = 1;
-      log('Using deprecated "limit" parameter. Please use "page" and "pageSize" instead.');
-    }
-
-    // Get environment variables
-    const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT;
-    const projectId = process.env.APPWRITE_FUNCTION_PROJECT_ID;
-    const apiKey = req.headers['x-appwrite-key'] ?? '';
-
-    // Validate Appwrite configuration
-    if (!endpoint || !projectId || !apiKey) {
-      error('Server configuration error: Missing Appwrite environment variables or API key');
+    // Try multiple ways to get the API key
+    // 1. Environment variable (production)
+    // 2. Request header (some configurations)
+    // 3. Check all possible environment variable names
+    const apiKey = 
+      process.env.APPWRITE_FUNCTION_KEY || 
+      process.env.APPWRITE_API_KEY ||
+      req.headers['x-appwrite-key'] || 
+      req.headers['x-appwrite-function-key'] ||
+      '';
+    
+    // Log for debugging
+    log(`Endpoint: ${endpoint}`);
+    log(`Project ID: ${projectId}`);
+    log(`API Key present: ${apiKey ? 'Yes (length: ' + apiKey.length + ')' : 'No'}`);
+    log(`Available env vars: ${Object.keys(process.env).filter(k => k.includes('APPWRITE')).join(', ')}`);
+    
+    if (!apiKey) {
+      error('API key is missing. Available environment variables: ' + Object.keys(process.env).join(', '));
+      error('Request headers: ' + JSON.stringify(Object.keys(req.headers)));
       return res.json(
         {
           success: false,
-          error: 'Server configuration error: Missing Appwrite environment variables',
+          error: 'Server configuration error: API key missing. Please ensure the function has an API key configured in Appwrite Console.',
+          debug: {
+            hasEndpoint: !!endpoint,
+            hasProjectId: !!projectId,
+            envVars: Object.keys(process.env).filter(k => k.includes('APPWRITE')),
+            headers: Object.keys(req.headers)
+          }
         },
         500
       );
     }
-
-    // Database and collection IDs
-    const databaseId = '69217af50038b9005a61';
-    const eventsTableId = 'events';
-    const clientsTableId = 'clients';
-
-    // Initialize Appwrite client
-    const client = new Client().setEndpoint(endpoint).setProject(projectId).setKey(apiKey);
+    
+    // Log configuration for debugging (don't log the actual API key)
+    log(`Endpoint: ${endpoint}`);
+    log(`Project ID: ${projectId}`);
+    log(`API Key present: ${apiKey ? 'Yes' : 'No'}`);
+    
+    const client = new Client()
+      .setEndpoint(endpoint)
+      .setProject(projectId)
+      .setKey(apiKey);
 
     const databases = new Databases(client);
 
-    // Fetch all events from the database
-    let events: EventDocument[];
-    try {
-      const response = await databases.listRows(databaseId, eventsTableId);
-      events = (response.rows || []) as EventDocument[];
-      log(`Fetched ${events.length} events from database`);
-    } catch (dbError) {
-      error('Error fetching events: ' + (dbError as Error).message);
-      return res.json(
-        {
-          success: false,
-          error: 'Failed to fetch events from database',
-          details: (dbError as Error).message,
-        },
-        500
+    // Handle ping endpoint
+    if (req.path === '/ping') {
+      return res.text('Pong');
+    }
+
+    // Handle get events by location endpoint
+    if (req.path === '/get-events-by-location' && req.method === 'POST') {
+      log('Processing get-events-by-location request');
+
+      // Parse and validate request body
+      let requestBody: RequestBody;
+      try {
+        requestBody = validateRequestBody(req.body);
+      } catch (validationError: any) {
+        error(`Validation error: ${validationError.message}`);
+        return res.json(
+          {
+            success: false,
+            error: validationError.message,
+          },
+          400
+        );
+      }
+
+      log(
+        `Fetching events for location: (${requestBody.latitude}, ${requestBody.longitude}), page: ${requestBody.page}, pageSize: ${requestBody.pageSize}`
       );
-    }
 
-    // Fetch clients to get their locations
-    let clients: Map<string, ClientDocument> = new Map();
-    try {
-      const clientsResponse = await databases.listRows(databaseId, clientsTableId);
-      const clientsList = (clientsResponse.rows || []) as ClientDocument[];
-      clientsList.forEach((client) => {
-        clients.set(client.$id, client);
-      });
-      log(`Fetched ${clients.size} clients from database`);
-    } catch (clientError) {
-      error('Error fetching clients: ' + (clientError as Error).message);
-      // Continue execution even if clients fetch fails - events without clients will be filtered out
-    }
+      // Get events sorted by location
+      const result = await getEventsByLocation(
+        databases,
+        requestBody.latitude,
+        requestBody.longitude,
+        requestBody.page!,
+        requestBody.pageSize!,
+        log
+      );
 
-    // Calculate distance for each event and filter out events without location
-    const eventsWithDistance: EventWithDistance[] = events
-      .map((event) => {
-        // Get client ID from event
-        const clientId = event.client;
+      log(`Found ${result.pagination.total} events, returning ${result.events.length} for page ${result.pagination.page}`);
 
-        // Skip events without a client relationship
-        if (!clientId) {
-          return null;
-        }
-
-        // Get client document
-        const client = clients.get(clientId);
-
-        // Skip events without a client document
-        if (!client) {
-          return null;
-        }
-
-        // Extract location from client
-        // Clients use Point type: [longitude, latitude]
-        const location = client.location;
-
-        // Skip events without location coordinates
-        if (!location || !Array.isArray(location) || location.length !== 2) {
-          return null;
-        }
-
-        const [clientLon, clientLat] = location;
-
-        // Validate client coordinates
-        if (!isValidCoordinate(clientLat, clientLon)) {
-          return null;
-        }
-
-        // Calculate distance from user's location to client's location
-        const distance = calculateDistance(latitude, longitude, clientLat, clientLon);
-
-        // Return event with distance field
-        return {
-          ...event,
-          distance: Math.round(distance * 100) / 100, // Round to 2 decimal places
-        } as EventWithDistance;
-      })
-      .filter((event): event is EventWithDistance => event !== null); // Remove events without valid location
-
-    // Sort events by distance (nearest first)
-    eventsWithDistance.sort((a, b) => a.distance - b.distance);
-
-    // Calculate pagination metadata
-    const totalItems = eventsWithDistance.length;
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-    
-    // Ensure currentPage doesn't exceed totalPages
-    if (currentPage > totalPages && totalPages > 0) {
-      currentPage = totalPages;
-    }
-
-    // Calculate pagination slice
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    const paginatedEvents = eventsWithDistance.slice(startIndex, endIndex);
-
-    // Calculate pagination info
-    const hasNextPage = currentPage < totalPages;
-    const hasPreviousPage = currentPage > 1;
-
-    log(
-      `Returning page ${currentPage} of ${totalPages} (${paginatedEvents.length} events, out of ${totalItems} total with valid locations)`
-    );
-
-    // Return successful response with pagination
-    return res.json(
-      {
+      return res.json({
         success: true,
-        events: paginatedEvents,
-        pagination: {
-          page: currentPage,
-          pageSize: itemsPerPage,
-          totalItems,
-          totalPages,
-          hasNextPage,
-          hasPreviousPage,
-        },
-        userLocation: {
-          latitude,
-          longitude,
-        },
-      },
-      200
-    );
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    error('Unexpected error: ' + errorMessage);
+        ...result,
+      });
+    }
+
+    // Default response
+    return res.json({
+      motto: 'Build like a team of hundreds_',
+      learn: 'https://appwrite.io/docs',
+      connect: 'https://appwrite.io/discord',
+      getInspired: 'https://builtwith.appwrite.io',
+    });
+  } catch (err: any) {
+    error(`Function error: ${err.message}`);
+    console.error('Function error:', err);
     return res.json(
       {
         success: false,
-        error: 'An unexpected error occurred',
-        details: errorMessage,
+        error: err.message || 'Internal server error',
       },
       500
     );
   }
 };
-

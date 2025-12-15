@@ -31,8 +31,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   error: null,
 
   login: async (email: string, password: string) => {
+    // Trim email and password to remove any whitespace (move outside try block for catch access)
+    const trimmedEmail = email.trim()
+    const trimmedPassword = password.trim()
+    
     try {
       set({ isLoading: true, error: null, userProfile: null })
+      
+      // Validate inputs
+      if (!trimmedEmail || !trimmedPassword) {
+        throw new Error('Email and password are required.')
+      }
       
       // Step 0: Clear any existing session before creating a new one
       // This prevents "Creation of a session is prohibited when a session is active" error
@@ -67,8 +76,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       keysToRemove.forEach(key => localStorage.removeItem(key))
       
       // Step 1: Authenticate with Appwrite
+      // Use trimmed values to avoid issues with whitespace
+      let session
       try {
-        await account.createEmailPasswordSession({ email, password })
+        session = await account.createEmailPasswordSession({ 
+          email: trimmedEmail.toLowerCase(), // Convert to lowercase for consistency
+          password: trimmedPassword 
+        })
       } catch (sessionError: unknown) {
         // If we get the "session already exists" error, try one more time after clearing
         const errorMessage = sessionError instanceof Error ? sessionError.message : String(sessionError)
@@ -87,15 +101,47 @@ export const useAuthStore = create<AuthState>((set) => ({
           // Clear localStorage again
           localStorage.clear()
           
-          // Retry creating the session
-          await account.createEmailPasswordSession({ email, password })
+          // Retry creating the session with trimmed values
+          session = await account.createEmailPasswordSession({ 
+            email: trimmedEmail.toLowerCase(), 
+            password: trimmedPassword 
+          })
         } else {
           // Re-throw if it's a different error
           throw sessionError
         }
       }
       
-      const user = await account.get()
+      // Verify session was created
+      if (!session) {
+        throw new Error('Failed to create session. Please try again.')
+      }
+      
+      // Step 1.5: Get user account - retry if needed to allow cookie to be set
+      let user
+      let retries = 3
+      while (retries > 0) {
+        try {
+          user = await account.get()
+          break
+        } catch (getError: unknown) {
+          retries--
+          if (retries === 0) {
+            // Check if it's the scope error
+            const errorMessage = getError instanceof Error ? getError.message : String(getError)
+            if (errorMessage.includes('missing scopes') || errorMessage.includes('guests')) {
+              throw new Error('Authentication failed: Session cookie not set. Please check your Appwrite CORS settings and ensure your domain is allowed.')
+            }
+            throw getError
+          }
+          // Wait a bit before retrying (cookie might need time to be set)
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+      
+      if (!user) {
+        throw new Error('Failed to get user account. Please try again.')
+      }
       
       // Step 2: Find user profile by authID
       const userProfile = await userProfilesService.findByAuthID(user.$id)
@@ -140,6 +186,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (error: unknown) {
       // Extract user-friendly error message from Appwrite error
       let errorMessage = 'Failed to login. Please check your credentials.'
+      let errorType = ''
       
       // Handle Appwrite SDK error format first (it has a specific structure)
       if (error && typeof error === 'object') {
@@ -150,11 +197,20 @@ export const useAuthStore = create<AuthState>((set) => ({
           const response = errorObj.response as Record<string, unknown>
           if ('message' in response && typeof response.message === 'string') {
             errorMessage = response.message
-          } else if ('code' in response) {
+          }
+          if ('type' in response && typeof response.type === 'string') {
+            errorType = response.type
+          }
+          if ('code' in response) {
             // Handle HTTP status codes
             const code = response.code
             if (code === 401 || code === '401') {
-              errorMessage = 'Invalid email or password. Please try again.'
+              // Check if it's specifically an email verification issue
+              if (errorType === 'user_email_not_confirmed' || errorMessage.toLowerCase().includes('email') && errorMessage.toLowerCase().includes('confirm')) {
+                errorMessage = 'Please verify your email address before logging in. Check your inbox for a verification email.'
+              } else {
+                errorMessage = 'Invalid email or password. Please check your credentials and ensure your email is verified.'
+              }
             } else if (code === 404 || code === '404') {
               errorMessage = 'Account not found. Please check your email address.'
             } else if (code === 429 || code === '429') {
@@ -168,7 +224,12 @@ export const useAuthStore = create<AuthState>((set) => ({
           const errorMsg = errorObj.message
           // Check for specific error types in message
           if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
-            errorMessage = 'Invalid email or password. Please try again.'
+            // Check for email verification hints
+            if (errorMsg.toLowerCase().includes('email') && errorMsg.toLowerCase().includes('confirm')) {
+              errorMessage = 'Please verify your email address before logging in. Check your inbox for a verification email.'
+            } else {
+              errorMessage = 'Invalid email or password. Please check your credentials and ensure your email is verified.'
+            }
           } else if (errorMsg.includes('404') || errorMsg.includes('Not found')) {
             errorMessage = 'Account not found. Please check your email address.'
           } else if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
@@ -183,11 +244,25 @@ export const useAuthStore = create<AuthState>((set) => ({
             errorMessage = errorMsg
           }
         }
+        
+        // Check for type property directly
+        if ('type' in errorObj && typeof errorObj.type === 'string') {
+          errorType = errorObj.type
+          if (errorType === 'user_email_not_confirmed' || errorType === 'user_invalid_credentials') {
+            if (errorType === 'user_email_not_confirmed') {
+              errorMessage = 'Please verify your email address before logging in. Check your inbox for a verification email.'
+            }
+          }
+        }
       } else if (error instanceof Error) {
         const errorMsg = error.message
         // Check for specific error types
         if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
-          errorMessage = 'Invalid email or password. Please try again.'
+          if (errorMsg.toLowerCase().includes('email') && errorMsg.toLowerCase().includes('confirm')) {
+            errorMessage = 'Please verify your email address before logging in. Check your inbox for a verification email.'
+          } else {
+            errorMessage = 'Invalid email or password. Please check your credentials and ensure your email is verified.'
+          }
         } else if (errorMsg.includes('404') || errorMsg.includes('Not found')) {
           errorMessage = 'Account not found. Please check your email address.'
         } else if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
@@ -203,6 +278,16 @@ export const useAuthStore = create<AuthState>((set) => ({
         }
       } else if (typeof error === 'string') {
         errorMessage = error
+      }
+      
+      // Log detailed error for debugging (only in development)
+      if (import.meta.env.DEV) {
+        console.error('Login error details:', {
+          error,
+          errorType,
+          email: trimmedEmail,
+          hasPassword: !!trimmedPassword,
+        })
       }
       
       set({
@@ -290,7 +375,13 @@ export const useAuthStore = create<AuthState>((set) => ({
         isAuthenticated: true, 
         isLoading: false 
       })
-    } catch {
+    } catch (error: unknown) {
+      // Check if it's the scope error
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage.includes('missing scopes') || errorMessage.includes('guests')) {
+        // Session cookie not being sent - likely CORS or cookie configuration issue
+        console.error('Authentication error: Session cookie not being sent. Check Appwrite CORS settings.')
+      }
       // User is not authenticated
       set({ 
         user: null, 

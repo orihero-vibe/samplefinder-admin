@@ -34,3 +34,4 @@ const ReportCard = ({ name, icon, lastGenerated, onPreview }: ReportCardProps) =
 
 export default ReportCard
 
+
