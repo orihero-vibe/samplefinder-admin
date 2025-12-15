@@ -12,6 +12,7 @@ export const appwriteConfig = {
     clients: import.meta.env.VITE_APPWRITE_COLLECTION_CLIENTS || 'clients', // Table ID
     events: import.meta.env.VITE_APPWRITE_COLLECTION_EVENTS || 'events', // Table ID
     trivia: import.meta.env.VITE_APPWRITE_COLLECTION_TRIVIA || 'trivia', // Table ID
+    triviaResponses: import.meta.env.VITE_APPWRITE_COLLECTION_TRIVIA_RESPONSES || 'trivia_responses', // Table ID
     reviews: import.meta.env.VITE_APPWRITE_COLLECTION_REVIEWS || 'reviews', // Table ID
     reports: import.meta.env.VITE_APPWRITE_COLLECTION_REPORTS || '',
     notifications: import.meta.env.VITE_APPWRITE_COLLECTION_NOTIFICATIONS || 'notifications', // Table ID

@@ -11,9 +11,10 @@ import {
   SearchAndFilter,
   TriviaTable,
   CreateTriviaModal,
+  EditTriviaModal,
   StatsCards,
 } from './components'
-import { triviaService, statisticsService, type TriviaStats } from '../../lib/services'
+import { triviaService, triviaResponsesService, clientsService, statisticsService, type TriviaStats, type TriviaDocument, type ClientDocument } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 
 // Database Trivia Document interface - matches Appwrite schema exactly
@@ -39,10 +40,12 @@ interface TriviaQuiz {
   incorrect: number
   winnersCount: number
   status: 'Scheduled' | 'Completed' | 'Draft'
+  clientName?: string
 }
 
 const Trivia = () => {
   const navigate = useNavigate()
+  const { addNotification } = useNotificationStore()
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -50,11 +53,28 @@ const Trivia = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [triviaToDelete, setTriviaToDelete] = useState<TriviaQuiz | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [triviaToEdit, setTriviaToEdit] = useState<TriviaQuiz | null>(null)
   const [triviaQuizzes, setTriviaQuizzes] = useState<TriviaQuiz[]>([])
   const [statistics, setStatistics] = useState<TriviaStats | null>(null)
+  const [clientsMap, setClientsMap] = useState<Map<string, ClientDocument>>(new Map())
 
-  // Transform TriviaDocument to TriviaQuiz for UI
-  const transformToUITrivia = (doc: TriviaDocument): TriviaQuiz => {
+  // Fetch clients map for displaying client names
+  const fetchClients = async () => {
+    try {
+      const result = await clientsService.list()
+      const map = new Map<string, ClientDocument>()
+      result.documents.forEach((client) => {
+        map.set(client.$id, client)
+      })
+      setClientsMap(map)
+    } catch (err) {
+      console.error('Error fetching clients:', err)
+    }
+  }
+
+  // Transform TriviaDocument to TriviaQuiz for UI with statistics
+  const transformToUITrivia = async (doc: TriviaDocument, responses: any[]): Promise<TriviaQuiz> => {
     // Calculate status from dates
     const now = new Date()
     const startDate = doc.startDate ? new Date(doc.startDate) : null
@@ -90,27 +110,45 @@ const Trivia = () => {
         })
       : 'N/A'
 
-    // These fields don't exist in DB, so we set defaults
-    // In the future, these might be calculated from user responses/trivia_answers table
+    // Calculate statistics from responses
+    const correctResponses = responses.filter(
+      (response) => response.answerIndex === doc.correctOptionIndex
+    )
+    const incorrectResponses = responses.filter(
+      (response) => response.answerIndex !== doc.correctOptionIndex
+    )
+    const uniqueUsers = new Set(responses.map((r) => r.user).filter(Boolean))
+    
+    // Get client name
+    const clientName = doc.client && clientsMap.has(doc.client) 
+      ? clientsMap.get(doc.client)!.name 
+      : undefined
+
     return {
       id: doc.$id,
       question: doc.question || 'No question',
       date,
-      responses: 0, // TODO: Calculate from trivia_answers table
-      winners: [], // TODO: Fetch from trivia_answers where correct = true
-      view: 0, // TODO: Calculate from views/impressions
-      skip: 0, // TODO: Calculate from user actions
-      incorrect: 0, // TODO: Calculate from trivia_answers
-      winnersCount: 0, // TODO: Count of winners
+      responses: responses.length,
+      winners: Array.from(uniqueUsers).slice(0, 10) as string[], // First 10 unique users
+      view: responses.length, // Using responses as proxy for views
+      skip: 0, // Not tracked in current schema
+      incorrect: incorrectResponses.length,
+      winnersCount: correctResponses.length,
       status,
+      clientName,
     }
   }
 
-  // Fetch trivia from Appwrite
+  // Fetch trivia from Appwrite with statistics
   const fetchTrivia = async () => {
     try {
       setIsLoading(true)
       setError(null)
+      
+      // Fetch clients first if not already loaded
+      if (clientsMap.size === 0) {
+        await fetchClients()
+      }
       
       let result
       if (searchQuery.trim()) {
@@ -121,39 +159,40 @@ const Trivia = () => {
         result = await triviaService.list()
       }
 
-      // Apply sorting
-      let documents = result.documents as TriviaDocument[]
+      // Fetch responses for all trivia in parallel
+      const documents = result.documents as TriviaDocument[]
+      const responsesPromises = documents.map((doc) => 
+        triviaResponsesService.getByTriviaId(doc.$id).catch(() => [])
+      )
+      const responsesArrays = await Promise.all(responsesPromises)
+
+      // Transform with statistics
+      const transformedPromises = documents.map((doc, index) => 
+        transformToUITrivia(doc, responsesArrays[index])
+      )
+      const transformedTrivia = await Promise.all(transformedPromises)
+
+      // Apply sorting - sort by original document dates, not formatted strings
+      let sortedTrivia = [...transformedTrivia]
       if (sortBy === 'Date') {
-        documents = [...documents].sort((a, b) => {
-          const dateA = new Date(a.startDate || a.$createdAt || 0).getTime()
-          const dateB = new Date(b.startDate || b.$createdAt || 0).getTime()
-          return dateB - dateA // Newest first
-        })
+        // Sort using original documents before transformation
+        const triviaWithDates = documents.map((doc, index) => ({
+          trivia: transformedTrivia[index],
+          date: doc.startDate ? new Date(doc.startDate).getTime() : (doc.$createdAt ? new Date(doc.$createdAt).getTime() : 0)
+        }))
+        triviaWithDates.sort((a, b) => b.date - a.date)
+        sortedTrivia = triviaWithDates.map(item => item.trivia)
       } else if (sortBy === 'Status') {
-        documents = [...documents].sort((a, b) => {
-          // Calculate status for sorting
-          const now = new Date()
-          const getStatus = (doc: TriviaDocument) => {
-            if (!doc.startDate || !doc.endDate) return 'Draft'
-            const start = new Date(doc.startDate)
-            const end = new Date(doc.endDate)
-            if (now < start) return 'Scheduled'
-            if (now > end) return 'Completed'
-            return 'Scheduled'
-          }
-          const statusA = getStatus(a)
-          const statusB = getStatus(b)
-          return statusA.localeCompare(statusB)
+        sortedTrivia.sort((a, b) => {
+          return a.status.localeCompare(b.status)
         })
       } else if (sortBy === 'Responses') {
-        // For now, all have 0 responses, but keeping the sort structure
-        documents = [...documents].sort((_a, _b) => {
-          return 0 // TODO: Sort by actual responses when available
+        sortedTrivia.sort((a, b) => {
+          return b.responses - a.responses // Most responses first
         })
       }
 
-      const transformedTrivia = documents.map(transformToUITrivia)
-      setTriviaQuizzes(transformedTrivia)
+      setTriviaQuizzes(sortedTrivia)
     } catch (err) {
       console.error('Error fetching trivia:', err)
       setError('Failed to load trivia quizzes. Please try again.')
@@ -182,6 +221,11 @@ const Trivia = () => {
     fetchStatistics()
   }, [searchQuery, sortBy])
 
+  useEffect(() => {
+    // Fetch clients on mount
+    fetchClients()
+  }, [])
+
   const handleDeleteClick = (trivia: TriviaQuiz) => {
     setTriviaToDelete(trivia)
     setIsDeleteModalOpen(true)
@@ -200,6 +244,15 @@ const Trivia = () => {
         setIsDeleteModalOpen(false)
       }
     }
+  }
+
+  const handleEditClick = (trivia: TriviaQuiz) => {
+    setTriviaToEdit(trivia)
+    setIsEditModalOpen(true)
+  }
+
+  const handleUpdateTrivia = async () => {
+    await fetchTrivia() // Refresh list after update
   }
 
   const handleCreateTrivia = async (triviaData: {
@@ -300,7 +353,7 @@ const Trivia = () => {
         <TriviaTable
           triviaQuizzes={filteredTrivia}
           onViewClick={(trivia) => navigate(`/trivia/${trivia.id}`)}
-          onEditClick={(trivia) => console.log('Edit trivia:', trivia)}
+          onEditClick={handleEditClick}
           onDeleteClick={handleDeleteClick}
         />
       </div>
@@ -311,6 +364,19 @@ const Trivia = () => {
         onClose={() => setIsCreateModalOpen(false)}
         onSave={handleCreateTrivia}
       />
+
+      {/* Edit Trivia Modal */}
+      {triviaToEdit && (
+        <EditTriviaModal
+          isOpen={isEditModalOpen}
+          onClose={() => {
+            setIsEditModalOpen(false)
+            setTriviaToEdit(null)
+          }}
+          triviaId={triviaToEdit.id}
+          onUpdate={handleUpdateTrivia}
+        />
+      )}
 
       {/* Delete Confirmation Modal */}
       <ConfirmationModal

@@ -281,6 +281,43 @@ export interface TriviaDocument extends Models.Document {
   [key: string]: any
 }
 
+// Trivia Response Document interface
+export interface TriviaResponseDocument extends Models.Document {
+  trivia?: string // Relationship to trivia table (trivia ID)
+  answer?: string // Answer text
+  answerIndex: number // Index of the answer selected (0-10000)
+  user?: string // Relationship to user_profiles table (user ID)
+  [key: string]: any
+}
+
+// Trivia Responses service
+export const triviaResponsesService = {
+  create: (data: any) =>
+    DatabaseService.create<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, data),
+  getById: (id: string) =>
+    DatabaseService.getById<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, id),
+  list: (queries?: string[]) =>
+    DatabaseService.list<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, queries),
+  update: (id: string, data: any) =>
+    DatabaseService.update<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, id, data),
+  delete: (id: string) =>
+    DatabaseService.delete(appwriteConfig.collections.triviaResponses, id),
+  getByTriviaId: async (triviaId: string): Promise<TriviaResponseDocument[]> => {
+    const result = await DatabaseService.list<TriviaResponseDocument>(
+      appwriteConfig.collections.triviaResponses,
+      [Query.equal('trivia', [triviaId])]
+    )
+    return result.documents
+  },
+  getByUserId: async (userId: string): Promise<TriviaResponseDocument[]> => {
+    const result = await DatabaseService.list<TriviaResponseDocument>(
+      appwriteConfig.collections.triviaResponses,
+      [Query.equal('user', [userId])]
+    )
+    return result.documents
+  },
+}
+
 // Trivia service
 export const triviaService = {
   create: (data: any) =>
@@ -300,6 +337,49 @@ export const triviaService = {
       ['question'],
       queries
     ),
+  getWithClient: async (id: string): Promise<{ trivia: TriviaDocument; client: ClientDocument | null }> => {
+    const trivia = await DatabaseService.getById<TriviaDocument>(appwriteConfig.collections.trivia, id)
+    let client: ClientDocument | null = null
+    if (trivia.client) {
+      try {
+        client = await DatabaseService.getById<ClientDocument>(appwriteConfig.collections.clients, trivia.client)
+      } catch (error) {
+        console.error('Error fetching client:', error)
+      }
+    }
+    return { trivia, client }
+  },
+  getWithStatistics: async (id: string): Promise<{
+    trivia: TriviaDocument
+    client: ClientDocument | null
+    responses: TriviaResponseDocument[]
+    statistics: {
+      totalResponses: number
+      correctResponses: number
+      incorrectResponses: number
+      uniqueUsers: number
+    }
+  }> => {
+    const { trivia, client } = await triviaService.getWithClient(id)
+    const responses = await triviaResponsesService.getByTriviaId(id)
+    
+    const correctResponses = responses.filter(
+      (response) => response.answerIndex === trivia.correctOptionIndex
+    )
+    const uniqueUsers = new Set(responses.map((r) => r.user).filter(Boolean)).size
+    
+    return {
+      trivia,
+      client,
+      responses,
+      statistics: {
+        totalResponses: responses.length,
+        correctResponses: correctResponses.length,
+        incorrectResponses: responses.length - correctResponses.length,
+        uniqueUsers,
+      },
+    }
+  },
 }
 
 // User Form Data interface (for creating/updating users)
