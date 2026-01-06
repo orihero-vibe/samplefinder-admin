@@ -30,17 +30,20 @@ interface Event {
   id?: string // Add optional id for database reference
 }
 
-// Event document interface from database
-interface EventDocument extends Models.Document {
+// Event document interface from database (local mapping type)
+interface LocalEventDocument extends Models.Document {
   eventName?: string
   eventDate?: string
   startTime?: string
   endTime?: string
   brandName?: string
-  discount?: boolean | string
+  discount?: boolean | string | number
   status?: string
   venueName?: string
-  [key: string]: any
+  date?: string
+  name?: string
+  brand?: string
+  [key: string]: unknown
 }
 
 const Dashboard = () => {
@@ -84,7 +87,7 @@ const Dashboard = () => {
   }
 
   // Helper function to map database event document to EventsTable format
-  const mapEventDocumentToEvent = (doc: EventDocument): Event => {
+  const mapEventDocumentToEvent = (doc: LocalEventDocument): Event => {
     // Format date from ISO string or timestamp to MM/DD/YYYY
     const formatDate = (dateStr?: string): string => {
       if (!dateStr) return ''
@@ -123,8 +126,8 @@ const Dashboard = () => {
       return 'bg-gray-100 text-gray-800'
     }
 
-    // Convert discount boolean/string to "YES"/"NO"
-    const formatDiscount = (discount?: boolean | string): string => {
+    // Convert discount boolean/string/number to "YES"/"NO"
+    const formatDiscount = (discount?: boolean | string | number): string => {
       if (discount === undefined || discount === null) return 'NO'
       if (typeof discount === 'boolean') {
         return discount ? 'YES' : 'NO'
@@ -132,6 +135,9 @@ const Dashboard = () => {
       if (typeof discount === 'string') {
         const lower = discount.toLowerCase()
         return lower === 'yes' || lower === 'true' ? 'YES' : 'NO'
+      }
+      if (typeof discount === 'number') {
+        return discount > 0 ? 'YES' : 'NO'
       }
       return 'NO'
     }
@@ -155,7 +161,7 @@ const Dashboard = () => {
       setIsLoading(true)
       
       const result = await eventsService.list()
-      const mappedEvents = result.documents.map(mapEventDocumentToEvent)
+      const mappedEvents = result.documents.map((doc) => mapEventDocumentToEvent(doc as unknown as LocalEventDocument))
       setEvents(mappedEvents)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch events'

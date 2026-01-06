@@ -1,4 +1,4 @@
-import { Client, Databases } from 'node-appwrite';
+import { Client, Databases, Messaging, ID } from 'node-appwrite';
 
 // Type definitions
 interface SendNotificationRequest {
@@ -21,6 +21,12 @@ interface NotificationData {
 interface UserProfile {
   $id: string;
   authID: string;
+  [key: string]: unknown;
+}
+
+interface PushResult {
+  $id: string;
+  status: string;
   [key: string]: unknown;
 }
 
@@ -82,74 +88,76 @@ async function getTargetUsers(
 }
 
 /**
- * Send push notification to a user
- * Note: This is a placeholder for actual push notification implementation
- * You can integrate with:
- * - Appwrite Messaging (when available)
- * - Firebase Cloud Messaging (FCM)
- * - Apple Push Notification Service (APNS)
- * - Or any other push notification service
+ * Send push notification using Appwrite Messaging
+ * This uses the Appwrite Messaging API to send push notifications
+ * to users via configured providers (FCM, APNS, etc.)
  */
-async function sendPushNotification(
-  userId: string,
+async function sendPushNotificationToUsers(
+  messaging: Messaging,
+  userIds: string[],
   title: string,
   body: string,
   log: (message: string) => void,
-  data?: Record<string, unknown>
-): Promise<boolean> {
+  data?: Record<string, string>
+): Promise<PushResult> {
   try {
-    // TODO: Implement actual push notification sending
-    // This could use:
-    // 1. Appwrite Messaging API (when available)
-    // 2. Direct FCM/APNS integration
-    // 3. A third-party service like OneSignal, Pusher, etc.
+    log(`Sending push notification to ${userIds.length} users: "${title}"`);
     
-    // For now, we'll just log that we would send the notification
-    log(`Would send push notification to user ${userId}: ${title}`);
+    // Create and send push notification using Appwrite Messaging
+    // Parameters: messageId, title, body, topics, users, targets, data, action, image, icon, sound, color, tag, badge, draft, scheduledAt
+    const result = await messaging.createPush(
+      ID.unique(),           // messageId
+      title,                 // title
+      body,                  // body
+      [],                    // topics (optional - empty array)
+      userIds,               // users - Send to specific users by their auth IDs
+      [],                    // targets (optional - empty array)
+      data || {},            // data - Custom data payload
+      undefined,             // action (optional)
+      undefined,             // image (optional)
+      undefined,             // icon (optional)
+      undefined,             // sound (optional)
+      undefined,             // color (optional)
+      undefined,             // tag (optional)
+      undefined,             // badge (optional)
+      false,                 // draft - false to send immediately
+    );
+
+    log(`Push notification created with ID: ${result.$id}, status: ${result.status}`);
     
-    // Placeholder: In production, implement actual push notification logic here
-    // The 'data' parameter will be used when implementing actual push notifications
-    // Example with FCM:
-    // const fcm = require('firebase-admin');
-    // await fcm.messaging().send({
-    //   token: userFcmToken,
-    //   notification: { title, body },
-    //   data,
-    // });
-    
-    // Suppress unused parameter warning for now (will be used in production)
-    void data;
-    
-    return true;
+    return result as PushResult;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Error sending push notification to user ${userId}: ${errorMessage}`);
-    return false;
+    log(`Error sending push notification: ${errorMessage}`);
+    throw new Error(`Failed to send push notification: ${errorMessage}`);
   }
 }
 
 /**
- * Send notification to all target users
+ * Send notification to all target users using Appwrite Messaging
  */
 async function sendNotification(
   databases: Databases,
+  messaging: Messaging,
   notificationId: string,
   log: (message: string) => void
-): Promise<{ success: boolean; recipients: number; errors: number }> {
+): Promise<{ success: boolean; recipients: number; messageId?: string }> {
   try {
     // Get notification data
+    log(`Fetching notification data for ID: ${notificationId}`);
     const notification = await getNotification(databases, notificationId, log);
     
     if (!notification) {
       throw new Error('Notification not found');
     }
 
+    log(`Notification found: title="${notification.title}", status="${notification.status}", targetAudience="${notification.targetAudience}"`);
+
     if (notification.status === 'Sent') {
-      log('Notification already sent');
+      log('Notification already sent - skipping');
       return {
         success: true,
         recipients: notification.recipients || 0,
-        errors: 0,
       };
     }
 
@@ -162,42 +170,55 @@ async function sendNotification(
 
     if (users.length === 0) {
       log('No target users found');
+      
+      // Update notification status even if no users
+      await databases.updateDocument(
+        DATABASE_ID,
+        NOTIFICATIONS_TABLE_ID,
+        notificationId,
+        {
+          status: 'Sent',
+          sentAt: new Date().toISOString(),
+          recipients: 0,
+        }
+      );
+      
       return {
         success: true,
         recipients: 0,
-        errors: 0,
       };
     }
 
-    // Send notifications to all users
-    let successCount = 0;
-    let errorCount = 0;
+    // Extract user auth IDs for push notification
+    const userAuthIds = users
+      .map(user => user.authID)
+      .filter(id => id && typeof id === 'string');
 
-    for (const user of users) {
-      try {
-        // Send push notification
-        // Note: You may need to check if user has push notification tokens registered
-        const sent = await sendPushNotification(
-          user.authID,
-          notification.title,
-          notification.message,
-          log,
-          {
-            notificationId: notification.$id,
-            type: notification.type,
-          }
-        );
-        if (sent) {
-          successCount++;
-        } else {
-          errorCount++;
-        }
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        log(`Failed to send to user ${user.$id}: ${errorMessage}`);
-        errorCount++;
-      }
+    if (userAuthIds.length === 0) {
+      log('No valid user auth IDs found');
+      return {
+        success: false,
+        recipients: 0,
+      };
     }
+
+    log(`Preparing to send push notification to ${userAuthIds.length} users`);
+    log(`User auth IDs: ${userAuthIds.slice(0, 5).join(', ')}${userAuthIds.length > 5 ? '...' : ''}`);
+
+    // Send push notification using Appwrite Messaging
+    const pushResult = await sendPushNotificationToUsers(
+      messaging,
+      userAuthIds,
+      notification.title,
+      notification.message,
+      log,
+      {
+        notificationId: notification.$id,
+        type: notification.type,
+      }
+    );
+    
+    log(`Push result: ID=${pushResult.$id}, status=${pushResult.status}`);
 
     // Update notification status
     const now = new Date().toISOString();
@@ -208,16 +229,16 @@ async function sendNotification(
       {
         status: 'Sent',
         sentAt: now,
-        recipients: successCount,
+        recipients: userAuthIds.length,
       }
     );
 
-    log(`Notification sent successfully. Recipients: ${successCount}, Errors: ${errorCount}`);
+    log(`Notification sent successfully. Recipients: ${userAuthIds.length}, Message ID: ${pushResult.$id}`);
 
     return {
       success: true,
-      recipients: successCount,
-      errors: errorCount,
+      recipients: userAuthIds.length,
+      messageId: pushResult.$id,
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -276,6 +297,7 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       .setKey(apiKey);
 
     const databases = new Databases(client);
+    const messaging = new Messaging(client);
 
     // Handle ping endpoint
     if (req.path === '/ping') {
@@ -315,14 +337,15 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
 
       log(`Sending notification: ${requestBody.notificationId}`);
 
-      // Send notification
+      // Send notification using Appwrite Messaging
       const result = await sendNotification(
         databases,
+        messaging,
         requestBody.notificationId,
         log
       );
 
-      log(`Notification sent. Recipients: ${result.recipients}, Errors: ${result.errors}`);
+      log(`Notification sent. Recipients: ${result.recipients}${result.messageId ? `, Message ID: ${result.messageId}` : ''}`);
 
       return res.json({
         ...result,
@@ -348,5 +371,5 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       500
     );
   }
-};
+}
 

@@ -14,19 +14,11 @@ import {
   EditTriviaModal,
   StatsCards,
 } from './components'
-import { triviaService, triviaResponsesService, clientsService, statisticsService, type TriviaStats, type TriviaDocument, type ClientDocument } from '../../lib/services'
+import { triviaService, triviaResponsesService, clientsService, statisticsService, type TriviaStats, type TriviaDocument as ServiceTriviaDocument, type ClientDocument } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 
-// Database Trivia Document interface - matches Appwrite schema exactly
-interface TriviaDocument extends Models.Document {
-  client?: string // Relationship to clients table (client ID)
-  question: string // Required
-  answers?: string[] // Array of answer option strings
-  correctOptionIndex: number // Required, 0-100, index of correct answer in answers array
-  startDate: string // Required, datetime (ISO 8601)
-  endDate: string // Required, datetime (ISO 8601)
-  points: number // Required, 0-1000
-}
+// Use ServiceTriviaDocument from services.ts
+type TriviaDocument = ServiceTriviaDocument
 
 // UI Trivia Quiz interface (for display)
 interface TriviaQuiz {

@@ -194,6 +194,13 @@ export const clientsService = {
       ['name', 'city', 'state', 'address'],
       queries
     ),
+  findByName: async (name: string): Promise<ClientDocument | null> => {
+    const result = await DatabaseService.list<ClientDocument>(
+      appwriteConfig.collections.clients,
+      [Query.equal('name', [name])]
+    )
+    return result.documents[0] || null
+  },
 }
 
 // Event Document interface
@@ -267,6 +274,13 @@ export const categoriesService = {
       ['title'],
       queries
     ),
+  findByTitle: async (title: string): Promise<CategoryDocument | null> => {
+    const result = await DatabaseService.list<CategoryDocument>(
+      appwriteConfig.collections.categories || 'categories',
+      [Query.equal('title', [title])]
+    )
+    return result.documents[0] || null
+  },
 }
 
 // Trivia Document interface
@@ -663,13 +677,13 @@ export interface NotificationFormData {
 // Notifications service
 export const notificationsService = {
   create: async (data: NotificationFormData): Promise<NotificationDocument> => {
-    const now = new Date()
     const dbData: Record<string, unknown> = {
       title: data.title,
       message: data.message,
       type: data.type,
       targetAudience: data.targetAudience,
-      status: data.schedule === 'Send Immediately' ? 'Sent' : 'Scheduled',
+      // Always start with 'Draft' status - function will update to 'Sent' after sending
+      status: data.schedule === 'Schedule for Later' ? 'Scheduled' : 'Draft',
       recipients: 0, // Will be updated when notification is sent
     }
 
@@ -680,8 +694,6 @@ export const notificationsService = {
       const scheduledDate = new Date(data.scheduledAt)
       scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
       dbData.scheduledAt = scheduledDate.toISOString()
-    } else if (data.schedule === 'Send Immediately') {
-      dbData.sentAt = now.toISOString()
     }
 
     const notification = await DatabaseService.create<NotificationDocument>(
@@ -690,17 +702,13 @@ export const notificationsService = {
     )
 
     // If sending immediately, trigger the send function
+    // The function will update status to 'Sent' and set sentAt after sending
     if (data.schedule === 'Send Immediately') {
       try {
         await notificationsService.sendNotification(notification.$id)
       } catch (error) {
         console.error('Error sending notification:', error)
-        // Update status to Draft if sending fails
-        await DatabaseService.update<NotificationDocument>(
-          appwriteConfig.collections.notifications,
-          notification.$id,
-          { status: 'Draft' }
-        )
+        // Status is already Draft, so just re-throw the error
         throw error
       }
     }

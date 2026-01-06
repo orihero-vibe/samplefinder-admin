@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
-import { clientsService, triviaService, type TriviaDocument, type ClientDocument } from '../../../lib/services'
+import { clientsService, triviaService, type ClientDocument } from '../../../lib/services'
 
 interface EditTriviaModalProps {
   isOpen: boolean
@@ -50,7 +50,7 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
     try {
       setIsLoadingTrivia(true)
       setError(null)
-      const { trivia, client } = await triviaService.getWithClient(triviaId)
+      const { trivia } = await triviaService.getWithClient(triviaId)
       
       // Convert ISO dates to datetime-local format (YYYY-MM-DDTHH:mm)
       const startDate = trivia.startDate ? new Date(trivia.startDate).toISOString().slice(0, 16) : ''

@@ -149,7 +149,14 @@
                 "rows.read",
                 "rows.write",
                 "documents.read",
-                "documents.write"
+                "documents.write",
+                "targets.read",
+                "targets.write",
+                "providers.read",
+                "messages.read",
+                "messages.write",
+                "topics.read",
+                "subscribers.read"
             ],
             "schedule": "",
             "timeout": 15,

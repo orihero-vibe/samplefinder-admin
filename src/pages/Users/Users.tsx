@@ -103,7 +103,7 @@ const Users = () => {
     if (!userToDelete?.$id || !userToDelete?.authID) return
 
     try {
-      await appUsersService.delete(userToDelete.$id, userToDelete.authID)
+      await appUsersService.delete(userToDelete.$id)
       await fetchUsers() // Refresh list
       setIsDeleteModalOpen(false)
       setUserToDelete(null)
@@ -204,7 +204,18 @@ const Users = () => {
       <AddUserModal
         isOpen={isAddUserModalOpen}
         onClose={() => setIsAddUserModalOpen(false)}
-        onSave={handleCreateUser}
+        onSave={(userData) => {
+          // Map AddUserModal's type to UserFormData
+          handleCreateUser({
+            email: userData.email,
+            password: userData.password,
+            firstname: userData.firstName,
+            lastname: userData.lastName,
+            username: userData.username,
+            phoneNumber: userData.phoneNumber,
+            role: userData.role as 'admin' | 'user',
+          })
+        }}
       />
 
       {/* Edit User Modal */}
@@ -236,10 +247,10 @@ const Users = () => {
         initialData={
           selectedUser
             ? {
-                firstName: selectedUser.firstName,
-                lastName: selectedUser.lastName,
+                firstName: String(selectedUser.firstname ?? selectedUser.firstName ?? ''),
+                lastName: String(selectedUser.lastname ?? selectedUser.lastName ?? ''),
                 zipCode: '',
-                phoneNumber: selectedUser.phoneNumber,
+                phoneNumber: String(selectedUser.phoneNumber ?? ''),
                 userPoints: '',
                 baBadge: 'Yes',
                 signUpDate: selectedUser.$createdAt
@@ -248,7 +259,7 @@ const Users = () => {
                 password: '**********',
                 checkIns: '',
                 tierLevel: 'SuperSampler',
-                username: selectedUser.username,
+                username: String(selectedUser.username ?? ''),
                 email: selectedUser.email,
                 checkInReviewPoints: '750',
                 influencerBadge: 'No',
