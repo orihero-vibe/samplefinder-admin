@@ -23,6 +23,7 @@ export const appwriteConfig = {
   },
   functions: {
     statisticsFunctionId: import.meta.env.VITE_APPWRITE_STATISTICS_FUNCTION_ID || '',
+    notificationFunctionId: import.meta.env.VITE_APPWRITE_NOTIFICATION_FUNCTION_ID || '',
   },
 }
 

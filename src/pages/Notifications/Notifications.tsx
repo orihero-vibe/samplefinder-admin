@@ -8,18 +8,19 @@ import {
   NotificationsTable,
   CreateNotificationModal,
 } from './components'
-import { statisticsService, type NotificationsStats } from '../../lib/services'
+import { statisticsService, notificationsService, type NotificationsStats, type NotificationDocument, type NotificationFormData } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { Query } from '../../lib/appwrite'
 
 interface Notification {
   id: string
   title: string
-  target: 'Targeted' | 'All'
+  target: 'Targeted' | 'All' | 'Specific Segment'
   timing: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
   recipients: number
   date: string
-  status: 'Scheduled' | 'Sent'
+  status: 'Scheduled' | 'Sent' | 'Draft'
 }
 
 const Notifications = () => {
@@ -30,6 +31,8 @@ const Notifications = () => {
   const [sortBy, setSortBy] = useState('Date')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [statistics, setStatistics] = useState<NotificationsStats | null>(null)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [isSaving, setIsSaving] = useState(false)
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
     type: ConfirmationType
@@ -40,6 +43,76 @@ const Notifications = () => {
     type: 'delete',
     onConfirm: () => {},
   })
+
+  // Convert NotificationDocument to UI Notification format
+  const convertNotification = (doc: NotificationDocument): Notification => {
+    const date = doc.sentAt || doc.scheduledAt || doc.$createdAt
+    const dateObj = new Date(date)
+    const timing = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+    const formattedDate = dateObj.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+    
+    // Map target audience for display
+    let targetDisplay: 'Targeted' | 'All' | 'Specific Segment' = doc.targetAudience
+    if (doc.targetAudience === 'Targeted') {
+      targetDisplay = 'Targeted'
+    } else if (doc.targetAudience === 'All') {
+      targetDisplay = 'All'
+    } else {
+      targetDisplay = 'Specific Segment'
+    }
+    
+    return {
+      id: doc.$id,
+      title: doc.title,
+      target: targetDisplay,
+      timing,
+      type: doc.type,
+      recipients: doc.recipients || 0,
+      date: formattedDate,
+      status: doc.status,
+    }
+  }
+
+  // Fetch notifications
+  const fetchNotifications = async () => {
+    try {
+      setIsLoading(true)
+      const queries: string[] = []
+      
+      // Add type filter if not "All Types"
+      if (typeFilter !== 'All Types') {
+        queries.push(Query.equal('type', [typeFilter]))
+      }
+      
+      // Order by creation date (newest first)
+      queries.push(Query.orderDesc('$createdAt'))
+      
+      const response = await notificationsService.list(queries)
+      
+      // Filter by search query on client side (since search might not work with all Appwrite setups)
+      let filteredDocs = response.documents
+      if (searchQuery) {
+        const searchLower = searchQuery.toLowerCase()
+        filteredDocs = response.documents.filter(
+          (doc) =>
+            doc.title.toLowerCase().includes(searchLower) ||
+            doc.message.toLowerCase().includes(searchLower)
+        )
+      }
+      
+      const convertedNotifications = filteredDocs.map(convertNotification)
+      setNotifications(convertedNotifications)
+    } catch (err) {
+      console.error('Error fetching notifications:', err)
+      addNotification({
+        type: 'error',
+        title: 'Error Loading Notifications',
+        message: 'Failed to load notifications. Please refresh the page.',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // Fetch statistics
   const fetchStatistics = async () => {
@@ -57,14 +130,18 @@ const Notifications = () => {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false)
-    }, 1000)
-
     fetchStatistics()
-
-    return () => clearTimeout(timer)
+    fetchNotifications()
   }, [])
+
+  // Refetch notifications when search or filter changes
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fetchNotifications()
+    }, 300) // Debounce search
+
+    return () => clearTimeout(timeoutId)
+  }, [searchQuery, typeFilter])
 
   const stats = statistics
     ? [
@@ -128,98 +205,71 @@ const Notifications = () => {
         },
       ]
 
-  const notifications: Notification[] = [
-    {
-      id: '1',
-      title: 'New Event Alert: Fashion Week NYC',
-      target: 'Targeted',
-      timing: '5:40 am',
-      type: 'Event Reminder',
-      recipients: 130,
-      date: '05/15/2020',
-      status: 'Scheduled',
-    },
-    {
-      id: '2',
-      title: 'Weekend Bonus Points',
-      target: 'All',
-      timing: '5:40 am',
-      type: 'Event Reminder',
-      recipients: 357,
-      date: '05/15/2020',
-      status: 'Scheduled',
-    },
-    {
-      id: '3',
-      title: "You're Almost Gold Tier!",
-      target: 'All',
-      timing: '8:20 am',
-      type: 'Promotional',
-      recipients: 740,
-      date: '05/15/2020',
-      status: 'Sent',
-    },
-    {
-      id: '4',
-      title: 'New Brand Partner: Premium Cosmetics',
-      target: 'Targeted',
-      timing: '6:45 am',
-      type: 'Engagement',
-      recipients: 154,
-      date: '05/15/2020',
-      status: 'Scheduled',
-    },
-    {
-      id: '5',
-      title: 'Weekly Event Digest',
-      target: 'All',
-      timing: '5:40 am',
-      type: 'Promotional',
-      recipients: 826,
-      date: '05/15/2020',
-      status: 'Sent',
-    },
-    {
-      id: '6',
-      title: 'Check-In Reminder',
-      target: 'Targeted',
-      timing: '5:45 am',
-      type: 'Engagement',
-      recipients: 447,
-      date: '05/15/2020',
-      status: 'Scheduled',
-    },
-    {
-      id: '7',
-      title: 'Cameron',
-      target: 'Targeted',
-      timing: '7:30 am',
-      type: 'Promotional',
-      recipients: 583,
-      date: '05/15/2020',
-      status: 'Sent',
-    },
-    {
-      id: '8',
-      title: 'Survey: Help Us Improve',
-      target: 'All',
-      timing: '7:30 am',
-      type: 'Event Reminder',
-      recipients: 185,
-      date: '05/15/2020',
-      status: 'Scheduled',
-    },
-  ]
+  // Handle save notification
+  const handleSaveNotification = async (notificationData: NotificationFormData) => {
+    try {
+      setIsSaving(true)
+      await notificationsService.create(notificationData)
+      
+      addNotification({
+        type: 'success',
+        title: 'Notification Created',
+        message: notificationData.schedule === 'Send Immediately' 
+          ? 'Notification has been sent successfully.' 
+          : 'Notification has been scheduled successfully.',
+      })
+      
+      // Refresh notifications and statistics
+      await Promise.all([fetchNotifications(), fetchStatistics()])
+      setIsCreateModalOpen(false)
+    } catch (error: any) {
+      console.error('Error creating notification:', error)
+      addNotification({
+        type: 'error',
+        title: 'Error Creating Notification',
+        message: error.message || 'Failed to create notification. Please try again.',
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
-  const filteredNotifications = notifications.filter((notification) => {
-    const matchesSearch = notification.title.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesType = typeFilter === 'All Types' || notification.type === typeFilter
-    return matchesSearch && matchesType
-  })
+  // Handle delete notification
+  const handleDeleteNotification = async (notification: Notification) => {
+    try {
+      await notificationsService.delete(notification.id)
+      
+      addNotification({
+        type: 'success',
+        title: 'Notification Deleted',
+        message: 'Notification has been deleted successfully.',
+      })
+      
+      // Refresh notifications and statistics
+      await Promise.all([fetchNotifications(), fetchStatistics()])
+      setConfirmationModal({ ...confirmationModal, isOpen: false })
+    } catch (error: any) {
+      console.error('Error deleting notification:', error)
+      addNotification({
+        type: 'error',
+        title: 'Error Deleting Notification',
+        message: error.message || 'Failed to delete notification. Please try again.',
+      })
+      setConfirmationModal({ ...confirmationModal, isOpen: false })
+    }
+  }
 
-  const sortedNotifications = [...filteredNotifications].sort((a, b) => {
+  const sortedNotifications = [...notifications].sort((a, b) => {
     if (sortBy === 'Date') {
-      return new Date(b.date).getTime() - new Date(a.date).getTime()
+      // Parse date strings (MM/DD/YYYY format)
+      // Handle date parsing more carefully
+      const parseDate = (dateStr: string): Date => {
+        const [month, day, year] = dateStr.split('/')
+        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+      }
+      const dateA = parseDate(a.date)
+      const dateB = parseDate(b.date)
+      return dateB.getTime() - dateA.getTime()
     }
     return 0
   })
@@ -259,11 +309,7 @@ const Notifications = () => {
             setConfirmationModal({
               isOpen: true,
               type: 'delete',
-              onConfirm: () => {
-                console.log('Delete notification:', notification)
-                // TODO: Implement delete functionality
-                setConfirmationModal({ ...confirmationModal, isOpen: false })
-              },
+              onConfirm: () => handleDeleteNotification(notification),
               itemName: `notification "${notification.title}"`,
             })
           }}
@@ -274,11 +320,7 @@ const Notifications = () => {
       <CreateNotificationModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onSave={(notificationData) => {
-          console.log('Notification data:', notificationData)
-          // TODO: Implement save functionality
-          setIsCreateModalOpen(false)
-        }}
+        onSave={handleSaveNotification}
       />
 
       {/* Confirmation Modal */}

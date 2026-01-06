@@ -1,0 +1,23 @@
+{
+  "name": "notification-functions",
+  "version": "1.0.0",
+  "description": "Appwrite Cloud Function for sending notifications",
+  "main": "src/main.js",
+  "type": "module",
+  "scripts": {
+    "format": "prettier --write .",
+    "build": "tsc && cp dist/main.js src/main.js",
+    "test:local": "tsx test-local.ts",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "node-appwrite": "^14.1.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.5",
+    "typescript": "^5.0.0",
+    "tsx": "^4.7.0",
+    "dotenv": "^17.2.3"
+  }
+}
+

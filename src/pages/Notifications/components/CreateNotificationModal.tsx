@@ -7,9 +7,11 @@ interface CreateNotificationModalProps {
   onSave: (notificationData: {
     title: string
     message: string
-    type: string
-    targetAudience: string
-    schedule: string
+    type: 'Event Reminder' | 'Promotional' | 'Engagement'
+    targetAudience: 'All' | 'Targeted' | 'Specific Segment'
+    schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring'
+    scheduledAt?: string
+    scheduledTime?: string
   }) => void
 }
 
@@ -21,9 +23,11 @@ const CreateNotificationModal = ({
   const [formData, setFormData] = useState({
     title: '',
     message: '',
-    type: 'Event Reminder',
-    targetAudience: 'All Users (850)',
-    schedule: 'Send Immediately',
+    type: 'Event Reminder' as 'Event Reminder' | 'Promotional' | 'Engagement',
+    targetAudience: 'All' as 'All' | 'Targeted' | 'Specific Segment',
+    schedule: 'Send Immediately' as 'Send Immediately' | 'Schedule for Later' | 'Recurring',
+    scheduledAt: '',
+    scheduledTime: '',
   })
 
   if (!isOpen) return null
@@ -34,14 +38,32 @@ const CreateNotificationModal = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Validate scheduled date/time if scheduling for later
+    if (formData.schedule === 'Schedule for Later') {
+      if (!formData.scheduledAt || !formData.scheduledTime) {
+        alert('Please select both date and time for scheduled notifications')
+        return
+      }
+      
+      // Validate that scheduled time is in the future
+      const scheduledDate = new Date(`${formData.scheduledAt}T${formData.scheduledTime}`)
+      if (scheduledDate <= new Date()) {
+        alert('Scheduled date and time must be in the future')
+        return
+      }
+    }
+    
     onSave(formData)
     // Reset form
     setFormData({
       title: '',
       message: '',
       type: 'Event Reminder',
-      targetAudience: 'All Users (850)',
+      targetAudience: 'All',
       schedule: 'Send Immediately',
+      scheduledAt: '',
+      scheduledTime: '',
     })
     onClose()
   }
@@ -52,8 +74,10 @@ const CreateNotificationModal = ({
       title: '',
       message: '',
       type: 'Event Reminder',
-      targetAudience: 'All Users (850)',
+      targetAudience: 'All',
       schedule: 'Send Immediately',
+      scheduledAt: '',
+      scheduledTime: '',
     })
     onClose()
   }
@@ -131,12 +155,12 @@ const CreateNotificationModal = ({
                 <div className="relative">
                   <select
                     value={formData.type}
-                    onChange={(e) => handleInputChange('type', e.target.value)}
+                    onChange={(e) => handleInputChange('type', e.target.value as 'Event Reminder' | 'Promotional' | 'Engagement')}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
                   >
-                    <option>Event Reminder</option>
-                    <option>Promotional</option>
-                    <option>Engagement</option>
+                    <option value="Event Reminder">Event Reminder</option>
+                    <option value="Promotional">Promotional</option>
+                    <option value="Engagement">Engagement</option>
                   </select>
                   <Icon
                     icon="mdi:chevron-down"
@@ -164,12 +188,12 @@ const CreateNotificationModal = ({
                 <div className="relative">
                   <select
                     value={formData.targetAudience}
-                    onChange={(e) => handleInputChange('targetAudience', e.target.value)}
+                    onChange={(e) => handleInputChange('targetAudience', e.target.value as 'All' | 'Targeted' | 'Specific Segment')}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
                   >
-                    <option>All Users (850)</option>
-                    <option>Targeted Users</option>
-                    <option>Specific Segment</option>
+                    <option value="All">All Users</option>
+                    <option value="Targeted">Targeted Users</option>
+                    <option value="Specific Segment">Specific Segment</option>
                   </select>
                   <Icon
                     icon="mdi:chevron-down"
@@ -188,7 +212,7 @@ const CreateNotificationModal = ({
               </div>
               <h3 className="text-lg font-semibold text-gray-900">Schedule</h3>
             </div>
-            <div className="ml-11">
+            <div className="ml-11 space-y-4">
               {/* When to send */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -197,12 +221,12 @@ const CreateNotificationModal = ({
                 <div className="relative">
                   <select
                     value={formData.schedule}
-                    onChange={(e) => handleInputChange('schedule', e.target.value)}
+                    onChange={(e) => handleInputChange('schedule', e.target.value as 'Send Immediately' | 'Schedule for Later' | 'Recurring')}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
                   >
-                    <option>Send Immediately</option>
-                    <option>Schedule for Later</option>
-                    <option>Recurring</option>
+                    <option value="Send Immediately">Send Immediately</option>
+                    <option value="Schedule for Later">Schedule for Later</option>
+                    <option value="Recurring">Recurring</option>
                   </select>
                   <Icon
                     icon="mdi:chevron-down"
@@ -210,6 +234,37 @@ const CreateNotificationModal = ({
                   />
                 </div>
               </div>
+
+              {/* Date and Time pickers for scheduled notifications */}
+              {formData.schedule === 'Schedule for Later' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Scheduled Date
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.scheduledAt}
+                      onChange={(e) => handleInputChange('scheduledAt', e.target.value)}
+                      min={new Date().toISOString().split('T')[0]}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                      required={formData.schedule === 'Schedule for Later'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Scheduled Time
+                    </label>
+                    <input
+                      type="time"
+                      value={formData.scheduledTime}
+                      onChange={(e) => handleInputChange('scheduledTime', e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                      required={formData.schedule === 'Schedule for Later'}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

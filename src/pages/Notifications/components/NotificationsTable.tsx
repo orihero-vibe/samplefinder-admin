@@ -3,12 +3,12 @@ import { Icon } from '@iconify/react'
 interface Notification {
   id: string
   title: string
-  target: 'Targeted' | 'All'
+  target: 'Targeted' | 'All' | 'Specific Segment'
   timing: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
   recipients: number
   date: string
-  status: 'Scheduled' | 'Sent'
+  status: 'Scheduled' | 'Sent' | 'Draft'
 }
 
 interface NotificationsTableProps {
@@ -40,9 +40,11 @@ const NotificationsTable = ({
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Scheduled':
-        return 'bg-red-100 text-red-800'
+        return 'bg-yellow-100 text-yellow-800'
       case 'Sent':
         return 'bg-green-100 text-green-800'
+      case 'Draft':
+        return 'bg-gray-100 text-gray-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }

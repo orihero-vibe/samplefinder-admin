@@ -18,7 +18,7 @@ interface ClientData {
   state?: string;
   zip?: string;
   location?: [number, number]; // [longitude, latitude]
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface EventData {
@@ -43,7 +43,7 @@ interface EventData {
   isHidden: boolean;
   client?: string; // Client ID (relationship)
   categories?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface EventWithClient extends Omit<EventData, 'client'> {
@@ -105,29 +105,31 @@ function haversineDistance(
 /**
  * Validate request body
  */
-function validateRequestBody(body: any): RequestBody {
+function validateRequestBody(body: unknown): RequestBody {
   if (!body || typeof body !== 'object') {
     throw new Error('Request body is required');
   }
 
-  if (typeof body.latitude !== 'number' || isNaN(body.latitude)) {
+  const bodyObj = body as Record<string, unknown>;
+
+  if (typeof bodyObj.latitude !== 'number' || isNaN(bodyObj.latitude)) {
     throw new Error('latitude must be a valid number');
   }
 
-  if (typeof body.longitude !== 'number' || isNaN(body.longitude)) {
+  if (typeof bodyObj.longitude !== 'number' || isNaN(bodyObj.longitude)) {
     throw new Error('longitude must be a valid number');
   }
 
-  if (body.latitude < -90 || body.latitude > 90) {
+  if (bodyObj.latitude < -90 || bodyObj.latitude > 90) {
     throw new Error('latitude must be between -90 and 90');
   }
 
-  if (body.longitude < -180 || body.longitude > 180) {
+  if (bodyObj.longitude < -180 || bodyObj.longitude > 180) {
     throw new Error('longitude must be between -180 and 180');
   }
 
-  const page = body.page !== undefined ? Number(body.page) : DEFAULT_PAGE;
-  const pageSize = body.pageSize !== undefined ? Number(body.pageSize) : DEFAULT_PAGE_SIZE;
+  const page = bodyObj.page !== undefined ? Number(bodyObj.page) : DEFAULT_PAGE;
+  const pageSize = bodyObj.pageSize !== undefined ? Number(bodyObj.pageSize) : DEFAULT_PAGE_SIZE;
 
   if (page < 1 || !Number.isInteger(page)) {
     throw new Error('page must be a positive integer');
@@ -138,8 +140,8 @@ function validateRequestBody(body: any): RequestBody {
   }
 
   return {
-    latitude: body.latitude,
-    longitude: body.longitude,
+    latitude: bodyObj.latitude,
+    longitude: bodyObj.longitude,
     page,
     pageSize,
   };
@@ -201,14 +203,14 @@ async function getEventsByLocation(
           clientData = clientResponse as unknown as ClientData;
         } else if (event.client && typeof event.client === 'object') {
           // Relationship is already populated as an object (from Query.select)
-          const clientObj = event.client as any;
+          const clientObj = event.client as Record<string, unknown>;
           // Check if it has the structure of a populated relationship
           if (clientObj.$id || clientObj.name) {
             // It's a populated relationship object, use it directly
             clientData = clientObj as unknown as ClientData;
           } else {
             // Try to extract ID from object
-            const clientId = clientObj.id || clientObj.$id;
+            const clientId = (clientObj.id || clientObj.$id) as string | undefined;
             if (clientId && typeof clientId === 'string') {
               const clientResponse = await databases.getDocument(
                 DATABASE_ID,
@@ -225,12 +227,13 @@ async function getEventsByLocation(
           const [clientLon, clientLat] = clientData.location;
           distance = haversineDistance(userLat, userLon, clientLat, clientLon);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Client not found or error fetching - skip this event or use null
         const clientInfo = typeof event.client === 'string' 
           ? event.client 
-          : (event.client as any)?.$id || JSON.stringify(event.client).substring(0, 50);
-        log(`Error fetching client ${clientInfo}: ${err?.message || err}`);
+          : (event.client as Record<string, unknown>)?.$id || JSON.stringify(event.client).substring(0, 50);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        log(`Error fetching client ${clientInfo}: ${errorMessage}`);
       }
     }
 
@@ -268,7 +271,26 @@ async function getEventsByLocation(
 }
 
 // Main function handler
-export default async function handler({ req, res, log, error }: any) {
+interface HandlerRequest {
+  path: string;
+  method: string;
+  body?: unknown;
+  headers: Record<string, string>;
+}
+
+interface HandlerResponse {
+  json: (data: unknown, code?: number) => void;
+  text: (data: string, code?: number) => void;
+}
+
+interface HandlerContext {
+  req: HandlerRequest;
+  res: HandlerResponse;
+  log: (message: string) => void;
+  error: (message: string) => void;
+}
+
+export default async function handler({ req, res, log, error }: HandlerContext) {
   try {
     // Initialize Appwrite client
     // Use environment variables provided by Appwrite Cloud Functions
@@ -335,12 +357,13 @@ export default async function handler({ req, res, log, error }: any) {
       let requestBody: RequestBody;
       try {
         requestBody = validateRequestBody(req.body);
-      } catch (validationError: any) {
-        error(`Validation error: ${validationError.message}`);
+      } catch (validationError: unknown) {
+        const errorMessage = validationError instanceof Error ? validationError.message : String(validationError);
+        error(`Validation error: ${errorMessage}`);
         return res.json(
           {
             success: false,
-            error: validationError.message,
+            error: errorMessage,
           },
           400
         );
@@ -375,13 +398,14 @@ export default async function handler({ req, res, log, error }: any) {
       connect: 'https://appwrite.io/discord',
       getInspired: 'https://builtwith.appwrite.io',
     });
-  } catch (err: any) {
-    error(`Function error: ${err.message}`);
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Internal server error';
+    error(`Function error: ${errorMessage}`);
     console.error('Function error:', err);
     return res.json(
       {
         success: false,
-        error: err.message || 'Internal server error',
+        error: errorMessage,
       },
       500
     );

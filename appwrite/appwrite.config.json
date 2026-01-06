@@ -130,6 +130,27 @@
             "entrypoint": "src/main.js",
             "commands": "npm install",
             "path": "functions/Statistics functions"
+        },
+        {
+            "name": "Notification functions",
+            "runtime": "node-22",
+            "specification": "s-0.5vcpu-512mb",
+            "execute": [
+                "any"
+            ],
+            "events": [],
+            "scopes": [
+                "databases.read",
+                "databases.write",
+                "users.read"
+            ],
+            "schedule": "",
+            "timeout": 15,
+            "enabled": true,
+            "logging": true,
+            "entrypoint": "src/main.js",
+            "commands": "npm install",
+            "path": "functions/Notification functions"
         }
     ],
     "tablesDB": [

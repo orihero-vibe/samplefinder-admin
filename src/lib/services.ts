@@ -12,6 +12,7 @@ export class DatabaseService {
       appwriteConfig.databaseId,
       collectionId,
       ID.unique(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data as any
     ) as T
   }
@@ -50,6 +51,7 @@ export class DatabaseService {
       appwriteConfig.databaseId,
       collectionId,
       documentId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data as any
     ) as T
   }
@@ -85,18 +87,18 @@ export class DatabaseService {
 export interface UserProfile extends Models.Document {
   authID: string
   role: string
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // User Profiles service
 export const userProfilesService = {
-  create: (data: any) =>
+  create: (data: Record<string, unknown>) =>
     DatabaseService.create<UserProfile>(appwriteConfig.collections.userProfiles, data),
   getById: (id: string) =>
     DatabaseService.getById<UserProfile>(appwriteConfig.collections.userProfiles, id),
   list: (queries?: string[]) =>
     DatabaseService.list<UserProfile>(appwriteConfig.collections.userProfiles, queries),
-  update: (id: string, data: any) =>
+  update: (id: string, data: Record<string, unknown>) =>
     DatabaseService.update<UserProfile>(appwriteConfig.collections.userProfiles, id, data),
   delete: (id: string) =>
     DatabaseService.delete(appwriteConfig.collections.userProfiles, id),
@@ -126,13 +128,11 @@ export interface ClientDocument extends Models.Document {
   state?: string
   zip?: string
   location?: [number, number] // [longitude, latitude]
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // Client interface (for UI)
-export interface Client extends ClientDocument {
-  // Additional UI-specific fields can be added here
-}
+export type Client = ClientDocument
 
 // Client Form Data interface
 export interface ClientFormData {
@@ -150,7 +150,7 @@ export interface ClientFormData {
 // Clients service
 export const clientsService = {
   create: (data: ClientFormData) => {
-    const dbData: any = {
+    const dbData: Record<string, unknown> = {
       name: data.name,
       logoURL: data.logoURL || null,
       productType: data.productType || [],
@@ -172,7 +172,7 @@ export const clientsService = {
   list: (queries?: string[]) =>
     DatabaseService.list<ClientDocument>(appwriteConfig.collections.clients, queries),
   update: (id: string, data: Partial<ClientFormData>) => {
-    const dbData: any = {
+    const dbData: Record<string, unknown> = {
       ...data,
     }
 
@@ -218,18 +218,18 @@ export interface EventDocument extends Models.Document {
   isHidden: boolean
   client?: string // Client ID (relationship)
   categories?: string // Category ID (relationship)
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // Events service
 export const eventsService = {
-  create: (data: any) =>
+  create: (data: Record<string, unknown>) =>
     DatabaseService.create<EventDocument>(appwriteConfig.collections.events, data),
   getById: (id: string) =>
     DatabaseService.getById<EventDocument>(appwriteConfig.collections.events, id),
   list: (queries?: string[]) =>
     DatabaseService.list<EventDocument>(appwriteConfig.collections.events, queries),
-  update: (id: string, data: any) =>
+  update: (id: string, data: Record<string, unknown>) =>
     DatabaseService.update<EventDocument>(appwriteConfig.collections.events, id, data),
   delete: (id: string) =>
     DatabaseService.delete(appwriteConfig.collections.events, id),
@@ -245,7 +245,7 @@ export const eventsService = {
 // Category Document interface
 export interface CategoryDocument extends Models.Document {
   title: string
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // Categories service
@@ -278,7 +278,7 @@ export interface TriviaDocument extends Models.Document {
   startDate: string
   endDate: string
   points: number
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // Trivia Response Document interface
@@ -287,18 +287,18 @@ export interface TriviaResponseDocument extends Models.Document {
   answer?: string // Answer text
   answerIndex: number // Index of the answer selected (0-10000)
   user?: string // Relationship to user_profiles table (user ID)
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // Trivia Responses service
 export const triviaResponsesService = {
-  create: (data: any) =>
+  create: (data: Record<string, unknown>) =>
     DatabaseService.create<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, data),
   getById: (id: string) =>
     DatabaseService.getById<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, id),
   list: (queries?: string[]) =>
     DatabaseService.list<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, queries),
-  update: (id: string, data: any) =>
+  update: (id: string, data: Record<string, unknown>) =>
     DatabaseService.update<TriviaResponseDocument>(appwriteConfig.collections.triviaResponses, id, data),
   delete: (id: string) =>
     DatabaseService.delete(appwriteConfig.collections.triviaResponses, id),
@@ -320,13 +320,13 @@ export const triviaResponsesService = {
 
 // Trivia service
 export const triviaService = {
-  create: (data: any) =>
+  create: (data: Record<string, unknown>) =>
     DatabaseService.create<TriviaDocument>(appwriteConfig.collections.trivia, data),
   getById: (id: string) =>
     DatabaseService.getById<TriviaDocument>(appwriteConfig.collections.trivia, id),
   list: (queries?: string[]) =>
     DatabaseService.list<TriviaDocument>(appwriteConfig.collections.trivia, queries),
-  update: (id: string, data: any) =>
+  update: (id: string, data: Record<string, unknown>) =>
     DatabaseService.update<TriviaDocument>(appwriteConfig.collections.trivia, id, data),
   delete: (id: string) =>
     DatabaseService.delete(appwriteConfig.collections.trivia, id),
@@ -473,7 +473,7 @@ export const appUsersService = {
   },
 
   // Delete user (Auth + user_profiles)
-  delete: async (id: string, _authID: string): Promise<void> => {
+  delete: async (id: string): Promise<void> => {
     try {
       // Step 1: Delete user_profiles
       await userProfilesService.delete(id)
@@ -612,22 +612,202 @@ export const statisticsService = {
       }
 
       // Parse response body
-      let response: any = {}
+      let response: Record<string, unknown> = {}
       if (execution.responseBody) {
         try {
-          response = JSON.parse(execution.responseBody)
-        } catch (parseError) {
+          response = JSON.parse(execution.responseBody) as Record<string, unknown>
+        } catch {
           throw new Error(`Invalid JSON response from function: ${execution.responseBody}`)
         }
       }
 
       if (!response.success) {
-        throw new Error(response.error || 'Failed to fetch statistics')
+        const errorMessage = typeof response.error === 'string' ? response.error : 'Failed to fetch statistics'
+        throw new Error(errorMessage)
       }
 
       return response.statistics as T
     } catch (error) {
       console.error(`Error fetching statistics for ${page}:`, error)
+      throw error
+    }
+  },
+}
+
+// Notification Document interface
+export interface NotificationDocument extends Models.Document {
+  title: string
+  message: string
+  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  targetAudience: 'All' | 'Targeted' | 'Specific Segment'
+  status: 'Scheduled' | 'Sent' | 'Draft'
+  scheduledAt?: string // ISO date string for scheduled notifications
+  sentAt?: string // ISO date string when notification was sent
+  recipients?: number // Number of recipients
+  openRate?: number // Percentage of users who opened
+  clickRate?: number // Percentage of users who clicked
+  [key: string]: unknown
+}
+
+// Notification Form Data interface
+export interface NotificationFormData {
+  title: string
+  message: string
+  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  targetAudience: 'All' | 'Targeted' | 'Specific Segment'
+  schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring'
+  scheduledAt?: string // ISO date string
+  scheduledTime?: string // Time string (HH:mm)
+}
+
+// Notifications service
+export const notificationsService = {
+  create: async (data: NotificationFormData): Promise<NotificationDocument> => {
+    const now = new Date()
+    const dbData: Record<string, unknown> = {
+      title: data.title,
+      message: data.message,
+      type: data.type,
+      targetAudience: data.targetAudience,
+      status: data.schedule === 'Send Immediately' ? 'Sent' : 'Scheduled',
+      recipients: 0, // Will be updated when notification is sent
+    }
+
+    // Handle scheduling
+    if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
+      // Combine date and time
+      const [hours, minutes] = data.scheduledTime.split(':')
+      const scheduledDate = new Date(data.scheduledAt)
+      scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
+      dbData.scheduledAt = scheduledDate.toISOString()
+    } else if (data.schedule === 'Send Immediately') {
+      dbData.sentAt = now.toISOString()
+    }
+
+    const notification = await DatabaseService.create<NotificationDocument>(
+      appwriteConfig.collections.notifications,
+      dbData
+    )
+
+    // If sending immediately, trigger the send function
+    if (data.schedule === 'Send Immediately') {
+      try {
+        await notificationsService.sendNotification(notification.$id)
+      } catch (error) {
+        console.error('Error sending notification:', error)
+        // Update status to Draft if sending fails
+        await DatabaseService.update<NotificationDocument>(
+          appwriteConfig.collections.notifications,
+          notification.$id,
+          { status: 'Draft' }
+        )
+        throw error
+      }
+    }
+
+    return notification
+  },
+
+  getById: (id: string) =>
+    DatabaseService.getById<NotificationDocument>(appwriteConfig.collections.notifications, id),
+
+  list: (queries?: string[]) =>
+    DatabaseService.list<NotificationDocument>(appwriteConfig.collections.notifications, queries),
+
+  update: (id: string, data: Partial<NotificationFormData>) => {
+    const dbData: Record<string, unknown> = { ...data }
+    
+    // Handle scheduling updates
+    if (data.scheduledAt && data.scheduledTime) {
+      const [hours, minutes] = data.scheduledTime.split(':')
+      const scheduledDate = new Date(data.scheduledAt)
+      scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
+      dbData.scheduledAt = scheduledDate.toISOString()
+      delete dbData.scheduledTime
+    }
+
+    return DatabaseService.update<NotificationDocument>(
+      appwriteConfig.collections.notifications,
+      id,
+      dbData
+    )
+  },
+
+  delete: (id: string) =>
+    DatabaseService.delete(appwriteConfig.collections.notifications, id),
+
+  search: (searchTerm: string, queries?: string[]) =>
+    DatabaseService.search<NotificationDocument>(
+      appwriteConfig.collections.notifications,
+      searchTerm,
+      ['title', 'message'],
+      queries
+    ),
+
+  // Send notification via Appwrite function
+  sendNotification: async (notificationId: string): Promise<void> => {
+    try {
+      if (!appwriteConfig.functions.notificationFunctionId) {
+        throw new Error('Notification function ID is not configured')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.notificationFunctionId,
+        xpath: '/send-notification',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ notificationId }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (execution.status === 'failed') {
+        let errorMessage = 'Function execution failed'
+        
+        if (execution.responseBody) {
+          try {
+            const errorResponse = JSON.parse(execution.responseBody)
+            if (errorResponse.error) {
+              errorMessage = errorResponse.error
+            }
+          } catch {
+            errorMessage = execution.responseBody
+          }
+        }
+        
+        if (execution.errors) {
+          errorMessage += ` (Execution errors: ${execution.errors})`
+        }
+        
+        throw new Error(errorMessage)
+      }
+
+      if (execution.responseStatusCode && execution.responseStatusCode >= 400) {
+        let errorMessage = `Function returned status ${execution.responseStatusCode}`
+        
+        if (execution.responseBody) {
+          try {
+            const errorResponse = JSON.parse(execution.responseBody)
+            if (errorResponse.error) {
+              errorMessage = errorResponse.error
+            }
+          } catch {
+            errorMessage = execution.responseBody
+          }
+        }
+        
+        throw new Error(errorMessage)
+      }
+
+      const response = execution.responseBody
+        ? JSON.parse(execution.responseBody)
+        : {}
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to send notification')
+      }
+    } catch (error) {
+      console.error('Error sending notification:', error)
       throw error
     }
   },
