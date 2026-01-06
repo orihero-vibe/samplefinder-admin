@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { DashboardLayout, ShimmerPage, ConfirmationModal } from '../../components'
 import type { ConfirmationType } from '../../components'
 import {
@@ -32,7 +32,6 @@ const Notifications = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [statistics, setStatistics] = useState<NotificationsStats | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [isSaving, setIsSaving] = useState(false)
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
     type: ConfirmationType
@@ -74,7 +73,7 @@ const Notifications = () => {
   }
 
   // Fetch notifications
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       setIsLoading(true)
       const queries: string[] = []
@@ -112,10 +111,10 @@ const Notifications = () => {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [typeFilter, searchQuery, addNotification])
 
   // Fetch statistics
-  const fetchStatistics = async () => {
+  const fetchStatistics = useCallback(async () => {
     try {
       const stats = await statisticsService.getStatistics<NotificationsStats>('notifications')
       setStatistics(stats)
@@ -127,12 +126,12 @@ const Notifications = () => {
         message: 'Failed to load notifications statistics. Please refresh the page.',
       })
     }
-  }
+  }, [addNotification])
 
   useEffect(() => {
     fetchStatistics()
     fetchNotifications()
-  }, [])
+  }, [fetchStatistics, fetchNotifications])
 
   // Refetch notifications when search or filter changes
   useEffect(() => {
@@ -141,7 +140,7 @@ const Notifications = () => {
     }, 300) // Debounce search
 
     return () => clearTimeout(timeoutId)
-  }, [searchQuery, typeFilter])
+  }, [searchQuery, typeFilter, fetchNotifications])
 
   const stats = statistics
     ? [
@@ -208,7 +207,6 @@ const Notifications = () => {
   // Handle save notification
   const handleSaveNotification = async (notificationData: NotificationFormData) => {
     try {
-      setIsSaving(true)
       await notificationsService.create(notificationData)
       
       addNotification({
@@ -222,15 +220,14 @@ const Notifications = () => {
       // Refresh notifications and statistics
       await Promise.all([fetchNotifications(), fetchStatistics()])
       setIsCreateModalOpen(false)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating notification:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create notification. Please try again.'
       addNotification({
         type: 'error',
         title: 'Error Creating Notification',
-        message: error.message || 'Failed to create notification. Please try again.',
+        message: errorMessage,
       })
-    } finally {
-      setIsSaving(false)
     }
   }
 
@@ -248,12 +245,13 @@ const Notifications = () => {
       // Refresh notifications and statistics
       await Promise.all([fetchNotifications(), fetchStatistics()])
       setConfirmationModal({ ...confirmationModal, isOpen: false })
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting notification:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete notification. Please try again.'
       addNotification({
         type: 'error',
         title: 'Error Deleting Notification',
-        message: error.message || 'Failed to delete notification. Please try again.',
+        message: errorMessage,
       })
       setConfirmationModal({ ...confirmationModal, isOpen: false })
     }

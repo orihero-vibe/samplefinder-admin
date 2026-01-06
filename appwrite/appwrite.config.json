@@ -132,6 +132,7 @@
             "path": "functions/Statistics functions"
         },
         {
+            "$id": "695d55bb002bc6b75430",
             "name": "Notification functions",
             "runtime": "node-22",
             "specification": "s-0.5vcpu-512mb",
@@ -142,7 +143,13 @@
             "scopes": [
                 "databases.read",
                 "databases.write",
-                "users.read"
+                "users.read",
+                "tables.read",
+                "tables.write",
+                "rows.read",
+                "rows.write",
+                "documents.read",
+                "documents.write"
             ],
             "schedule": "",
             "timeout": 15,
