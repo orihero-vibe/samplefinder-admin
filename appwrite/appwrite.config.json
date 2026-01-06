@@ -121,7 +121,11 @@
             ],
             "events": [],
             "scopes": [
-                "users.read"
+                "users.read",
+                "databases.read",
+                "tables.read",
+                "rows.read",
+                "documents.read"
             ],
             "schedule": "",
             "timeout": 15,
