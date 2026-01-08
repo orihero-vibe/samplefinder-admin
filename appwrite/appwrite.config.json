@@ -45,7 +45,7 @@
             "execute": [
                 "any"
             ],
-            "name": "Event functions",
+            "name": "Mobile API",
             "enabled": true,
             "logging": true,
             "runtime": "node-22",
@@ -109,7 +109,7 @@
             "entrypoint": "src/main.js",
             "commands": "npm install",
             "specification": "s-0.5vcpu-512mb",
-            "path": "functions/Event functions"
+            "path": "functions/Mobile API"
         },
         {
             "$id": "69341ffa001a4ebd28c2",

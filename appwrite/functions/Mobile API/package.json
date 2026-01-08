@@ -1,0 +1,19 @@
+{
+  "name": "mobile-api",
+  "version": "1.0.0",
+  "description": "Mobile API function for events and trivia",
+  "main": "src/main.js",
+  "type": "module",
+  "scripts": {
+    "format": "prettier --write .",
+    "build": "tsc && node -e \"require('fs').copyFileSync('dist/main.js', 'src/main.js')\""
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "node-appwrite": "^14.1.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.5",
+    "typescript": "^5.0.0"
+  }
+}
