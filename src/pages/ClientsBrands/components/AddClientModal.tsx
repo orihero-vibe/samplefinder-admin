@@ -38,7 +38,7 @@ interface AddClientModalProps {
     address?: string
     state?: string
     zip?: string
-    location?: [number, number] // Point format: [longitude, latitude]
+    location?: [number, number] // Point format: [latitude, longitude]
   }) => Promise<void>
 }
 
@@ -91,8 +91,8 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
   }
 
   const handleMapClick = (lat: number, lng: number) => {
-    // Store as [longitude, latitude] point format
-    const point: [number, number] = [lng, lat]
+    // Store as [latitude, longitude]
+    const point: [number, number] = [lat, lng]
     setMapMarker([lat, lng]) // Map marker uses [lat, lng] for display
     setMapCenter([lat, lng])
     setLocation(point)
