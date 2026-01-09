@@ -205,7 +205,7 @@ const ClientsBrands = () => {
     address?: string
     state?: string
     zip?: string
-    location?: [number, number] // Point format: [latitude, longitude]
+    location?: [number, number] // Point format: [longitude, latitude]
   }) => {
     try {
       // Transform data to match ClientFormData interface
@@ -226,8 +226,8 @@ const ClientsBrands = () => {
         address: clientData.address,
         state: clientData.state,
         zip: clientData.zip,
-        longitude: clientData.location?.[1],
-        latitude: clientData.location?.[0],
+        longitude: clientData.location?.[0],
+        latitude: clientData.location?.[1],
         // TODO: Handle logo upload to get logoURL before creating client
       }
       
@@ -268,7 +268,7 @@ const ClientsBrands = () => {
     address?: string
     state?: string
     zip?: string
-    location?: [number, number] // Point format: [latitude, longitude]
+    location?: [number, number] // Point format: [longitude, latitude]
   }) => {
     if (!selectedClient?.id) return
 
@@ -291,8 +291,8 @@ const ClientsBrands = () => {
         address: clientData.address,
         state: clientData.state,
         zip: clientData.zip,
-        longitude: clientData.location?.[1],
-        latitude: clientData.location?.[0],
+        longitude: clientData.location?.[0],
+        latitude: clientData.location?.[1],
         // TODO: Handle logo upload to get logoURL before updating client
       }
       

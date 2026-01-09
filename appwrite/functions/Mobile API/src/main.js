@@ -113,17 +113,14 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
                         }
                     }
                 }
-        // Calculate distance if client has location
-        if (clientData &&
-            clientData.location &&
-            Array.isArray(clientData.location) &&
-            clientData.location.length === 2) {
-            // location is stored as [latitude, longitude]
-            const [clientLat, clientLon] = clientData.location;
-            log(`Client ${clientData.$id || clientData.name}: location=[${clientLat}, ${clientLon}], user=[${userLat}, ${userLon}]`);
-            distance = haversineDistance(userLat, userLon, clientLat, clientLon);
-            log(`Calculated distance: ${distance.toFixed(2)} km`);
-        }
+                // Calculate distance if client has location
+                if (clientData &&
+                    clientData.location &&
+                    Array.isArray(clientData.location) &&
+                    clientData.location.length === 2) {
+                    const [clientLon, clientLat] = clientData.location;
+                    distance = haversineDistance(userLat, userLon, clientLat, clientLon);
+                }
             }
             catch (err) {
                 const clientInfo = typeof event.client === 'string'
@@ -339,7 +336,7 @@ export default async function handler({ req, res, log, error }) {
                     error: errorMessage,
                 }, 400);
             }
-            log(`Fetching events for location: lat=${requestBody.latitude}, lon=${requestBody.longitude}, page=${requestBody.page}, pageSize=${requestBody.pageSize}`);
+            log(`Fetching events for location: (${requestBody.latitude}, ${requestBody.longitude}), page: ${requestBody.page}, pageSize: ${requestBody.pageSize}`);
             const result = await getEventsByLocation(databases, requestBody.latitude, requestBody.longitude, requestBody.page, requestBody.pageSize, log);
             log(`Found ${result.pagination.total} events, returning ${result.events.length} for page ${result.pagination.page}`);
             return res.json({

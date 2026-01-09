@@ -21,7 +21,7 @@ interface ClientData {
   address?: string;
   state?: string;
   zip?: string;
-  location?: [number, number]; // [latitude, longitude]
+  location?: [number, number]; // [longitude, latitude]
   [key: string]: unknown;
 }
 
@@ -298,11 +298,8 @@ async function getEventsByLocation(
           Array.isArray(clientData.location) &&
           clientData.location.length === 2
         ) {
-          // location is stored as [latitude, longitude]
-          const [clientLat, clientLon] = clientData.location;
-          log(`Client ${clientData.$id || clientData.name}: location=[${clientLat}, ${clientLon}], user=[${userLat}, ${userLon}]`);
+          const [clientLon, clientLat] = clientData.location;
           distance = haversineDistance(userLat, userLon, clientLat, clientLon);
-          log(`Calculated distance: ${distance.toFixed(2)} km`);
         }
       } catch (err: unknown) {
         const clientInfo =
@@ -616,7 +613,7 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       }
 
       log(
-        `Fetching events for location: lat=${requestBody.latitude}, lon=${requestBody.longitude}, page=${requestBody.page}, pageSize=${requestBody.pageSize}`
+        `Fetching events for location: (${requestBody.latitude}, ${requestBody.longitude}), page: ${requestBody.page}, pageSize: ${requestBody.pageSize}`
       );
 
       const result = await getEventsByLocation(

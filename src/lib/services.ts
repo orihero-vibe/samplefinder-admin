@@ -127,7 +127,7 @@ export interface ClientDocument extends Models.Document {
   address?: string
   state?: string
   zip?: string
-  location?: [number, number] // [latitude, longitude]
+  location?: [number, number] // [longitude, latitude]
   [key: string]: unknown
 }
 
@@ -162,7 +162,7 @@ export const clientsService = {
 
     // Add location if provided
     if (data.latitude !== undefined && data.longitude !== undefined) {
-      dbData.location = [data.latitude, data.longitude] // Store as [latitude, longitude]
+      dbData.location = [data.longitude, data.latitude] // Appwrite expects [longitude, latitude]
     }
 
     return DatabaseService.create<ClientDocument>(appwriteConfig.collections.clients, dbData)
@@ -178,7 +178,7 @@ export const clientsService = {
 
     // Handle location update
     if (data.latitude !== undefined && data.longitude !== undefined) {
-      dbData.location = [data.latitude, data.longitude]
+      dbData.location = [data.longitude, data.latitude]
       delete dbData.latitude
       delete dbData.longitude
     }

@@ -38,7 +38,7 @@ interface EditClientModalProps {
     address?: string
     state?: string
     zip?: string
-    location?: [number, number] // Point format: [latitude, longitude]
+    location?: [number, number] // Point format: [longitude, latitude]
   }) => void
   initialData?: {
     clientName: string
@@ -93,8 +93,8 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
         setMapMarker([lat, lng])
         setMapCenter([lat, lng])
         setMapZoom(12)
-        // Store as [latitude, longitude]
-        setLocation([lat, lng])
+        // Convert to point format [longitude, latitude]
+        setLocation([lng, lat])
       }
     }
   }, [isOpen, initialData])
@@ -106,8 +106,8 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
   }
 
   const handleMapClick = (lat: number, lng: number) => {
-    // Store as [latitude, longitude]
-    const point: [number, number] = [lat, lng]
+    // Store as [longitude, latitude] point format
+    const point: [number, number] = [lng, lat]
     setMapMarker([lat, lng]) // Map marker uses [lat, lng] for display
     setMapCenter([lat, lng])
     setLocation(point)
