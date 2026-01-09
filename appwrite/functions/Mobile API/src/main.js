@@ -118,8 +118,9 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
                     clientData.location &&
                     Array.isArray(clientData.location) &&
                     clientData.location.length === 2) {
-                    const [clientLon, clientLat] = clientData.location;
-                    distance = haversineDistance(userLat, userLon, clientLat, clientLon);
+                    const [clientLat, clientLon] = clientData.location;
+                    const distanceKm = haversineDistance(userLat, userLon, clientLat, clientLon);
+                    distance = distanceKm * 1000; // Convert to meters for frontend
                 }
             }
             catch (err) {
