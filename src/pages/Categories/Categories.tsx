@@ -19,6 +19,7 @@ import { useNotificationStore } from '../../stores/notificationStore'
 interface UICategory {
   id?: string
   title: string
+  isAdult?: boolean
   createdAt?: string
 }
 
@@ -65,6 +66,7 @@ const Categories = () => {
     return {
       id: doc.$id,
       title: doc.title || '',
+      isAdult: doc.isAdult ?? false,
       createdAt: doc.$createdAt ? new Date(doc.$createdAt).toLocaleDateString() : undefined,
     }
   }
@@ -163,7 +165,7 @@ const Categories = () => {
     }
   }
 
-  const handleCreateCategory = async (categoryData: { title: string }) => {
+  const handleCreateCategory = async (categoryData: { title: string; isAdult?: boolean }) => {
     try {
       await categoriesService.create(categoryData)
       await fetchCategories() // Refresh list
@@ -194,7 +196,7 @@ const Categories = () => {
     }
   }
 
-  const handleUpdateCategory = async (categoryData: { title: string }) => {
+  const handleUpdateCategory = async (categoryData: { title: string; isAdult?: boolean }) => {
     if (!selectedCategory?.id) return
 
     try {
@@ -273,6 +275,7 @@ const Categories = () => {
           selectedCategory
             ? {
                 title: selectedCategory.title,
+                isAdult: selectedCategory.isAdult ?? false,
               }
             : undefined
         }

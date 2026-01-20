@@ -252,18 +252,19 @@ export const eventsService = {
 // Category Document interface
 export interface CategoryDocument extends Models.Document {
   title: string
+  isAdult?: boolean
   [key: string]: unknown
 }
 
 // Categories service
 export const categoriesService = {
-  create: (data: { title: string }) =>
+  create: (data: { title: string; isAdult?: boolean }) =>
     DatabaseService.create<CategoryDocument>(appwriteConfig.collections.categories || 'categories', data),
   getById: (id: string) =>
     DatabaseService.getById<CategoryDocument>(appwriteConfig.collections.categories || 'categories', id),
   list: (queries?: string[]) =>
     DatabaseService.list<CategoryDocument>(appwriteConfig.collections.categories || 'categories', queries),
-  update: (id: string, data: { title: string }) =>
+  update: (id: string, data: { title: string; isAdult?: boolean }) =>
     DatabaseService.update<CategoryDocument>(appwriteConfig.collections.categories || 'categories', id, data),
   delete: (id: string) =>
     DatabaseService.delete(appwriteConfig.collections.categories || 'categories', id),
@@ -412,6 +413,8 @@ export interface UserFormData {
 // App User interface (combines Auth user and user_profiles)
 export interface AppUser extends UserProfile {
   email?: string
+  firstName?: string // Mapped from firstname for UI compatibility
+  lastName?: string // Mapped from lastname for UI compatibility
   // Additional fields from Auth user can be added here
 }
 
@@ -457,14 +460,53 @@ export const appUsersService = {
     try {
       const profiles = await userProfilesService.list(queries)
       
-      // Fetch Auth user data for each profile
-      // Note: This requires server-side access or batch fetching
-      // For now, we'll return profiles with available data
-      // You may need to implement a Cloud Function to get Auth user data
-      return profiles.documents.map((profile) => ({
-        ...profile,
-        // Auth user data would be fetched separately or via Cloud Function
-      })) as AppUser[]
+      // Fetch Auth user emails via Cloud Function
+      const authIDs = profiles.documents
+        .map((profile) => (profile as { authID?: string }).authID)
+        .filter((id): id is string => !!id)
+
+      let emailMap: Record<string, string> = {}
+      
+      if (authIDs.length > 0 && appwriteConfig.functions.statisticsFunctionId) {
+        try {
+          const execution = await functions.createExecution({
+            functionId: appwriteConfig.functions.statisticsFunctionId,
+            xpath: '/get-user-emails',
+            method: ExecutionMethod.POST,
+            body: JSON.stringify({ authIDs }),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          })
+
+          if (execution.status === 'completed' && execution.responseBody) {
+            try {
+              const response = JSON.parse(execution.responseBody)
+              if (response.success && response.emails) {
+                emailMap = response.emails
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse email response:', parseError)
+            }
+          }
+        } catch (emailError) {
+          console.warn('Failed to fetch user emails:', emailError)
+          // Continue without emails rather than failing completely
+        }
+      }
+      
+      // Map profiles with emails and name fields
+      return profiles.documents.map((profile) => {
+        const authID = (profile as { authID?: string }).authID
+        return {
+          ...profile,
+          // Map firstname/lastname to firstName/lastName for UI compatibility
+          firstName: (profile as { firstname?: string }).firstname,
+          lastName: (profile as { lastname?: string }).lastname,
+          // Add email from Auth user
+          email: authID ? emailMap[authID] : undefined,
+        }
+      }) as AppUser[]
     } catch (error) {
       console.error('Error listing users:', error)
       throw error
@@ -477,9 +519,44 @@ export const appUsersService = {
       const profile = await userProfilesService.getById(id)
       if (!profile) return null
       
-      // Fetch Auth user data
-      // Note: This requires server-side access or Cloud Function
-      return profile as AppUser
+      // Fetch Auth user email via Cloud Function
+      const authID = (profile as { authID?: string }).authID
+      let email: string | undefined
+
+      if (authID && appwriteConfig.functions.statisticsFunctionId) {
+        try {
+          const execution = await functions.createExecution({
+            functionId: appwriteConfig.functions.statisticsFunctionId,
+            xpath: '/get-user-emails',
+            method: ExecutionMethod.POST,
+            body: JSON.stringify({ authIDs: [authID] }),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          })
+
+          if (execution.status === 'completed' && execution.responseBody) {
+            try {
+              const response = JSON.parse(execution.responseBody)
+              if (response.success && response.emails && response.emails[authID]) {
+                email = response.emails[authID]
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse email response:', parseError)
+            }
+          }
+        } catch (emailError) {
+          console.warn('Failed to fetch user email:', emailError)
+        }
+      }
+
+      // Map firstname/lastname to firstName/lastName for UI compatibility
+      return {
+        ...profile,
+        firstName: (profile as { firstname?: string }).firstname,
+        lastName: (profile as { lastname?: string }).lastname,
+        email,
+      } as AppUser
     } catch (error) {
       console.error('Error getting user:', error)
       return null
@@ -511,7 +588,51 @@ export const appUsersService = {
         searchTerm,
         queries
       )
-      return result.documents
+      
+      // Fetch Auth user emails via Cloud Function
+      const authIDs = result.documents
+        .map((profile) => (profile as { authID?: string }).authID)
+        .filter((id): id is string => !!id)
+
+      let emailMap: Record<string, string> = {}
+      
+      if (authIDs.length > 0 && appwriteConfig.functions.statisticsFunctionId) {
+        try {
+          const execution = await functions.createExecution({
+            functionId: appwriteConfig.functions.statisticsFunctionId,
+            xpath: '/get-user-emails',
+            method: ExecutionMethod.POST,
+            body: JSON.stringify({ authIDs }),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          })
+
+          if (execution.status === 'completed' && execution.responseBody) {
+            try {
+              const response = JSON.parse(execution.responseBody)
+              if (response.success && response.emails) {
+                emailMap = response.emails
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse email response:', parseError)
+            }
+          }
+        } catch (emailError) {
+          console.warn('Failed to fetch user emails:', emailError)
+        }
+      }
+
+      // Map firstname/lastname to firstName/lastName for UI compatibility
+      return result.documents.map((profile) => {
+        const authID = (profile as { authID?: string }).authID
+        return {
+          ...profile,
+          firstName: (profile as { firstname?: string }).firstname,
+          lastName: (profile as { lastname?: string }).lastname,
+          email: authID ? emailMap[authID] : undefined,
+        }
+      }) as AppUser[]
     } catch (error) {
       console.error('Error searching users:', error)
       throw error
