@@ -114,13 +114,30 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
                     }
                 }
                 // Calculate distance if client has location
-                if (clientData &&
-                    clientData.location &&
-                    Array.isArray(clientData.location) &&
-                    clientData.location.length === 2) {
-                    const [clientLat, clientLon] = clientData.location;
-                    const distanceKm = haversineDistance(userLat, userLon, clientLat, clientLon);
-                    distance = distanceKm * 1000; // Convert to meters for frontend
+                // Handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
+                if (clientData && clientData.location) {
+                    let clientLon, clientLat;
+                    
+                    if (Array.isArray(clientData.location) && clientData.location.length >= 2) {
+                        // Direct array format: [longitude, latitude] - Appwrite Point type uses GeoJSON order
+                        clientLon = clientData.location[0];
+                        clientLat = clientData.location[1];
+                    } else if (
+                        typeof clientData.location === 'object' &&
+                        clientData.location !== null &&
+                        clientData.location.coordinates &&
+                        Array.isArray(clientData.location.coordinates) &&
+                        clientData.location.coordinates.length >= 2
+                    ) {
+                        // GeoJSON format: {coordinates: [longitude, latitude]}
+                        clientLon = clientData.location.coordinates[0];
+                        clientLat = clientData.location.coordinates[1];
+                    }
+                    
+                    if (clientLon !== undefined && clientLat !== undefined && !isNaN(clientLon) && !isNaN(clientLat)) {
+                        const distanceKm = haversineDistance(userLat, userLon, clientLat, clientLon);
+                        distance = distanceKm * 1000; // Convert to meters for frontend
+                    }
                 }
             }
             catch (err) {
