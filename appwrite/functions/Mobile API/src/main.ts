@@ -150,7 +150,7 @@ const DEFAULT_PAGE = 1;
  * @param lon1 Longitude of first point
  * @param lat2 Latitude of second point
  * @param lon2 Longitude of second point
- * @returns Distance in kilometers
+ * @returns Distance in meters
  */
 function haversineDistance(
   lat1: number,
@@ -159,7 +159,7 @@ function haversineDistance(
   lon2: number
 ): number {
   const toRadians = (angle: number) => (Math.PI / 180) * angle;
-  const R = 6371; // Earth's radius in kilometers
+  const R = 6371000; // Earth's radius in meters
 
   const dLat = toRadians(lat2 - lat1);
   const dLon = toRadians(lon2 - lon1);
@@ -173,7 +173,7 @@ function haversineDistance(
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-  return R * c; // Distance in kilometers
+  return R * c; // Distance in meters
 }
 
 /**
@@ -292,14 +292,36 @@ async function getEventsByLocation(
         }
 
         // Calculate distance if client has location
-        if (
-          clientData &&
-          clientData.location &&
-          Array.isArray(clientData.location) &&
-          clientData.location.length === 2
-        ) {
-          const [clientLon, clientLat] = clientData.location;
-          distance = haversineDistance(userLat, userLon, clientLat, clientLon);
+        // Handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
+        if (clientData && clientData.location) {
+          let clientLon: number | undefined;
+          let clientLat: number | undefined;
+
+          if (Array.isArray(clientData.location) && clientData.location.length >= 2) {
+            // Direct array format: [longitude, latitude]
+            clientLon = clientData.location[0];
+            clientLat = clientData.location[1];
+          } else if (
+            typeof clientData.location === 'object' &&
+            clientData.location !== null &&
+            'coordinates' in clientData.location &&
+            Array.isArray((clientData.location as { coordinates: number[] }).coordinates) &&
+            (clientData.location as { coordinates: number[] }).coordinates.length >= 2
+          ) {
+            // GeoJSON format: {coordinates: [longitude, latitude]}
+            const coords = (clientData.location as { coordinates: number[] }).coordinates;
+            clientLon = coords[0];
+            clientLat = coords[1];
+          }
+
+          if (
+            clientLon !== undefined &&
+            clientLat !== undefined &&
+            !isNaN(clientLon) &&
+            !isNaN(clientLat)
+          ) {
+            distance = haversineDistance(userLat, userLon, clientLat, clientLon);
+          }
         }
       } catch (err: unknown) {
         const clientInfo =
