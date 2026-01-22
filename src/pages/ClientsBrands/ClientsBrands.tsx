@@ -1,19 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  DashboardLayout,
   ConfirmationModal,
+  DashboardLayout,
   ShimmerPage,
 } from '../../components'
-import {
-  ClientsBrandsHeader,
-  SummaryCards,
-  SearchAndFilter,
-  ClientsTable,
-  AddClientModal,
-  EditClientModal,
-} from './components'
-import { clientsService, type ClientDocument, statisticsService, type ClientsStats } from '../../lib/services'
+import { Query } from '../../lib/appwrite'
+import { clientsService, statisticsService, type ClientDocument, type ClientsStats } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
+import {
+  AddClientModal,
+  ClientsBrandsHeader,
+  ClientsTable,
+  EditClientModal,
+  SearchAndFilter,
+  SummaryCards,
+} from './components'
 
 // UI Client interface (for display and table)
 interface UIClient {
@@ -100,14 +101,48 @@ const ClientsBrands = () => {
     }
   }
 
-  // Fetch clients from Appwrite
-  const fetchClients = async () => {
+  const [clients, setClients] = useState<UIClient[]>([])
+  const [statistics, setStatistics] = useState<ClientsStats | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize] = useState(25)
+  const [totalClients, setTotalClients] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+
+  // Fetch clients from Appwrite with pagination
+  const fetchClients = async (page: number = currentPage) => {
     try {
       setIsLoading(true)
       setError(null)
-      const result = await clientsService.list()
+      
+      // Build pagination queries
+      const queries = [
+        Query.limit(pageSize),
+        Query.offset((page - 1) * pageSize),
+        Query.orderDesc('$createdAt'), // Most recent clients first
+      ]
+      
+      const result = await clientsService.list(queries)
+      
+      // Extract pagination metadata
+      const total = result.total
+      const totalPagesCount = Math.ceil(total / pageSize)
+      setTotalClients(total)
+      setTotalPages(totalPagesCount)
+      
+      // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
+      if (totalPagesCount > 0 && page > totalPagesCount) {
+        const lastValidPage = totalPagesCount
+        setCurrentPage(lastValidPage)
+        if (page !== lastValidPage) {
+          return fetchClients(lastValidPage)
+        }
+      } else if (totalPagesCount === 0) {
+        setCurrentPage(1)
+      }
+      
       const transformedClients = result.documents.map(transformToUIClient)
       setClients(transformedClients)
+      setCurrentPage(page)
     } catch (err) {
       console.error('Error fetching clients:', err)
       setError('Failed to load clients. Please try again.')
@@ -116,8 +151,13 @@ const ClientsBrands = () => {
     }
   }
 
-  const [clients, setClients] = useState<UIClient[]>([])
-  const [statistics, setStatistics] = useState<ClientsStats | null>(null)
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      fetchClients(page)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
 
   // Fetch statistics
   const fetchStatistics = async () => {
@@ -135,9 +175,9 @@ const ClientsBrands = () => {
   }
 
   useEffect(() => {
-    fetchClients()
+    fetchClients(1)
     fetchStatistics()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Map statistics to summary cards format
   const summaryCards = statistics
@@ -188,7 +228,13 @@ const ClientsBrands = () => {
     if (clientToDelete?.id) {
       try {
         await clientsService.delete(clientToDelete.id)
-        await fetchClients() // Refresh list
+        // Check if we need to go back a page if current page becomes empty
+        if (clients.length === 1 && currentPage > 1) {
+          setCurrentPage(currentPage - 1)
+          await fetchClients(currentPage - 1)
+        } else {
+          await fetchClients(currentPage) // Refresh list
+        }
         setClientToDelete(null)
       } catch (err) {
         console.error('Error deleting client:', err)
@@ -232,7 +278,8 @@ const ClientsBrands = () => {
       }
       
       await clientsService.create(formData)
-      await fetchClients() // Refresh list
+      setCurrentPage(1)
+      await fetchClients(1) // Refresh list - reset to page 1 after creating
       
       // Show success notification
       addNotification({
@@ -297,7 +344,7 @@ const ClientsBrands = () => {
       }
       
       await clientsService.update(selectedClient.id, formData)
-      await fetchClients() // Refresh list
+      await fetchClients(currentPage) // Refresh list - keep current page
       setIsEditModalOpen(false)
       setSelectedClient(null)
     } catch (err) {
@@ -333,6 +380,11 @@ const ClientsBrands = () => {
         <SearchAndFilter />
         <ClientsTable
           clients={clients}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalClients={totalClients}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
           onEditClick={handleEditClick}
           onDeleteClick={handleDeleteClick}
         />

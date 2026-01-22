@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react'
+import { Pagination } from '../../../components'
 
 interface TriviaQuiz {
   id: string
@@ -18,6 +19,11 @@ interface TriviaTableProps {
   onViewClick: (trivia: TriviaQuiz) => void
   onEditClick: (trivia: TriviaQuiz) => void
   onDeleteClick: (trivia: TriviaQuiz) => void
+  currentPage?: number
+  totalPages?: number
+  totalTrivia?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
 }
 
 const TriviaTable = ({
@@ -25,6 +31,11 @@ const TriviaTable = ({
   onViewClick,
   onEditClick,
   onDeleteClick,
+  currentPage = 1,
+  totalPages = 0,
+  totalTrivia = 0,
+  pageSize = 25,
+  onPageChange,
 }: TriviaTableProps) => {
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -213,6 +224,17 @@ const TriviaTable = ({
           </tbody>
         </table>
       </div>
+      {/* Pagination */}
+      {onPageChange && totalPages > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalTrivia}
+          pageSize={pageSize}
+          itemLabel="trivia quizzes"
+          onPageChange={onPageChange}
+        />
+      )}
     </div>
   )
 }

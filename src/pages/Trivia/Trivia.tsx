@@ -16,6 +16,8 @@ import {
 } from './components'
 import { triviaService, triviaResponsesService, clientsService, statisticsService, type TriviaStats, type TriviaDocument as ServiceTriviaDocument, type ClientDocument } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { Query } from '../../lib/appwrite'
+import { Pagination } from '../../components'
 
 // Use ServiceTriviaDocument from services.ts
 type TriviaDocument = ServiceTriviaDocument
@@ -50,6 +52,10 @@ const Trivia = () => {
   const [triviaQuizzes, setTriviaQuizzes] = useState<TriviaQuiz[]>([])
   const [statistics, setStatistics] = useState<TriviaStats | null>(null)
   const [clientsMap, setClientsMap] = useState<Map<string, ClientDocument>>(new Map())
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize] = useState(25)
+  const [totalTrivia, setTotalTrivia] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
 
   // Fetch clients map for displaying client names
   const fetchClients = async () => {
@@ -131,8 +137,8 @@ const Trivia = () => {
     }
   }
 
-  // Fetch trivia from Appwrite with statistics
-  const fetchTrivia = async () => {
+  // Fetch trivia from Appwrite with statistics and pagination
+  const fetchTrivia = async (page: number = currentPage) => {
     try {
       setIsLoading(true)
       setError(null)
@@ -142,13 +148,37 @@ const Trivia = () => {
         await fetchClients()
       }
       
+      // Build pagination queries
+      const paginationQueries = [
+        Query.limit(pageSize),
+        Query.offset((page - 1) * pageSize),
+        Query.orderDesc('startDate'), // Most recent trivia first
+      ]
+      
       let result
       if (searchQuery.trim()) {
-        // Use search if there's a query
-        result = await triviaService.search(searchQuery.trim())
+        // Use search if there's a query (search already includes pagination)
+        result = await triviaService.search(searchQuery.trim(), paginationQueries)
       } else {
-        // Otherwise fetch all
-        result = await triviaService.list()
+        // Otherwise fetch with pagination
+        result = await triviaService.list(paginationQueries)
+      }
+      
+      // Extract pagination metadata
+      const total = result.total
+      const totalPagesCount = Math.ceil(total / pageSize)
+      setTotalTrivia(total)
+      setTotalPages(totalPagesCount)
+      
+      // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
+      if (totalPagesCount > 0 && page > totalPagesCount) {
+        const lastValidPage = totalPagesCount
+        setCurrentPage(lastValidPage)
+        if (page !== lastValidPage) {
+          return fetchTrivia(lastValidPage)
+        }
+      } else if (totalPagesCount === 0) {
+        setCurrentPage(1)
       }
 
       // Fetch responses for all trivia in parallel
@@ -185,11 +215,20 @@ const Trivia = () => {
       }
 
       setTriviaQuizzes(sortedTrivia)
+      setCurrentPage(page)
     } catch (err) {
       console.error('Error fetching trivia:', err)
       setError('Failed to load trivia quizzes. Please try again.')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      fetchTrivia(page)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
 
@@ -208,8 +247,10 @@ const Trivia = () => {
     }
   }
 
+  // Reset to page 1 when search or sort changes
   useEffect(() => {
-    fetchTrivia()
+    setCurrentPage(1)
+    fetchTrivia(1)
     fetchStatistics()
   }, [searchQuery, sortBy])
 
@@ -227,7 +268,13 @@ const Trivia = () => {
     if (triviaToDelete?.id) {
       try {
         await triviaService.delete(triviaToDelete.id)
-        await fetchTrivia() // Refresh list
+        // Check if we need to go back a page if current page becomes empty
+        if (triviaQuizzes.length === 1 && currentPage > 1) {
+          setCurrentPage(currentPage - 1)
+          await fetchTrivia(currentPage - 1)
+        } else {
+          await fetchTrivia(currentPage) // Refresh list
+        }
         setTriviaToDelete(null)
         setIsDeleteModalOpen(false)
       } catch (err) {
@@ -244,7 +291,7 @@ const Trivia = () => {
   }
 
   const handleUpdateTrivia = async () => {
-    await fetchTrivia() // Refresh list after update
+    await fetchTrivia(currentPage) // Refresh list after update
   }
 
   const handleCreateTrivia = async (triviaData: {
@@ -269,8 +316,9 @@ const Trivia = () => {
         points: triviaData.points,
       }
       await triviaService.create(dbData)
-      await fetchTrivia() // Refresh list
       setIsCreateModalOpen(false)
+      setCurrentPage(1)
+      await fetchTrivia(1) // Refresh list - reset to page 1
     } catch (err) {
       console.error('Error creating trivia:', err)
       setError('Failed to create trivia quiz. Please try again.')
@@ -344,6 +392,11 @@ const Trivia = () => {
         />
         <TriviaTable
           triviaQuizzes={filteredTrivia}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalTrivia={totalTrivia}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
           onViewClick={(trivia) => navigate(`/trivia/${trivia.id}`)}
           onEditClick={handleEditClick}
           onDeleteClick={handleDeleteClick}

@@ -1,5 +1,6 @@
 import { databases, appwriteConfig, ID, Query, functions, ExecutionMethod } from './appwrite'
 import type { Models } from 'appwrite'
+import { formatDateWithTimezone } from './dateUtils'
 
 // Generic database service functions
 export class DatabaseService {
@@ -512,6 +513,69 @@ export const appUsersService = {
       throw error
     }
   },
+  
+  // List users with pagination info
+  listWithPagination: async (queries?: string[]): Promise<{ users: AppUser[]; total: number }> => {
+    try {
+      const profiles = await userProfilesService.list(queries)
+      
+      // Fetch Auth user emails via Cloud Function
+      const authIDs = profiles.documents
+        .map((profile) => (profile as { authID?: string }).authID)
+        .filter((id): id is string => !!id)
+
+      let emailMap: Record<string, string> = {}
+      
+      if (authIDs.length > 0 && appwriteConfig.functions.statisticsFunctionId) {
+        try {
+          const execution = await functions.createExecution({
+            functionId: appwriteConfig.functions.statisticsFunctionId,
+            xpath: '/get-user-emails',
+            method: ExecutionMethod.POST,
+            body: JSON.stringify({ authIDs }),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          })
+
+          if (execution.status === 'completed' && execution.responseBody) {
+            try {
+              const response = JSON.parse(execution.responseBody)
+              if (response.success && response.emails) {
+                emailMap = response.emails
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse email response:', parseError)
+            }
+          }
+        } catch (emailError) {
+          console.warn('Failed to fetch user emails:', emailError)
+          // Continue without emails rather than failing completely
+        }
+      }
+      
+      // Map profiles with emails and name fields
+      const users = profiles.documents.map((profile) => {
+        const authID = (profile as { authID?: string }).authID
+        return {
+          ...profile,
+          // Map firstname/lastname to firstName/lastName for UI compatibility
+          firstName: (profile as { firstname?: string }).firstname,
+          lastName: (profile as { lastname?: string }).lastname,
+          // Add email from Auth user
+          email: authID ? emailMap[authID] : undefined,
+        }
+      }) as AppUser[]
+      
+      return {
+        users,
+        total: profiles.total,
+      }
+    } catch (error) {
+      console.error('Error listing users:', error)
+      throw error
+    }
+  },
 
   // Get user by ID
   getById: async (id: string): Promise<AppUser | null> => {
@@ -814,7 +878,7 @@ export const notificationsService = {
       const [hours, minutes] = data.scheduledTime.split(':')
       const scheduledDate = new Date(data.scheduledAt)
       scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-      dbData.scheduledAt = scheduledDate.toISOString()
+      dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
     }
 
     const notification = await DatabaseService.create<NotificationDocument>(
@@ -851,7 +915,7 @@ export const notificationsService = {
       const [hours, minutes] = data.scheduledTime.split(':')
       const scheduledDate = new Date(data.scheduledAt)
       scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-      dbData.scheduledAt = scheduledDate.toISOString()
+      dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
       delete dbData.scheduledTime
     }
 
@@ -939,5 +1003,47 @@ export const notificationsService = {
       console.error('Error sending notification:', error)
       throw error
     }
+  },
+}
+
+// Review Document interface
+export interface ReviewDocument extends Models.Document {
+  rating: number
+  liked?: string
+  hasPurchased?: boolean
+  review?: string
+  user?: string // User ID (relationship)
+  event?: string // Event ID (relationship)
+  pointsEarned?: number
+  helpfulCount?: number
+  [key: string]: unknown
+}
+
+// Reviews service
+export const reviewsService = {
+  create: (data: Record<string, unknown>) =>
+    DatabaseService.create<ReviewDocument>(appwriteConfig.collections.reviews, data),
+  getById: (id: string) =>
+    DatabaseService.getById<ReviewDocument>(appwriteConfig.collections.reviews, id),
+  list: (queries?: string[]) =>
+    DatabaseService.list<ReviewDocument>(appwriteConfig.collections.reviews, queries),
+  update: (id: string, data: Record<string, unknown>) =>
+    DatabaseService.update<ReviewDocument>(appwriteConfig.collections.reviews, id, data),
+  delete: (id: string) =>
+    DatabaseService.delete(appwriteConfig.collections.reviews, id),
+  search: (searchTerm: string, queries?: string[]) =>
+    DatabaseService.search<ReviewDocument>(
+      appwriteConfig.collections.reviews,
+      searchTerm,
+      ['review'],
+      queries
+    ),
+  // Get reviews with populated user and event data
+  listWithRelations: async (queries?: string[]): Promise<ReviewDocument[]> => {
+    const result = await DatabaseService.list<ReviewDocument>(
+      appwriteConfig.collections.reviews,
+      queries
+    )
+    return result.documents
   },
 }

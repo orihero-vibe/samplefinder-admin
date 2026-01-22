@@ -14,6 +14,8 @@ import {
 } from './components'
 import { categoriesService, type CategoryDocument } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { Query } from '../../lib/appwrite'
+import { Pagination } from '../../components'
 
 // UI Category interface (for display and table)
 interface UICategory {
@@ -72,20 +74,51 @@ const Categories = () => {
   }
 
   const [categories, setCategories] = useState<UICategory[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize] = useState(25)
+  const [totalCategories, setTotalCategories] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
 
-  // Fetch categories from Appwrite
-  const fetchCategories = async () => {
+  // Fetch categories from Appwrite with pagination
+  const fetchCategories = async (page: number = currentPage) => {
     try {
       setIsLoading(true)
       setError(null)
+      
+      // Build pagination queries
+      const paginationQueries = [
+        Query.limit(pageSize),
+        Query.offset((page - 1) * pageSize),
+        Query.orderDesc('$createdAt'), // Most recent categories first
+      ]
+      
       let result
       if (searchTerm.trim()) {
-        result = await categoriesService.search(searchTerm.trim())
+        result = await categoriesService.search(searchTerm.trim(), paginationQueries)
       } else {
-        result = await categoriesService.list()
+        result = await categoriesService.list(paginationQueries)
       }
+      
+      // Extract pagination metadata
+      const total = result.total
+      const totalPagesCount = Math.ceil(total / pageSize)
+      setTotalCategories(total)
+      setTotalPages(totalPagesCount)
+      
+      // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
+      if (totalPagesCount > 0 && page > totalPagesCount) {
+        const lastValidPage = totalPagesCount
+        setCurrentPage(lastValidPage)
+        if (page !== lastValidPage) {
+          return fetchCategories(lastValidPage)
+        }
+      } else if (totalPagesCount === 0) {
+        setCurrentPage(1)
+      }
+      
       const transformedCategories = result.documents.map(transformToUICategory)
       setCategories(transformedCategories)
+      setCurrentPage(page)
     } catch (err) {
       console.error('Error fetching categories:', err)
       setError('Failed to load categories. Please try again.')
@@ -99,12 +132,24 @@ const Categories = () => {
     }
   }
 
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      fetchCategories(page)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  // Reset to page 1 when search changes
   useEffect(() => {
-    fetchCategories()
+    setCurrentPage(1)
+    fetchCategories(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm])
 
   // Calculate summary statistics
-  const totalCategories = categories.length
+  // Note: For summary stats, we use the totalCategories state (total from DB)
+  // not the length of the current page's categories array
   const newThisMonth = categories.filter((category) => {
     if (!category.createdAt) return false
     const createdDate = new Date(category.createdAt)
@@ -118,7 +163,7 @@ const Categories = () => {
   const summaryCards = [
     {
       label: 'Total Categories',
-      value: totalCategories.toString(),
+      value: totalCategories.toString(), // Use state variable for total count
       icon: 'mdi:tag-multiple',
       iconBg: 'bg-blue-100',
       iconColor: 'text-blue-600',
@@ -146,7 +191,13 @@ const Categories = () => {
     if (categoryToDelete?.id) {
       try {
         await categoriesService.delete(categoryToDelete.id)
-        await fetchCategories() // Refresh list
+        // Check if we need to go back a page if current page becomes empty
+        if (categories.length === 1 && currentPage > 1) {
+          setCurrentPage(currentPage - 1)
+          await fetchCategories(currentPage - 1)
+        } else {
+          await fetchCategories(currentPage) // Refresh list
+        }
         setCategoryToDelete(null)
         addNotification({
           type: 'success',
@@ -168,7 +219,8 @@ const Categories = () => {
   const handleCreateCategory = async (categoryData: { title: string; isAdult?: boolean }) => {
     try {
       await categoriesService.create(categoryData)
-      await fetchCategories() // Refresh list
+      setCurrentPage(1)
+      await fetchCategories(1) // Refresh list - reset to page 1 after creating
       
       // Show success notification
       addNotification({
@@ -201,7 +253,7 @@ const Categories = () => {
 
     try {
       await categoriesService.update(selectedCategory.id, categoryData)
-      await fetchCategories() // Refresh list
+      await fetchCategories(currentPage) // Refresh list - keep current page
       setIsEditModalOpen(false)
       setSelectedCategory(null)
       addNotification({
@@ -251,6 +303,11 @@ const Categories = () => {
         />
         <CategoriesTable
           categories={categories}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCategories={totalCategories}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
           onEditClick={handleEditClick}
           onDeleteClick={handleDeleteClick}
         />

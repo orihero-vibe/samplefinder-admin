@@ -23,4 +23,5 @@ export {
   ShimmerPage,
 } from './Shimmer'
 export { ProtectedRoute } from './ProtectedRoute'
+export { default as Pagination } from './Pagination'
 

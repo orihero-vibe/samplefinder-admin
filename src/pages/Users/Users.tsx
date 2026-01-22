@@ -14,6 +14,8 @@ import {
   StatsCards,
 } from './components'
 import { appUsersService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
+import { Query } from '../../lib/appwrite'
+import { Pagination } from '../../components'
 
 const Users = () => {
   const { addNotification } = useNotificationStore()
@@ -29,14 +31,45 @@ const Users = () => {
   const [users, setUsers] = useState<AppUser[]>([])
   const [error, setError] = useState<string | null>(null)
   const [statistics, setStatistics] = useState<UsersStats | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize] = useState(25)
+  const [totalUsers, setTotalUsers] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
 
-  // Fetch users from Appwrite
-  const fetchUsers = async () => {
+  // Fetch users from Appwrite with pagination
+  const fetchUsers = async (page: number = currentPage) => {
     try {
       setIsLoading(true)
       setError(null)
-      const usersList = await appUsersService.list()
-      setUsers(usersList)
+      
+      // Build pagination queries
+      const queries = [
+        Query.limit(pageSize),
+        Query.offset((page - 1) * pageSize),
+        Query.orderDesc('$createdAt'), // Most recent users first
+      ]
+      
+      const result = await appUsersService.listWithPagination(queries)
+      
+      // Extract pagination metadata
+      const total = result.total
+      const totalPagesCount = Math.ceil(total / pageSize)
+      setTotalUsers(total)
+      setTotalPages(totalPagesCount)
+      
+      // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
+      if (totalPagesCount > 0 && page > totalPagesCount) {
+        const lastValidPage = totalPagesCount
+        setCurrentPage(lastValidPage)
+        if (page !== lastValidPage) {
+          return fetchUsers(lastValidPage)
+        }
+      } else if (totalPagesCount === 0) {
+        setCurrentPage(1)
+      }
+      
+      setUsers(result.users)
+      setCurrentPage(page)
     } catch (err) {
       console.error('Error fetching users:', err)
       setError('Failed to load users. Please try again.')
@@ -47,6 +80,14 @@ const Users = () => {
       })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      fetchUsers(page)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
 
@@ -81,7 +122,8 @@ const Users = () => {
   const handleCreateUser = async (userData: UserFormData) => {
     try {
       await appUsersService.create(userData)
-      await fetchUsers() // Refresh list
+      setCurrentPage(1)
+      await fetchUsers(1) // Refresh list - reset to page 1
       setIsAddUserModalOpen(false)
       addNotification({
         type: 'success',
@@ -104,7 +146,13 @@ const Users = () => {
 
     try {
       await appUsersService.delete(userToDelete.$id)
-      await fetchUsers() // Refresh list
+      // Check if we need to go back a page if current page becomes empty
+      if (users.length === 1 && currentPage > 1) {
+        setCurrentPage(currentPage - 1)
+        await fetchUsers(currentPage - 1)
+      } else {
+        await fetchUsers(currentPage) // Refresh list
+      }
       setIsDeleteModalOpen(false)
       setUserToDelete(null)
       addNotification({
@@ -189,6 +237,11 @@ const Users = () => {
         />
         <UsersTable
           users={users}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalUsers={totalUsers}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
           onEditClick={(user) => {
             setSelectedUser(user as AppUser)
             setIsEditUserModalOpen(true)

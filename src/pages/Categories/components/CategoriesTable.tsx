@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react'
+import { Pagination } from '../../../components'
 
 interface Category {
   id?: string
@@ -11,9 +12,23 @@ interface CategoriesTableProps {
   categories: Category[]
   onEditClick: (category: Category) => void
   onDeleteClick: (category: Category) => void
+  currentPage?: number
+  totalPages?: number
+  totalCategories?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
 }
 
-const CategoriesTable = ({ categories, onEditClick, onDeleteClick }: CategoriesTableProps) => {
+const CategoriesTable = ({
+  categories,
+  onEditClick,
+  onDeleteClick,
+  currentPage = 1,
+  totalPages = 0,
+  totalCategories = 0,
+  pageSize = 25,
+  onPageChange,
+}: CategoriesTableProps) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
@@ -96,6 +111,17 @@ const CategoriesTable = ({ categories, onEditClick, onDeleteClick }: CategoriesT
           </tbody>
         </table>
       </div>
+      {/* Pagination */}
+      {onPageChange && totalPages > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalCategories}
+          pageSize={pageSize}
+          itemLabel="categories"
+          onPageChange={onPageChange}
+        />
+      )}
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import StarRating from './StarRating'
 
@@ -9,15 +10,17 @@ interface Reviewer {
 }
 
 interface Event {
+  id?: string
   name: string
   brand: string
+  brandId?: string
   location: string
   date: string
   time: string
 }
 
 interface Review {
-  id: number
+  id: string
   reviewer: Reviewer
   event: Event
   rating: number
@@ -32,6 +35,23 @@ interface ReviewCardProps {
 }
 
 const ReviewCard = ({ review }: ReviewCardProps) => {
+  const navigate = useNavigate()
+
+  const handleEventClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (review.event.id) {
+      navigate(`/event-reviews/${review.event.id}`)
+    }
+  }
+
+  const handleBrandClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (review.event.brandId) {
+      // Navigate to clients-brands page - if there's a details page later, we can update this
+      navigate('/clients-brands')
+    }
+  }
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
       {/* Reviewer Info and Rating Row */}
@@ -81,11 +101,29 @@ const ReviewCard = ({ review }: ReviewCardProps) => {
       <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-4">
         <div className="flex items-center gap-2">
           <Icon icon="mdi:calendar" className="w-4 h-4" />
-          <span className="font-medium">{review.event.name}</span>
+          {review.event.id ? (
+            <button
+              onClick={handleEventClick}
+              className="font-medium text-[#1D0A74] hover:text-[#15065c] hover:underline transition-colors cursor-pointer"
+            >
+              {review.event.name}
+            </button>
+          ) : (
+            <span className="font-medium">{review.event.name}</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Icon icon="mdi:share-variant" className="w-4 h-4" />
-          <span>{review.event.brand}</span>
+          {review.event.brandId ? (
+            <button
+              onClick={handleBrandClick}
+              className="text-[#1D0A74] hover:text-[#15065c] hover:underline transition-colors cursor-pointer"
+            >
+              {review.event.brand}
+            </button>
+          ) : (
+            <span>{review.event.brand}</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Icon icon="mdi:map-marker" className="w-4 h-4" />
