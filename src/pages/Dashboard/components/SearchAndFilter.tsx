@@ -22,7 +22,6 @@ const SearchAndFilter = ({
   onStatusFilterChange,
   sortBy,
   onSortByChange,
-  sortOrder,
 }: SearchAndFilterProps) => {
   const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
 
@@ -43,16 +42,6 @@ const SearchAndFilter = ({
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value
     onSortByChange(value)
-  }
-
-  const getSortDisplayText = () => {
-    const sortLabels: Record<string, string> = {
-      date: 'Date',
-      name: 'Name',
-      brand: 'Brand',
-    }
-    const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
-    return `Sort by: ${sortLabels[sortBy]} ${orderIcon}`
   }
 
   return (

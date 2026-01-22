@@ -17,7 +17,6 @@ import {
 import { triviaService, triviaResponsesService, clientsService, statisticsService, type TriviaStats, type TriviaDocument as ServiceTriviaDocument, type ClientDocument } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { Query } from '../../lib/appwrite'
-import { Pagination } from '../../components'
 
 // Use ServiceTriviaDocument from services.ts
 type TriviaDocument = ServiceTriviaDocument

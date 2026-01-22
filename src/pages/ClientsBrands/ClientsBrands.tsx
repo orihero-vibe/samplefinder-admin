@@ -107,20 +107,48 @@ const ClientsBrands = () => {
   const [pageSize] = useState(25)
   const [totalClients, setTotalClients] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [sortBy, setSortBy] = useState<string>('$createdAt')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  // Fetch clients from Appwrite with pagination
+  // Fetch clients from Appwrite with pagination, search, and sorting
   const fetchClients = async (page: number = currentPage) => {
     try {
       setIsLoading(true)
       setError(null)
       
-      // Build pagination queries
-      const queries = [
-        Query.limit(pageSize),
-        Query.offset((page - 1) * pageSize),
-        Query.orderDesc('$createdAt'), // Most recent clients first
-      ]
+      // Build base queries
+      const queries: string[] = []
       
+      // Apply search using Query.contains with Query.or (doesn't require fulltext indexes)
+      if (searchTerm.trim()) {
+        const trimmedSearch = searchTerm.trim()
+        // Use Query.or to search across multiple fields
+        queries.push(
+          Query.or([
+            Query.contains('name', trimmedSearch),
+            Query.contains('city', trimmedSearch),
+            Query.contains('state', trimmedSearch),
+            Query.contains('address', trimmedSearch),
+          ])
+        )
+      }
+      
+      // Apply sorting
+      const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
+      if (sortBy === 'name') {
+        queries.push(orderMethod('name'))
+      } else if (sortBy === '$createdAt') {
+        queries.push(orderMethod('$createdAt'))
+      } else if (sortBy === 'city') {
+        queries.push(orderMethod('city'))
+      }
+      
+      // Add pagination
+      queries.push(Query.limit(pageSize))
+      queries.push(Query.offset((page - 1) * pageSize))
+      
+      // Fetch clients with search, filters, and pagination
       const result = await clientsService.list(queries)
       
       // Extract pagination metadata
@@ -159,6 +187,24 @@ const ClientsBrands = () => {
     }
   }
 
+  // Handle search change
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value)
+    setCurrentPage(1) // Reset to page 1 when search changes
+  }
+
+  // Handle sort by change
+  const handleSortByChange = (value: string) => {
+    setSortBy(value)
+    setCurrentPage(1) // Reset to page 1 when sort changes
+  }
+
+  // Handle sort order change
+  const handleSortOrderChange = (order: 'asc' | 'desc') => {
+    setSortOrder(order)
+    setCurrentPage(1) // Reset to page 1 when sort order changes
+  }
+
   // Fetch statistics
   const fetchStatistics = async () => {
     try {
@@ -178,6 +224,11 @@ const ClientsBrands = () => {
     fetchClients(1)
     fetchStatistics()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refetch clients when search, sort, or sort order changes
+  useEffect(() => {
+    fetchClients(1)
+  }, [searchTerm, sortBy, sortOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Map statistics to summary cards format
   const summaryCards = statistics
@@ -377,7 +428,14 @@ const ClientsBrands = () => {
           </div>
         )}
         <SummaryCards cards={summaryCards} />
-        <SearchAndFilter />
+        <SearchAndFilter
+          searchTerm={searchTerm}
+          onSearchChange={handleSearchChange}
+          sortBy={sortBy}
+          onSortByChange={handleSortByChange}
+          sortOrder={sortOrder}
+          onSortOrderChange={handleSortOrderChange}
+        />
         <ClientsTable
           clients={clients}
           currentPage={currentPage}

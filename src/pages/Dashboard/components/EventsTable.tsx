@@ -18,7 +18,6 @@ interface EventsTableProps {
   events: Event[]
   onEventClick: (event: Event) => void
   onEditClick: (event: Event) => void
-  onViewClick?: (event: Event) => void
   onHideClick: (event: Event) => void
   onDeleteClick: (event: Event) => void
   onCSVUpload: () => void
@@ -34,7 +33,6 @@ const EventsTable = ({
   events,
   onEventClick,
   onEditClick,
-  onViewClick,
   onHideClick,
   onDeleteClick,
   onCSVUpload,

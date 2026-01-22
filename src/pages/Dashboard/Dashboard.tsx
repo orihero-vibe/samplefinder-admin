@@ -43,7 +43,6 @@ const Dashboard = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [selectedEventDoc, setSelectedEventDoc] = useState<EventDocument | null>(null)
-  const [isLoadingEventDoc, setIsLoadingEventDoc] = useState(false)
   const [editModalInitialData, setEditModalInitialData] = useState<{
     eventName?: string
     eventDate?: string
@@ -972,7 +971,7 @@ const Dashboard = () => {
           iconColor: 'text-green-600',
         },
         {
-          label: 'Total Users',
+          label: 'Total Users', 
           value: formatNumber(statistics.totalUsers),
           change: formatPercentage(statistics.totalUsersChange),
           changeLabel: 'from last month',
@@ -1148,10 +1147,9 @@ const Dashboard = () => {
               navigate('/event-reviews')
             }
           }}
-          onEditClick={async (event) => {
+          onEditClick={async (event: Event) => {
             setSelectedEvent(event as Event)
             setIsEditModalOpen(true)
-            setIsLoadingEventDoc(true)
             setEditModalInitialData(null)
             
             // Fetch full event document for editing
@@ -1165,15 +1163,6 @@ const Dashboard = () => {
                 const formattedData = await formatEventForEditModal(eventDoc)
                 setEditModalInitialData(formattedData)
               }
-            }
-            setIsLoadingEventDoc(false)
-          }}
-          onViewClick={(event) => {
-            const eventId = (event as Event & { id?: string }).id
-            if (eventId) {
-              navigate(`/event-reviews/${eventId}`)
-            } else {
-              navigate('/event-reviews')
             }
           }}
           onHideClick={(event) => {

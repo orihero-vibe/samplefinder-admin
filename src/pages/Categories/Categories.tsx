@@ -15,7 +15,6 @@ import {
 import { categoriesService, type CategoryDocument } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { Query } from '../../lib/appwrite'
-import { Pagination } from '../../components'
 
 // UI Category interface (for display and table)
 interface UICategory {

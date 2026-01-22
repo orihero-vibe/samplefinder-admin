@@ -11,7 +11,6 @@ import {
 import { statisticsService, notificationsService, type NotificationsStats, type NotificationDocument, type NotificationFormData } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { Query } from '../../lib/appwrite'
-import { Pagination } from '../../components'
 
 interface Notification {
   id: string

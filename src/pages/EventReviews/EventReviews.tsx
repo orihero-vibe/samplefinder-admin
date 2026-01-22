@@ -152,8 +152,16 @@ const EventReviews = () => {
             try {
               const user = await appUsersService.getById(reviewDoc.user as string)
               if (user) {
-                reviewerName = getFullName(user.firstname, user.lastname, user.username)
-                reviewerInitials = getInitials(user.firstname, user.lastname, user.username)
+                reviewerName = getFullName(
+                  user.firstname as string | undefined,
+                  user.lastname as string | undefined,
+                  user.username as string | undefined
+                )
+                reviewerInitials = getInitials(
+                  user.firstname as string | undefined,
+                  user.lastname as string | undefined,
+                  user.username as string | undefined
+                )
                 reviewerEmail = user.email || ''
                 // Consider verified if user has email and is not blocked
                 verified = !!user.email && !user.isBlocked

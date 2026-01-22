@@ -15,7 +15,6 @@ import {
 } from './components'
 import { appUsersService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
 import { Query } from '../../lib/appwrite'
-import { Pagination } from '../../components'
 
 const Users = () => {
   const { addNotification } = useNotificationStore()
