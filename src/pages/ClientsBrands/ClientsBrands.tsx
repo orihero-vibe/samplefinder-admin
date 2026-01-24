@@ -4,7 +4,7 @@ import {
   DashboardLayout,
   ShimmerPage,
 } from '../../components'
-import { Query } from '../../lib/appwrite'
+import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { clientsService, statisticsService, type ClientDocument, type ClientsStats } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 import {
@@ -294,6 +294,29 @@ const ClientsBrands = () => {
     }
   }
 
+  // Upload file to Appwrite Storage
+  const uploadFile = async (file: File): Promise<string | null> => {
+    try {
+      if (!appwriteConfig.storage.bucketId) {
+        throw new Error('Storage bucket ID is not configured')
+      }
+
+      const fileId = ID.unique()
+      const result = await storage.createFile(
+        appwriteConfig.storage.bucketId,
+        fileId,
+        file
+      )
+
+      // Get file preview URL
+      const fileUrl = `${appwriteConfig.endpoint}/storage/buckets/${appwriteConfig.storage.bucketId}/files/${result.$id}/view?project=${appwriteConfig.projectId}`
+      return fileUrl
+    } catch (error) {
+      console.error('Error uploading file:', error)
+      throw error
+    }
+  }
+
   const handleCreateClient = async (clientData: {
     logo: File | null
     clientName: string
@@ -305,6 +328,12 @@ const ClientsBrands = () => {
     location?: [number, number] // Point format: [longitude, latitude]
   }) => {
     try {
+      // Upload logo if provided
+      let logoURL: string | undefined = undefined
+      if (clientData.logo && clientData.logo instanceof File) {
+        logoURL = await uploadFile(clientData.logo) || undefined
+      }
+
       // Transform data to match ClientFormData interface
       const formData: {
         name: string
@@ -325,7 +354,7 @@ const ClientsBrands = () => {
         zip: clientData.zip,
         longitude: clientData.location?.[0],
         latitude: clientData.location?.[1],
-        // TODO: Handle logo upload to get logoURL before creating client
+        logoURL,
       }
       
       await clientsService.create(formData)
@@ -371,6 +400,12 @@ const ClientsBrands = () => {
     if (!selectedClient?.id) return
 
     try {
+      // Upload logo if a new one is provided
+      let logoURL: string | undefined = undefined
+      if (clientData.logo && clientData.logo instanceof File) {
+        logoURL = await uploadFile(clientData.logo) || undefined
+      }
+
       // Transform data to match ClientFormData interface
       const formData: Partial<{
         name: string
@@ -391,7 +426,11 @@ const ClientsBrands = () => {
         zip: clientData.zip,
         longitude: clientData.location?.[0],
         latitude: clientData.location?.[1],
-        // TODO: Handle logo upload to get logoURL before updating client
+      }
+
+      // Only include logoURL if a new logo was uploaded
+      if (logoURL) {
+        formData.logoURL = logoURL
       }
       
       await clientsService.update(selectedClient.id, formData)

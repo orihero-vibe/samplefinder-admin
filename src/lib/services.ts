@@ -434,6 +434,21 @@ export const appUsersService = {
       // Step 2: Create user profile
       // For now, we'll create profile with a placeholder authID
       // In production, get the actual authID from the Auth user creation
+      
+      // Calculate idAdult based on date of birth (18+ years old)
+      let idAdult = true // Default to true if no DOB provided
+      if (userData.dob) {
+        const dobDate = new Date(userData.dob)
+        const today = new Date()
+        const age = today.getFullYear() - dobDate.getFullYear()
+        const monthDiff = today.getMonth() - dobDate.getMonth()
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dobDate.getDate())) {
+          idAdult = age - 1 >= 18
+        } else {
+          idAdult = age >= 18
+        }
+      }
+      
       const profileData = {
         authID: ID.unique(), // Placeholder - should be actual Auth user ID
         firstname: userData.firstname || '',
@@ -444,6 +459,7 @@ export const appUsersService = {
         zipCode: userData.zipCode || '',
         role: userData.role || 'user',
         isBlocked: false,
+        idAdult, // Required field - indicates if user is an adult (18+)
       }
 
       const profile = await userProfilesService.create(profileData)
