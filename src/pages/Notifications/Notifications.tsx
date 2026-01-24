@@ -32,6 +32,10 @@ const Notifications = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [statistics, setStatistics] = useState<NotificationsStats | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize] = useState(25)
+  const [totalNotifications, setTotalNotifications] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
     type: ConfirmationType
@@ -72,8 +76,8 @@ const Notifications = () => {
     }
   }
 
-  // Fetch notifications
-  const fetchNotifications = useCallback(async () => {
+  // Fetch notifications with pagination
+  const fetchNotifications = useCallback(async (page: number = currentPage) => {
     try {
       setIsLoading(true)
       const queries: string[] = []
@@ -86,9 +90,31 @@ const Notifications = () => {
       // Order by creation date (newest first)
       queries.push(Query.orderDesc('$createdAt'))
       
+      // Add pagination queries
+      queries.push(Query.limit(pageSize))
+      queries.push(Query.offset((page - 1) * pageSize))
+      
       const response = await notificationsService.list(queries)
       
+      // Extract pagination metadata (before client-side filtering)
+      const total = response.total
+      const totalPagesCount = Math.ceil(total / pageSize)
+      setTotalNotifications(total)
+      setTotalPages(totalPagesCount)
+      
+      // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
+      if (totalPagesCount > 0 && page > totalPagesCount) {
+        const lastValidPage = totalPagesCount
+        setCurrentPage(lastValidPage)
+        if (page !== lastValidPage) {
+          return fetchNotifications(lastValidPage)
+        }
+      } else if (totalPagesCount === 0) {
+        setCurrentPage(1)
+      }
+      
       // Filter by search query on client side (since search might not work with all Appwrite setups)
+      // Note: This filters the paginated results, so pagination shows pages of filtered results
       let filteredDocs = response.documents
       if (searchQuery) {
         const searchLower = searchQuery.toLowerCase()
@@ -101,6 +127,7 @@ const Notifications = () => {
       
       const convertedNotifications = filteredDocs.map(convertNotification)
       setNotifications(convertedNotifications)
+      setCurrentPage(page)
     } catch (err) {
       console.error('Error fetching notifications:', err)
       addNotification({
@@ -111,7 +138,15 @@ const Notifications = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [typeFilter, searchQuery, addNotification])
+  }, [typeFilter, searchQuery, addNotification, currentPage, pageSize])
+
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      fetchNotifications(page)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
 
   // Fetch statistics
   const fetchStatistics = useCallback(async () => {
@@ -130,17 +165,17 @@ const Notifications = () => {
 
   useEffect(() => {
     fetchStatistics()
-    fetchNotifications()
-  }, [fetchStatistics, fetchNotifications])
+  }, [fetchStatistics])
 
-  // Refetch notifications when search or filter changes
+  // Reset to page 1 and refetch notifications when search or filter changes
   useEffect(() => {
+    setCurrentPage(1)
     const timeoutId = setTimeout(() => {
-      fetchNotifications()
+      fetchNotifications(1)
     }, 300) // Debounce search
 
     return () => clearTimeout(timeoutId)
-  }, [searchQuery, typeFilter, fetchNotifications])
+  }, [searchQuery, typeFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = statistics
     ? [
@@ -217,8 +252,9 @@ const Notifications = () => {
           : 'Notification has been scheduled successfully.',
       })
       
-      // Refresh notifications and statistics
-      await Promise.all([fetchNotifications(), fetchStatistics()])
+      // Refresh notifications and statistics - reset to page 1 after creating
+      setCurrentPage(1)
+      await Promise.all([fetchNotifications(1), fetchStatistics()])
       setIsCreateModalOpen(false)
     } catch (error: unknown) {
       console.error('Error creating notification:', error)
@@ -242,8 +278,13 @@ const Notifications = () => {
         message: 'Notification has been deleted successfully.',
       })
       
-      // Refresh notifications and statistics
-      await Promise.all([fetchNotifications(), fetchStatistics()])
+      // Refresh notifications and statistics - check if we need to go back a page
+      if (notifications.length === 1 && currentPage > 1) {
+        setCurrentPage(currentPage - 1)
+        await Promise.all([fetchNotifications(currentPage - 1), fetchStatistics()])
+      } else {
+        await Promise.all([fetchNotifications(currentPage), fetchStatistics()])
+      }
       setConfirmationModal({ ...confirmationModal, isOpen: false })
     } catch (error: unknown) {
       console.error('Error deleting notification:', error)
@@ -295,6 +336,11 @@ const Notifications = () => {
         />
         <NotificationsTable
           notifications={sortedNotifications}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalNotifications={totalNotifications}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
           onEditClick={(notification) => {
             console.log('Edit notification:', notification)
             // TODO: Implement edit functionality

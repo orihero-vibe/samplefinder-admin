@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react'
+import { Pagination } from '../../../components'
 
 interface Notification {
   id: string
@@ -16,6 +17,11 @@ interface NotificationsTableProps {
   onEditClick: (notification: Notification) => void
   onDuplicateClick: (notification: Notification) => void
   onDeleteClick: (notification: Notification) => void
+  currentPage?: number
+  totalPages?: number
+  totalNotifications?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
 }
 
 const NotificationsTable = ({
@@ -23,6 +29,11 @@ const NotificationsTable = ({
   onEditClick,
   onDuplicateClick,
   onDeleteClick,
+  currentPage = 1,
+  totalPages = 0,
+  totalNotifications = 0,
+  pageSize = 25,
+  onPageChange,
 }: NotificationsTableProps) => {
   const getTypeColor = (type: string) => {
     switch (type) {
@@ -169,6 +180,17 @@ const NotificationsTable = ({
           </tbody>
         </table>
       </div>
+      {/* Pagination */}
+      {onPageChange && totalPages > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalNotifications}
+          pageSize={pageSize}
+          itemLabel="notifications"
+          onPageChange={onPageChange}
+        />
+      )}
     </div>
   )
 }

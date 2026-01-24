@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react'
+import { Pagination } from '../../../components'
 
 interface Client {
   id?: string
@@ -16,9 +17,23 @@ interface ClientsTableProps {
   clients: Client[]
   onEditClick: (client: Client) => void
   onDeleteClick: (client: Client) => void
+  currentPage?: number
+  totalPages?: number
+  totalClients?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
 }
 
-const ClientsTable = ({ clients, onEditClick, onDeleteClick }: ClientsTableProps) => {
+const ClientsTable = ({
+  clients,
+  onEditClick,
+  onDeleteClick,
+  currentPage = 1,
+  totalPages = 0,
+  totalClients = 0,
+  pageSize = 25,
+  onPageChange,
+}: ClientsTableProps) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
@@ -108,6 +123,17 @@ const ClientsTable = ({ clients, onEditClick, onDeleteClick }: ClientsTableProps
           </tbody>
         </table>
       </div>
+      {/* Pagination */}
+      {onPageChange && totalPages > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalClients}
+          pageSize={pageSize}
+          itemLabel="clients"
+          onPageChange={onPageChange}
+        />
+      )}
     </div>
   )
 }

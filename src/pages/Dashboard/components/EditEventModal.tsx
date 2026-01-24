@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
+import type { Models } from 'appwrite'
 
 interface EventData {
   eventName?: string
@@ -21,12 +22,17 @@ interface EventData {
   checkInPoints?: string
   reviewPoints?: string
   eventInfo?: string
+  radius?: string
+}
+
+interface Brand extends Models.Document {
+  name: string
 }
 
 interface EditEventModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (eventData: any) => void
+  onSave: (eventData: any) => Promise<void>
   onArchive?: () => void
   onHide?: () => void
   onDelete?: () => void
@@ -34,6 +40,7 @@ interface EditEventModalProps {
   onShowHideConfirm?: () => void
   onShowDeleteConfirm?: () => void
   initialData?: EventData
+  brands?: Brand[]
 }
 
 const EditEventModal = ({
@@ -47,6 +54,7 @@ const EditEventModal = ({
   onShowHideConfirm,
   onShowDeleteConfirm,
   initialData,
+  brands = [],
 }: EditEventModalProps) => {
   const [formData, setFormData] = useState({
     eventName: '',
@@ -68,10 +76,12 @@ const EditEventModal = ({
     checkInPoints: '',
     reviewPoints: '',
     eventInfo: '',
+    radius: '',
   })
 
   const [_newProductType, setNewProductType] = useState('')
   const [isProductTypeDropdownOpen, setIsProductTypeDropdownOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const availableProductTypes = ['Product 1', 'Product 2', 'Product 3', 'Lana', 'Beauty', 'Fashion']
   const productTypeDropdownRef = useRef<HTMLDivElement>(null)
 
@@ -116,6 +126,7 @@ const EditEventModal = ({
         checkInPoints: initialData.checkInPoints || '',
         reviewPoints: initialData.reviewPoints || '',
         eventInfo: initialData.eventInfo || '',
+        radius: initialData.radius || '',
       })
     }
   }, [initialData, isOpen])
@@ -165,10 +176,25 @@ const EditEventModal = ({
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData)
-    onClose()
+    
+    // Prevent double submission
+    if (isSubmitting) {
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      await onSave(formData)
+      // Only close on success - parent will handle closing
+      onClose()
+    } catch (error) {
+      // Error is handled by parent component via notification
+      // Keep modal open so user can fix and retry
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const filteredProductTypes = availableProductTypes.filter(
@@ -180,7 +206,7 @@ const EditEventModal = ({
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={isSubmitting ? undefined : onClose}
       />
 
       {/* Modal */}
@@ -196,6 +222,7 @@ const EditEventModal = ({
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
+            disabled={isSubmitting}
           >
             <Icon icon="mdi:close" className="w-6 h-6" />
           </button>
@@ -526,10 +553,11 @@ const EditEventModal = ({
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               >
                 <option value="">Choose Brand Name</option>
-                <option value="Glossier">Glossier</option>
-                <option value="Chanel">Chanel</option>
-                <option value="The Ordinary">The Ordinary</option>
-                <option value="Fenty Beauty">Fenty Beauty</option>
+                {brands.map((brand) => (
+                  <option key={brand.$id} value={brand.name}>
+                    {brand.name}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -557,6 +585,21 @@ const EditEventModal = ({
                 value={formData.reviewPoints}
                 onChange={(e) => handleInputChange('reviewPoints', e.target.value)}
                 required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Radius <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                placeholder="Enter radius"
+                value={formData.radius}
+                onChange={(e) => handleInputChange('radius', e.target.value)}
+                required
+                min="0"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
             </div>
@@ -612,15 +655,24 @@ const EditEventModal = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
+              className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold"
+              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              disabled={isSubmitting}
             >
-              Save Changes
+              {isSubmitting ? (
+                <>
+                  <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />
+                  Updating Event...
+                </>
+              ) : (
+                'Save Changes'
+              )}
             </button>
           </div>
         </form>

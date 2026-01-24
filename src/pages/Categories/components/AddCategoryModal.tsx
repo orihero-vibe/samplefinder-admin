@@ -4,11 +4,13 @@ import { Icon } from '@iconify/react'
 interface AddCategoryModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (categoryData: { title: string }) => Promise<void>
+  onSave: (categoryData: { title: string; isAdult?: boolean }) => Promise<void>
 }
 
 const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) => {
   const [title, setTitle] = useState('')
+  const [isAdult, setIsAdult] = useState(false)
+  const [showTooltip, setShowTooltip] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -16,6 +18,8 @@ const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) =>
   useEffect(() => {
     if (!isOpen) {
       setTitle('')
+      setIsAdult(false)
+      setShowTooltip(false)
       setError(null)
       setIsSubmitting(false)
     }
@@ -34,7 +38,7 @@ const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) =>
 
     setIsSubmitting(true)
     try {
-      await onSave({ title: title.trim() })
+      await onSave({ title: title.trim(), isAdult })
     } catch (err) {
       // Error is handled by parent component via notification
       setError('Failed to create category. Please try again.')
@@ -91,6 +95,47 @@ const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) =>
               disabled={isSubmitting}
               required
             />
+          </div>
+
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <label htmlFor="isAdult" className="block text-sm font-medium text-gray-700">
+                Adult Category
+              </label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onMouseEnter={() => setShowTooltip(true)}
+                  onMouseLeave={() => setShowTooltip(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Information about adult category"
+                >
+                  <Icon icon="mdi:information" className="w-4 h-4" />
+                </button>
+                {showTooltip && (
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-50">
+                    <div className="absolute left-1/2 -translate-x-1/2 bottom-0 transform translate-y-full">
+                      <div className="border-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                    This category is intended for adult content. When enabled, the category will be marked as adult-only and may have restricted access.
+                  </div>
+                )}
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                id="isAdult"
+                checked={isAdult}
+                onChange={(e) => setIsAdult(e.target.checked)}
+                disabled={isSubmitting}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#1D0A74]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1D0A74]"></div>
+              <span className="ml-3 text-sm text-gray-700">
+                {isAdult ? 'Yes, this is an adult category' : 'No, this is not an adult category'}
+              </span>
+            </label>
           </div>
 
           {/* Action Buttons */}

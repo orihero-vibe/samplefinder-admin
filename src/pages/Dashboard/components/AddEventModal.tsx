@@ -39,6 +39,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
     checkInPoints: '',
     reviewPoints: '',
     eventInfo: '',
+    radius: '',
   })
 
   const [newProductType, setNewProductType] = useState('')
@@ -67,6 +68,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
         checkInPoints: '',
         reviewPoints: '',
         eventInfo: '',
+        radius: '',
       })
       setNewProductType('')
     }
@@ -493,6 +495,21 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
                 value={formData.reviewPoints}
                 onChange={(e) => handleInputChange('reviewPoints', e.target.value)}
                 required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Radius <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                placeholder="Enter radius"
+                value={formData.radius}
+                onChange={(e) => handleInputChange('radius', e.target.value)}
+                required
+                min="0"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
             </div>

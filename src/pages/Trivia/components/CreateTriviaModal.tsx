@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import { clientsService } from '../../../lib/services'
 import type { ClientDocument } from '../../../lib/services'
+import { formatDateWithTimezone } from '../../../lib/dateUtils'
 
 interface CreateTriviaModalProps {
   isOpen: boolean
@@ -122,14 +123,14 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
 
     try {
       setError(null)
-      // Convert dates to ISO 8601 format
+      // Convert dates to ISO 8601 format with timezone preservation
       const triviaData = {
         client: formData.client,
         question: formData.question,
         answers: formData.answers,
         correctOptionIndex: formData.correctOptionIndex,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
+        startDate: formatDateWithTimezone(startDate),
+        endDate: formatDateWithTimezone(endDate),
         points: formData.points,
       }
       await onSave(triviaData)

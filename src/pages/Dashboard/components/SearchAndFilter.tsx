@@ -1,11 +1,49 @@
+import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 
 interface SearchAndFilterProps {
   onDateFilterClick: () => void
   dateRange: { start: Date | null; end: Date | null }
+  searchTerm: string
+  onSearchChange: (value: string) => void
+  statusFilter: string
+  onStatusFilterChange: (value: string) => void
+  sortBy: string
+  onSortByChange: (value: string) => void
+  sortOrder: 'asc' | 'desc'
 }
 
-const SearchAndFilter = ({ onDateFilterClick, dateRange }: SearchAndFilterProps) => {
+const SearchAndFilter = ({
+  onDateFilterClick,
+  dateRange,
+  searchTerm,
+  onSearchChange,
+  statusFilter,
+  onStatusFilterChange,
+  sortBy,
+  onSortByChange,
+}: SearchAndFilterProps) => {
+  const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onSearchChange(localSearchTerm)
+    }, 300) // 300ms debounce
+
+    return () => clearTimeout(timer)
+  }, [localSearchTerm, onSearchChange])
+
+  // Sync local search term with prop
+  useEffect(() => {
+    setLocalSearchTerm(searchTerm)
+  }, [searchTerm])
+
+  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value
+    onSortByChange(value)
+  }
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
       <div className="flex items-center gap-2 mb-4">
@@ -20,15 +58,21 @@ const SearchAndFilter = ({ onDateFilterClick, dateRange }: SearchAndFilterProps)
           />
           <input
             type="text"
-            placeholder="Search by name or e-mail"
+            placeholder="Search by venue name, city, address, or state"
+            value={localSearchTerm}
+            onChange={(e) => setLocalSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
           />
         </div>
-        <select className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent">
-          <option>All Status</option>
-          <option>Active</option>
-          <option>Inactive</option>
-          <option>Archived</option>
+        <select
+          value={statusFilter}
+          onChange={(e) => onStatusFilterChange(e.target.value)}
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+        >
+          <option value="all">All Status</option>
+          <option value="active">Active</option>
+          <option value="hidden">Hidden</option>
+          <option value="archived">Archived</option>
         </select>
         <button
           onClick={onDateFilterClick}
@@ -45,10 +89,14 @@ const SearchAndFilter = ({ onDateFilterClick, dateRange }: SearchAndFilterProps)
               })}`
             : 'Select Date'}
         </button>
-        <select className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent">
-          <option>Sort by: Date</option>
-          <option>Sort by: Name</option>
-          <option>Sort by: Brand</option>
+        <select
+          value={sortBy}
+          onChange={handleSortChange}
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+        >
+          <option value="date">Sort by: Date</option>
+          <option value="name">Sort by: Name</option>
+          <option value="brand">Sort by: Brand</option>
         </select>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import { clientsService, triviaService, type ClientDocument } from '../../../lib/services'
+import { formatDateWithTimezone, formatDateForInput } from '../../../lib/dateUtils'
 
 interface EditTriviaModalProps {
   isOpen: boolean
@@ -52,9 +53,9 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
       setError(null)
       const { trivia } = await triviaService.getWithClient(triviaId)
       
-      // Convert ISO dates to datetime-local format (YYYY-MM-DDTHH:mm)
-      const startDate = trivia.startDate ? new Date(trivia.startDate).toISOString().slice(0, 16) : ''
-      const endDate = trivia.endDate ? new Date(trivia.endDate).toISOString().slice(0, 16) : ''
+      // Convert ISO dates to datetime-local format (YYYY-MM-DDTHH:mm) preserving local timezone
+      const startDate = trivia.startDate ? formatDateForInput(trivia.startDate) : ''
+      const endDate = trivia.endDate ? formatDateForInput(trivia.endDate) : ''
       
       // Ensure answers array has at least 4 elements
       const answers = trivia.answers && trivia.answers.length > 0 
@@ -148,14 +149,14 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
 
     try {
       setError(null)
-      // Convert dates to ISO 8601 format
+      // Convert dates to ISO 8601 format with timezone preservation
       const triviaData = {
         client: formData.client || undefined,
         question: formData.question,
         answers: formData.answers,
         correctOptionIndex: formData.correctOptionIndex,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
+        startDate: formatDateWithTimezone(startDate),
+        endDate: formatDateWithTimezone(endDate),
         points: formData.points,
       }
       await triviaService.update(triviaId, triviaData)

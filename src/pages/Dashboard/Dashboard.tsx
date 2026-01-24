@@ -6,6 +6,9 @@ import type { ConfirmationType } from '../../components'
 import { eventsService, categoriesService, clientsService, statisticsService, type DashboardStats } from '../../lib/services'
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { formatDateWithTimezone } from '../../lib/dateUtils'
+import type { EventDocument } from '../../lib/services'
+import { Query } from '../../lib/appwrite'
 import {
   MetricsCards,
   SearchAndFilter,
@@ -28,39 +31,58 @@ interface Event {
   status: string
   statusColor: string
   id?: string // Add optional id for database reference
+  radius?: number // Radius field from database
 }
 
-// Event document interface from database (local mapping type)
-interface LocalEventDocument extends Models.Document {
-  eventName?: string
-  eventDate?: string
-  startTime?: string
-  endTime?: string
-  brandName?: string
-  discount?: boolean | string | number
-  status?: string
-  venueName?: string
-  date?: string
-  name?: string
-  brand?: string
-  [key: string]: unknown
-}
+// Use EventDocument from services instead of creating a duplicate
+type LocalEventDocument = EventDocument
 
 const Dashboard = () => {
   const navigate = useNavigate()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
+  const [selectedEventDoc, setSelectedEventDoc] = useState<EventDocument | null>(null)
+  const [editModalInitialData, setEditModalInitialData] = useState<{
+    eventName?: string
+    eventDate?: string
+    startTime?: string
+    endTime?: string
+    city?: string
+    address?: string
+    state?: string
+    zipCode?: string
+    category?: string
+    productTypes?: string[]
+    products?: string[]
+    discount?: string
+    discountImage?: File | string | null
+    discountLink?: string
+    checkInCode?: string
+    brandName?: string
+    checkInPoints?: string
+    reviewPoints?: string
+    eventInfo?: string
+    radius?: string
+  } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false)
   const [isCSVUploadOpen, setIsCSVUploadOpen] = useState(false)
   const [events, setEvents] = useState<Event[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize] = useState(25)
+  const [totalEvents, setTotalEvents] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
   const [categories, setCategories] = useState<Array<Models.Document & { title: string }>>([])
   const [brands, setBrands] = useState<Array<Models.Document & { name: string }>>([])
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({
     start: null,
     end: null,
   })
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all') // 'all', 'active', 'hidden', 'archived'
+  const [sortBy, setSortBy] = useState<string>('date') // 'date', 'name', 'brand'
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
     type: ConfirmationType
@@ -113,12 +135,22 @@ const Dashboard = () => {
       return timeStr
     }
 
+    // Derive status from isArchived and isHidden fields
+    const getStatus = (doc: LocalEventDocument): string => {
+      if (doc.isArchived) {
+        return 'Archived'
+      } else if (doc.isHidden) {
+        return 'Hidden'
+      }
+      return 'Active'
+    }
+
     // Determine status color based on status value
-    const getStatusColor = (status?: string): string => {
-      const statusLower = status?.toLowerCase() || ''
+    const getStatusColor = (status: string): string => {
+      const statusLower = status.toLowerCase()
       if (statusLower === 'active') {
         return 'bg-green-100 text-green-800'
-      } else if (statusLower === 'inactive' || statusLower === 'hidden') {
+      } else if (statusLower === 'hidden') {
         return 'bg-red-100 text-red-800'
       } else if (statusLower === 'archived') {
         return 'bg-gray-100 text-gray-800'
@@ -142,27 +174,123 @@ const Dashboard = () => {
       return 'NO'
     }
 
+    const status = getStatus(doc)
+    
     return {
       id: doc.$id,
-      date: formatDate(doc.eventDate || doc.date),
-      venueName: doc.venueName || doc.eventName || '',
-      brand: doc.brandName || doc.brand || '',
+      date: formatDate(doc.date),
+      venueName: doc.name || '',
+      brand: '', // Will be populated from client relationship if needed
       startTime: formatTime(doc.startTime),
       endTime: formatTime(doc.endTime),
       discount: formatDiscount(doc.discount),
-      status: doc.status || 'Inactive',
-      statusColor: getStatusColor(doc.status),
+      status: status,
+      statusColor: getStatusColor(status),
+      radius: typeof doc.radius === 'number' ? doc.radius : undefined,
     }
   }
 
-  // Fetch events from database
-  const fetchEvents = async () => {
+  // Fetch events from database with pagination, search, filter, and sort
+  const fetchEvents = async (page: number = currentPage) => {
     try {
       setIsLoading(true)
       
-      const result = await eventsService.list()
-      const mappedEvents = result.documents.map((doc) => mapEventDocumentToEvent(doc as unknown as LocalEventDocument))
+      // Build base queries
+      const queries: string[] = []
+      
+      // Apply status filter
+      if (statusFilter === 'active') {
+        queries.push(Query.equal('isArchived', false))
+        queries.push(Query.equal('isHidden', false))
+      } else if (statusFilter === 'hidden') {
+        queries.push(Query.equal('isHidden', true))
+        queries.push(Query.equal('isArchived', false))
+      } else if (statusFilter === 'archived') {
+        queries.push(Query.equal('isArchived', true))
+      }
+      // 'all' status doesn't need any filter
+      
+      // Apply date range filter
+      if (dateRange.start) {
+        queries.push(Query.greaterThanEqual('date', dateRange.start.toISOString()))
+      }
+      if (dateRange.end) {
+        // Set end date to end of day
+        const endDate = new Date(dateRange.end)
+        endDate.setHours(23, 59, 59, 999)
+        queries.push(Query.lessThanEqual('date', endDate.toISOString()))
+      }
+      
+      // Apply sorting
+      const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
+      if (sortBy === 'date') {
+        queries.push(orderMethod('date'))
+      } else if (sortBy === 'name') {
+        queries.push(orderMethod('name'))
+      } else if (sortBy === 'brand') {
+        // For brand sorting, we'll sort by date first, then handle brand sorting client-side
+        // since brand is a relationship field
+        queries.push(orderMethod('date'))
+      }
+      
+      // Add pagination
+      queries.push(Query.limit(pageSize))
+      queries.push(Query.offset((page - 1) * pageSize))
+      
+      // Fetch events with filters and pagination
+      // Use search service if search term exists, otherwise use list service
+      const result = searchTerm.trim() 
+        ? await eventsService.search(searchTerm.trim(), queries)
+        : await eventsService.list(queries)
+      
+      // Extract pagination metadata
+      const total = result.total
+      const totalPagesCount = Math.ceil(total / pageSize)
+      setTotalEvents(total)
+      setTotalPages(totalPagesCount)
+      
+      // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
+      if (totalPagesCount > 0 && page > totalPagesCount) {
+        const lastValidPage = totalPagesCount
+        setCurrentPage(lastValidPage)
+        // Recursively fetch with corrected page (only if we're not already on that page to avoid infinite loop)
+        if (page !== lastValidPage) {
+          return fetchEvents(lastValidPage)
+        }
+      } else if (totalPagesCount === 0) {
+        // If no results, ensure we're on page 1
+        setCurrentPage(1)
+      }
+      
+      // Map events and fetch client names
+      const mappedEventsPromises = result.documents.map(async (doc) => {
+        const event = mapEventDocumentToEvent(doc as unknown as LocalEventDocument)
+        
+        // Fetch client name if client relationship exists
+        if (doc.client) {
+          try {
+            const client = await clientsService.getById(doc.client as string)
+            event.brand = client.name || ''
+          } catch (err) {
+            console.error('Error fetching client:', err)
+          }
+        }
+        
+        return event
+      })
+      
+      let mappedEvents = await Promise.all(mappedEventsPromises)
+      
+      // Apply client-side brand sorting if needed (since brand is a relationship)
+      if (sortBy === 'brand') {
+        mappedEvents = mappedEvents.sort((a, b) => {
+          const comparison = a.brand.localeCompare(b.brand)
+          return sortOrder === 'asc' ? comparison : -comparison
+        })
+      }
+      
       setEvents(mappedEvents)
+      setCurrentPage(page)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch events'
       addNotification({
@@ -173,6 +301,109 @@ const Dashboard = () => {
       console.error('Error fetching events:', err)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      fetchEvents(page)
+      // Scroll to top of table for better UX
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  // Fetch full event document for editing
+  const fetchEventForEdit = async (eventId: string): Promise<EventDocument | null> => {
+    try {
+      const eventDoc = await eventsService.getById(eventId)
+      return eventDoc
+    } catch (err) {
+      console.error('Error fetching event for edit:', err)
+      addNotification({
+        type: 'error',
+        title: 'Error Loading Event',
+        message: 'Failed to load event details for editing.',
+      })
+      return null
+    }
+  }
+
+  // Format event document for edit modal initialData
+  const formatEventForEditModal = async (eventDoc: EventDocument) => {
+    // Fetch category title if category relationship exists
+    let categoryTitle = ''
+    if (eventDoc.categories) {
+      try {
+        const category = await categoriesService.getById(eventDoc.categories as string)
+        categoryTitle = category.title
+      } catch (err) {
+        console.error('Error fetching category:', err)
+      }
+    }
+
+    // Fetch client name if client relationship exists
+    let brandName = ''
+    if (eventDoc.client) {
+      try {
+        const client = await clientsService.getById(eventDoc.client as string)
+        brandName = client.name
+      } catch (err) {
+        console.error('Error fetching client:', err)
+      }
+    }
+
+    // Format date for date input (YYYY-MM-DD)
+    const formatDateForDateInput = (dateStr: string): string => {
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) return ''
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
+    // Format time for time input (HH:MM)
+    const formatTimeForTimeInput = (dateStr: string): string => {
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) return ''
+      const hours = String(date.getHours()).padStart(2, '0')
+      const minutes = String(date.getMinutes()).padStart(2, '0')
+      return `${hours}:${minutes}`
+    }
+
+    // Parse products string to array
+    const productsArray = eventDoc.products
+      ? eventDoc.products.split(',').map(p => p.trim()).filter(p => p)
+      : ['']
+
+    // Convert discount number to "Yes"/"No" format for the select dropdown
+    const formatDiscount = (discount?: number): string => {
+      if (discount === undefined || discount === null) return ''
+      return discount > 0 ? 'Yes' : 'No'
+    }
+
+    return {
+      eventName: eventDoc.name || '',
+      eventDate: formatDateForDateInput(eventDoc.date),
+      startTime: formatTimeForTimeInput(eventDoc.startTime),
+      endTime: formatTimeForTimeInput(eventDoc.endTime),
+      city: eventDoc.city || '',
+      address: eventDoc.address || '',
+      state: eventDoc.state || '',
+      zipCode: eventDoc.zipCode || '',
+      category: categoryTitle,
+      productTypes: eventDoc.productType || [],
+      products: productsArray.length > 0 ? productsArray : [''],
+      discount: formatDiscount(eventDoc.discount),
+      discountImage: eventDoc.discountImageURL || null,
+      discountLink: '', // Not in database schema
+      checkInCode: eventDoc.checkInCode || '',
+      brandName: brandName,
+      checkInPoints: eventDoc.checkInPoints?.toString() || '',
+      reviewPoints: eventDoc.reviewPoints?.toString() || '',
+      eventInfo: eventDoc.eventInfo || '',
+      radius: eventDoc.radius?.toString() || '',
     }
   }
 
@@ -365,9 +596,9 @@ const Dashboard = () => {
           // Prepare event payload
           const eventPayload: any = {
             name: row['Event Name'],
-            date: eventDate.toISOString(),
-            startTime: startDateTime.toISOString(),
-            endTime: endDateTime.toISOString(),
+            date: formatDateWithTimezone(eventDate),
+            startTime: formatDateWithTimezone(startDateTime),
+            endTime: formatDateWithTimezone(endDateTime),
             city: row['City'] || '',
             address: row['Address'] || '',
             state: row['State'] || '',
@@ -379,7 +610,7 @@ const Dashboard = () => {
             reviewPoints: parseFloat(row['Points']) || 0, // Use same points for review
             eventInfo: `Event at ${row['Address'] || row['City'] || 'location'}`,
             isArchived: false,
-            isHidder: false,
+            isHidden: false,
           }
 
           // Add client if found
@@ -415,8 +646,9 @@ const Dashboard = () => {
         throw new Error(`Failed to create any events. ${errorCount} error${errorCount > 1 ? 's' : ''} occurred.`)
       }
 
-      // Refresh events list
-      await fetchEvents()
+      // Refresh events list - reset to page 1 after CSV upload
+      setCurrentPage(1)
+      await fetchEvents(1)
     } catch (err) {
       const errorMessage = extractErrorMessage(err)
       addNotification({
@@ -473,9 +705,9 @@ const Dashboard = () => {
       // 5. Prepare event data according to database schema
       const eventPayload: any = {
         name: eventData.eventName,
-        date: eventDate.toISOString(),
-        startTime: startDateTime.toISOString(),
-        endTime: endDateTime.toISOString(),
+        date: formatDateWithTimezone(eventDate),
+        startTime: formatDateWithTimezone(startDateTime),
+        endTime: formatDateWithTimezone(endDateTime),
         city: eventData.city,
         address: eventData.address,
         state: eventData.state,
@@ -488,8 +720,9 @@ const Dashboard = () => {
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
+        radius: parseInt(eventData.radius) || 0,
         isArchived: false,
-        isHidder: false,
+        isHidden: false,
       }
 
       // Optional fields
@@ -523,8 +756,9 @@ const Dashboard = () => {
         message: `Event "${eventData.eventName}" has been created successfully.`,
       })
 
-      // 8. Refresh events list
-      await fetchEvents()
+      // 8. Refresh events list - reset to page 1 after creating new event
+      setCurrentPage(1)
+      await fetchEvents(1)
 
       // 9. Close modal on success (modal will close automatically via onClose in AddEventModal)
     } catch (err) {
@@ -539,6 +773,161 @@ const Dashboard = () => {
       })
       
       console.error('Error creating event:', err)
+      
+      // Re-throw error so modal can handle it (keep modal open)
+      throw err
+    }
+  }
+
+  // Handle event update
+  const handleUpdateEvent = async (eventData: any) => {
+    try {
+      if (!selectedEventDoc) {
+        throw new Error('No event selected for editing')
+      }
+
+      const eventId = selectedEventDoc.$id
+
+      // 1. Upload discount image if provided and it's a new file
+      let discountImageURL: string | null = null
+      if (eventData.discountImage) {
+        if (eventData.discountImage instanceof File) {
+          // New file uploaded
+          discountImageURL = await uploadFile(eventData.discountImage)
+        } else if (typeof eventData.discountImage === 'string') {
+          // Existing image URL, keep it
+          discountImageURL = eventData.discountImage
+        }
+      }
+
+      // 2. Find category by title (if category is provided)
+      let categoryId: string | null = null
+      if (eventData.category) {
+        const category = await categoriesService.findByTitle(eventData.category)
+        categoryId = category?.$id || null
+      }
+
+      // 3. Find client by brand name (if brandName is provided)
+      let clientId: string | null = null
+      if (eventData.brandName) {
+        const client = await clientsService.findByName(eventData.brandName)
+        clientId = client?.$id || null
+        if (!clientId) {
+          throw new Error(`Client with name "${eventData.brandName}" not found`)
+        }
+      }
+
+      // 4. Combine date and time for datetime fields
+      const eventDate = new Date(eventData.eventDate)
+      const startTimeStr = eventData.startTime // Format: "HH:MM"
+      const endTimeStr = eventData.endTime // Format: "HH:MM"
+
+      // Parse start time
+      const [startHours, startMinutes] = startTimeStr.split(':').map(Number)
+      const startDateTime = new Date(eventDate)
+      startDateTime.setHours(startHours, startMinutes, 0, 0)
+
+      // Parse end time
+      const [endHours, endMinutes] = endTimeStr.split(':').map(Number)
+      const endDateTime = new Date(eventDate)
+      endDateTime.setHours(endHours, endMinutes, 0, 0)
+
+      // 5. Prepare event data according to database schema
+      const eventPayload: any = {
+        name: eventData.eventName,
+        date: formatDateWithTimezone(eventDate),
+        startTime: formatDateWithTimezone(startDateTime),
+        endTime: formatDateWithTimezone(endDateTime),
+        city: eventData.city,
+        address: eventData.address,
+        state: eventData.state,
+        zipCode: eventData.zipCode,
+        productType: eventData.productTypes || [],
+        products: Array.isArray(eventData.products)
+          ? eventData.products.filter((p: string) => p.trim()).join(', ')
+          : eventData.products || '',
+        checkInCode: eventData.checkInCode,
+        checkInPoints: parseFloat(eventData.checkInPoints) || 0,
+        reviewPoints: parseFloat(eventData.reviewPoints) || 0,
+        eventInfo: eventData.eventInfo,
+        radius: parseInt(eventData.radius) || 0,
+      }
+
+      // Preserve existing status fields
+      if (selectedEventDoc.isArchived !== undefined) {
+        eventPayload.isArchived = selectedEventDoc.isArchived
+      }
+      if (selectedEventDoc.isHidden !== undefined) {
+        eventPayload.isHidden = selectedEventDoc.isHidden
+      }
+
+      // Optional fields
+      if (categoryId) {
+        eventPayload.categories = categoryId
+      } else if (selectedEventDoc.categories) {
+        // Keep existing category if no new one provided
+        eventPayload.categories = selectedEventDoc.categories
+      }
+
+      if (clientId) {
+        eventPayload.client = clientId
+      } else if (selectedEventDoc.client) {
+        // Keep existing client if no new one provided
+        eventPayload.client = selectedEventDoc.client
+      }
+
+      if (discountImageURL) {
+        eventPayload.discountImageURL = discountImageURL
+      }
+
+      // Parse discount - convert "Yes"/"No" to number, or keep existing value
+      if (eventData.discount) {
+        if (eventData.discount === 'Yes') {
+          eventPayload.discount = 1 // Or any positive number to indicate discount exists
+        } else if (eventData.discount === 'No') {
+          eventPayload.discount = 0
+        } else {
+          // Try to parse as number if it's a numeric string
+          const discountValue = parseFloat(eventData.discount)
+          if (!isNaN(discountValue)) {
+            eventPayload.discount = discountValue
+          }
+        }
+      } else if (selectedEventDoc.discount !== undefined) {
+        // Keep existing discount if no new one provided
+        eventPayload.discount = selectedEventDoc.discount
+      }
+
+      // 6. Update event
+      await eventsService.update(eventId, eventPayload)
+
+      // 7. Show success notification
+      addNotification({
+        type: 'success',
+        title: 'Event Updated',
+        message: `Event "${eventData.eventName}" has been updated successfully.`,
+      })
+
+      // 8. Refresh events list
+      await fetchEvents(currentPage)
+
+      // 9. Close modal on success
+      setIsEditModalOpen(false)
+      setSelectedEvent(null)
+      setSelectedEventDoc(null)
+      setEditModalInitialData(null)
+    } catch (err) {
+      // Extract error message from Appwrite error
+      const errorMessage = extractErrorMessage(err)
+      
+      // Show error notification with actual Appwrite error message
+      addNotification({
+        type: 'error',
+        title: 'Error Updating Event',
+        message: errorMessage,
+      })
+      
+      console.error('Error updating event:', err)
       
       // Re-throw error so modal can handle it (keep modal open)
       throw err
@@ -582,7 +971,7 @@ const Dashboard = () => {
           iconColor: 'text-green-600',
         },
         {
-          label: 'Total Users',
+          label: 'Total Users', 
           value: formatNumber(statistics.totalUsers),
           change: formatPercentage(statistics.totalUsersChange),
           changeLabel: 'from last month',
@@ -697,9 +1086,15 @@ const Dashboard = () => {
     }
   }
 
-  // Fetch events on component mount
+  // Fetch events when filters, search, or sort change
   useEffect(() => {
-    fetchEvents()
+    setCurrentPage(1) // Reset to first page when filters change
+    fetchEvents(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, statusFilter, sortBy, sortOrder, dateRange.start, dateRange.end])
+
+  // Fetch categories, brands, and statistics on component mount
+  useEffect(() => {
     fetchCategories()
     fetchBrands()
     fetchStatistics()
@@ -721,15 +1116,55 @@ const Dashboard = () => {
         <SearchAndFilter
           onDateFilterClick={() => setIsDateFilterOpen(true)}
           dateRange={dateRange}
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          sortBy={sortBy}
+          onSortByChange={(value: string) => {
+            setSortBy(value)
+            // Toggle sort order when clicking same sort option, or default to desc for date, asc for others
+            if (value === sortBy) {
+              setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+            } else {
+              setSortOrder(value === 'date' ? 'desc' : 'asc')
+            }
+          }}
+          sortOrder={sortOrder}
         />
         <EventsTable
           events={events}
-          onEventClick={() => navigate('/event-reviews')}
-          onEditClick={(event) => {
-            setSelectedEvent(event)
-            setIsEditModalOpen(true)
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalEvents={totalEvents}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+          onEventClick={(event) => {
+            const eventId = (event as Event & { id?: string }).id
+            if (eventId) {
+              navigate(`/event-reviews/${eventId}`)
+            } else {
+              navigate('/event-reviews')
+            }
           }}
-          onViewClick={() => navigate('/event-reviews')}
+          onEditClick={async (event: Event) => {
+            setSelectedEvent(event as Event)
+            setIsEditModalOpen(true)
+            setEditModalInitialData(null)
+            
+            // Fetch full event document for editing
+            const eventId = (event as Event & { id?: string }).id
+            if (eventId) {
+              const eventDoc = await fetchEventForEdit(eventId)
+              setSelectedEventDoc(eventDoc)
+              
+              if (eventDoc) {
+                // Format event data for edit modal
+                const formattedData = await formatEventForEditModal(eventDoc)
+                setEditModalInitialData(formattedData)
+              }
+            }
+          }}
           onHideClick={(event) => {
             setSelectedEvent(event)
             setConfirmationModal({
@@ -774,13 +1209,10 @@ const Dashboard = () => {
         onClose={() => {
           setIsEditModalOpen(false)
           setSelectedEvent(null)
+          setSelectedEventDoc(null)
+          setEditModalInitialData(null)
         }}
-        onSave={(eventData) => {
-          console.log('Updated event data:', eventData)
-          // TODO: Implement update functionality
-          setIsEditModalOpen(false)
-          setSelectedEvent(null)
-        }}
+        onSave={handleUpdateEvent}
         onShowArchiveConfirm={() => {
           setConfirmationModal({
             isOpen: true,
@@ -820,21 +1252,8 @@ const Dashboard = () => {
             itemName: 'this event',
           })
         }}
-        initialData={
-          selectedEvent
-            ? {
-                eventName: selectedEvent.venueName,
-                eventDate: selectedEvent.date,
-                startTime: selectedEvent.startTime,
-                endTime: selectedEvent.endTime,
-                city: 'New York',
-                discount: selectedEvent.discount === 'YES' ? 'Yes' : 'No',
-                productTypes: ['Product 1', 'Product 2', 'Lana'],
-                products: ['Snack'],
-                eventInfo: 'Great Event at Brighton Beach',
-              }
-            : undefined
-        }
+        initialData={editModalInitialData || undefined}
+        brands={brands}
       />
 
       {/* Date Filter Modal */}
@@ -843,8 +1262,7 @@ const Dashboard = () => {
         onClose={() => setIsDateFilterOpen(false)}
         onSelect={(startDate: Date | null, endDate: Date | null) => {
           setDateRange({ start: startDate, end: endDate })
-          // TODO: Apply date filter to events
-          console.log('Date range selected:', { startDate, endDate })
+          // Date filter is automatically applied via useEffect
         }}
         initialStartDate={dateRange.start}
         initialEndDate={dateRange.end}

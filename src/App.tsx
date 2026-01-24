@@ -35,7 +35,7 @@ function App() {
           }
         />
         <Route
-          path="/event-reviews"
+          path="/event-reviews/:eventId?"
           element={
             <ProtectedRoute>
               <EventReviews />

@@ -1,8 +1,10 @@
 import { Icon } from '@iconify/react'
+import { Pagination } from '../../../components'
 
 interface Category {
   id?: string
   title: string
+  isAdult?: boolean
   createdAt?: string
 }
 
@@ -10,9 +12,23 @@ interface CategoriesTableProps {
   categories: Category[]
   onEditClick: (category: Category) => void
   onDeleteClick: (category: Category) => void
+  currentPage?: number
+  totalPages?: number
+  totalCategories?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
 }
 
-const CategoriesTable = ({ categories, onEditClick, onDeleteClick }: CategoriesTableProps) => {
+const CategoriesTable = ({
+  categories,
+  onEditClick,
+  onDeleteClick,
+  currentPage = 1,
+  totalPages = 0,
+  totalCategories = 0,
+  pageSize = 25,
+  onPageChange,
+}: CategoriesTableProps) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
@@ -23,6 +39,12 @@ const CategoriesTable = ({ categories, onEditClick, onDeleteClick }: CategoriesT
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
                   Category Title
+                </div>
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <div className="flex items-center gap-2">
+                  <Icon icon="mdi:filter" className="w-4 h-4" />
+                  Adult Category
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -39,7 +61,7 @@ const CategoriesTable = ({ categories, onEditClick, onDeleteClick }: CategoriesT
           <tbody className="bg-white divide-y divide-gray-200">
             {categories.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
                   No categories found. Click "Add Category" to create one.
                 </td>
               </tr>
@@ -48,6 +70,19 @@ const CategoriesTable = ({ categories, onEditClick, onDeleteClick }: CategoriesT
                 <tr key={category.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                     {category.title}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {category.isAdult ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-medium">
+                        <Icon icon="mdi:alert-circle" className="w-4 h-4" />
+                        Adult
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
+                        <Icon icon="mdi:check-circle" className="w-4 h-4" />
+                        General
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {category.createdAt || 'N/A'}
@@ -76,6 +111,17 @@ const CategoriesTable = ({ categories, onEditClick, onDeleteClick }: CategoriesT
           </tbody>
         </table>
       </div>
+      {/* Pagination */}
+      {onPageChange && totalPages > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalCategories}
+          pageSize={pageSize}
+          itemLabel="categories"
+          onPageChange={onPageChange}
+        />
+      )}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import ReviewCard from './ReviewCard'
+import { Pagination } from '../../../components'
 
 interface Reviewer {
   name: string
@@ -8,15 +9,17 @@ interface Reviewer {
 }
 
 interface Event {
+  id?: string
   name: string
   brand: string
+  brandId?: string
   location: string
   date: string
   time: string
 }
 
 interface Review {
-  id: number
+  id: string
   reviewer: Reviewer
   event: Event
   rating: number
@@ -28,14 +31,45 @@ interface Review {
 
 interface ReviewsListProps {
   reviews: Review[]
+  currentPage?: number
+  totalPages?: number
+  totalReviews?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
 }
 
-const ReviewsList = ({ reviews }: ReviewsListProps) => {
+const ReviewsList = ({
+  reviews,
+  currentPage = 1,
+  totalPages = 0,
+  totalReviews = 0,
+  pageSize = 25,
+  onPageChange,
+}: ReviewsListProps) => {
   return (
-    <div className="space-y-4">
-      {reviews.map((review) => (
-        <ReviewCard key={review.id} review={review} />
-      ))}
+    <div>
+      <div className="space-y-4 mb-6">
+        {reviews.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            No reviews found.
+          </div>
+        ) : (
+          reviews.map((review) => (
+            <ReviewCard key={review.id} review={review} />
+          ))
+        )}
+      </div>
+      {/* Pagination */}
+      {onPageChange && totalPages > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalReviews}
+          pageSize={pageSize}
+          itemLabel="reviews"
+          onPageChange={onPageChange}
+        />
+      )}
     </div>
   )
 }

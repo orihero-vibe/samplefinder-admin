@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react'
+import { Pagination } from '../../../components'
 
 interface Event {
   date: string
@@ -9,20 +10,39 @@ interface Event {
   discount: string
   status: string
   statusColor: string
+  id?: string // Add optional id for database reference
+  radius?: number // Radius field from database
 }
 
 interface EventsTableProps {
   events: Event[]
   onEventClick: (event: Event) => void
   onEditClick: (event: Event) => void
-  onViewClick: () => void
   onHideClick: (event: Event) => void
   onDeleteClick: (event: Event) => void
   onCSVUpload: () => void
   onNewEvent: () => void
+  currentPage?: number
+  totalPages?: number
+  totalEvents?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
 }
 
-const EventsTable = ({ events, onEventClick, onEditClick, onViewClick: _onViewClick, onHideClick, onDeleteClick, onCSVUpload, onNewEvent }: EventsTableProps) => {
+const EventsTable = ({
+  events,
+  onEventClick,
+  onEditClick,
+  onHideClick,
+  onDeleteClick,
+  onCSVUpload,
+  onNewEvent,
+  currentPage = 1,
+  totalPages = 0,
+  totalEvents = 0,
+  pageSize = 25,
+  onPageChange,
+}: EventsTableProps) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="p-6 border-b border-gray-200 flex items-center justify-between">
@@ -97,7 +117,18 @@ const EventsTable = ({ events, onEventClick, onEditClick, onViewClick: _onViewCl
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {events.map((event, index) => (
+            {events.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <div className="flex flex-col items-center">
+                    <Icon icon="mdi:calendar-remove" className="w-12 h-12 text-gray-400 mb-4" />
+                    <p className="text-lg font-medium text-gray-900 mb-1">No events found</p>
+                    <p className="text-gray-500">Get started by creating a new event.</p>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              events.map((event, index) => (
               <tr
                 key={index}
                 className="hover:bg-gray-50 cursor-pointer"
@@ -146,10 +177,22 @@ const EventsTable = ({ events, onEventClick, onEditClick, onViewClick: _onViewCl
                   </div>
                 </td>
               </tr>
-            ))}
+              ))
+            )}
           </tbody>
         </table>
       </div>
+      {/* Pagination */}
+      {onPageChange && totalPages > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalEvents}
+          pageSize={pageSize}
+          itemLabel="events"
+          onPageChange={onPageChange}
+        />
+      )}
     </div>
   )
 }

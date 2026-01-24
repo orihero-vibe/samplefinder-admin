@@ -16,6 +16,8 @@ const Reports = () => {
     start: new Date(2025, 7, 22), // August 22, 2025
     end: new Date(2025, 8, 25), // September 25, 2025
   })
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize] = useState(25)
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -74,6 +76,36 @@ const Reports = () => {
     report.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
+  // Calculate pagination
+  const totalReports = filteredReports.length
+  const totalPages = Math.ceil(totalReports / pageSize)
+  
+  // Handle edge case: if current page exceeds total pages, reset to page 1
+  useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(1)
+    } else if (totalPages === 0) {
+      setCurrentPage(1)
+    }
+  }, [totalPages, currentPage])
+  
+  const startIndex = (currentPage - 1) * pageSize
+  const endIndex = startIndex + pageSize
+  const paginatedReports = filteredReports.slice(startIndex, endIndex)
+
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery])
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -92,7 +124,14 @@ const Reports = () => {
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
         />
-        <ReportsList reports={filteredReports} />
+        <ReportsList
+          reports={paginatedReports}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalReports={totalReports}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+        />
       </div>
     </DashboardLayout>
   )
