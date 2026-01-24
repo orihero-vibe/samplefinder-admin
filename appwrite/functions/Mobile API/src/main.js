@@ -1,4 +1,4 @@
-import { Client, Databases, Query, ID } from 'node-appwrite';
+import { Client, Databases, Query, ID, Users } from 'node-appwrite';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -19,11 +19,11 @@ const DEFAULT_PAGE = 1;
  * @param lon1 Longitude of first point
  * @param lat2 Latitude of second point
  * @param lon2 Longitude of second point
- * @returns Distance in kilometers
+ * @returns Distance in meters
  */
 function haversineDistance(lat1, lon1, lat2, lon2) {
     const toRadians = (angle) => (Math.PI / 180) * angle;
-    const R = 6371; // Earth's radius in kilometers
+    const R = 6371000; // Earth's radius in meters
     const dLat = toRadians(lat2 - lat1);
     const dLon = toRadians(lon2 - lon1);
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -32,7 +32,7 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
             Math.sin(dLon / 2) *
             Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in kilometers
+    return R * c; // Distance in meters
 }
 /**
  * Validate request body for events by location
@@ -116,27 +116,28 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
                 // Calculate distance if client has location
                 // Handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
                 if (clientData && clientData.location) {
-                    let clientLon, clientLat;
-                    
+                    let clientLon;
+                    let clientLat;
                     if (Array.isArray(clientData.location) && clientData.location.length >= 2) {
-                        // Direct array format: [longitude, latitude] - Appwrite Point type uses GeoJSON order
+                        // Direct array format: [longitude, latitude]
                         clientLon = clientData.location[0];
                         clientLat = clientData.location[1];
-                    } else if (
-                        typeof clientData.location === 'object' &&
-                        clientData.location !== null &&
-                        clientData.location.coordinates &&
-                        Array.isArray(clientData.location.coordinates) &&
-                        clientData.location.coordinates.length >= 2
-                    ) {
-                        // GeoJSON format: {coordinates: [longitude, latitude]}
-                        clientLon = clientData.location.coordinates[0];
-                        clientLat = clientData.location.coordinates[1];
                     }
-                    
-                    if (clientLon !== undefined && clientLat !== undefined && !isNaN(clientLon) && !isNaN(clientLat)) {
-                        const distanceKm = haversineDistance(userLat, userLon, clientLat, clientLon);
-                        distance = distanceKm * 1000; // Convert to meters for frontend
+                    else if (typeof clientData.location === 'object' &&
+                        clientData.location !== null &&
+                        'coordinates' in clientData.location &&
+                        Array.isArray(clientData.location.coordinates) &&
+                        clientData.location.coordinates.length >= 2) {
+                        // GeoJSON format: {coordinates: [longitude, latitude]}
+                        const coords = clientData.location.coordinates;
+                        clientLon = coords[0];
+                        clientLat = coords[1];
+                    }
+                    if (clientLon !== undefined &&
+                        clientLat !== undefined &&
+                        !isNaN(clientLon) &&
+                        !isNaN(clientLat)) {
+                        distance = haversineDistance(userLat, userLon, clientLat, clientLon);
                     }
                 }
             }
@@ -303,6 +304,86 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
     };
 }
 // ============================================================================
+// ACCOUNT DELETION FUNCTION
+// ============================================================================
+/**
+ * Delete user account from Appwrite Auth
+ * This function should be called when a user wants to delete their account
+ * It will:
+ * 1. Delete the user from Appwrite Auth (which is only possible from server-side)
+ * 2. This will also cascade delete all related data (sessions, tokens, etc.)
+ */
+async function deleteUserAccount(users, databases, userId, log) {
+    log(`Starting account deletion for user: ${userId}`);
+    try {
+        // 1. Verify the user exists
+        try {
+            await users.get(userId);
+            log(`User ${userId} found in Auth`);
+        }
+        catch {
+            throw { code: 404, message: 'User not found in authentication system' };
+        }
+        // 2. Find and delete user profile from database
+        // Note: The user profile document ID is different from the auth user ID
+        // We need to query by the 'authID' field to find the profile document
+        try {
+            log(`Attempting to find user profile by authID: ${userId}`);
+            log(`Database ID: ${DATABASE_ID}, Table ID: ${USER_PROFILES_TABLE_ID}`);
+            // Query for the user profile document where authID matches the user's auth ID
+            const profileQuery = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId)]);
+            log(`Profile query completed. Total found: ${profileQuery.total}`);
+            if (profileQuery.total === 0) {
+                log(`No user profile found with authID: ${userId} - continuing with auth deletion`);
+            }
+            else {
+                log(`Found ${profileQuery.total} profile(s) to delete`);
+                // Delete the profile document(s) - there should only be one, but handle multiple just in case
+                for (const profile of profileQuery.documents) {
+                    log(`Profile document details: ID=${profile.$id}, authID=${profile.authID || 'N/A'}`);
+                    log(`Attempting to delete user profile document: ${profile.$id}`);
+                    await databases.deleteDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, profile.$id);
+                    log(`User profile deleted successfully: ${profile.$id}`);
+                }
+                log(`Deleted ${profileQuery.total} user profile(s) from database`);
+            }
+        }
+        catch (profileError) {
+            // Log the full error for debugging
+            log(`Error during profile deletion process`);
+            log(`Error type: ${profileError?.constructor?.name || 'Unknown'}`);
+            log(`Error message: ${profileError?.message || 'N/A'}`);
+            log(`Error code: ${profileError?.code || 'N/A'}`);
+            log(`Error type field: ${profileError?.type || 'N/A'}`);
+            log(`Full error details: ${JSON.stringify({
+                message: profileError?.message,
+                code: profileError?.code,
+                type: profileError?.type,
+                response: profileError?.response,
+            })}`);
+            // For any error, throw it to prevent partial deletion
+            throw {
+                code: 500,
+                message: `Failed to delete user profile: ${profileError?.message || 'Unknown error'}`,
+            };
+        }
+        // 3. Delete the user from Appwrite Auth
+        // This will automatically delete all sessions, tokens, and related auth data
+        log(`Deleting user from Appwrite Auth: ${userId}`);
+        await users.delete(userId);
+        log(`User ${userId} successfully deleted from Appwrite Auth`);
+        return {
+            success: true,
+            message: 'Account successfully deleted',
+        };
+    }
+    catch (err) {
+        const typedErr = err;
+        log(`Error during account deletion: ${typedErr.message || 'Unknown error'}`);
+        throw typedErr;
+    }
+}
+// ============================================================================
 // MAIN HANDLER
 // ============================================================================
 export default async function handler({ req, res, log, error }) {
@@ -328,6 +409,7 @@ export default async function handler({ req, res, log, error }) {
             .setProject(projectId)
             .setKey(apiKey);
         const databases = new Databases(client);
+        const users = new Users(client);
         // ========================================================================
         // PING ENDPOINT
         // ========================================================================
@@ -429,11 +511,42 @@ export default async function handler({ req, res, log, error }) {
             }
         }
         // ========================================================================
+        // ACCOUNT DELETION ENDPOINT
+        // ========================================================================
+        // DELETE user account
+        if (req.path === '/delete-account' && req.method === 'POST') {
+            log('Processing delete-account request');
+            const body = req.body;
+            if (!body || !body.userId) {
+                return res.json({
+                    success: false,
+                    error: 'userId is required',
+                }, 400);
+            }
+            try {
+                const result = await deleteUserAccount(users, databases, body.userId, log);
+                return res.json({
+                    success: true,
+                    ...result,
+                });
+            }
+            catch (err) {
+                const typedErr = err;
+                if (typedErr.code && typedErr.message) {
+                    return res.json({
+                        success: false,
+                        error: typedErr.message,
+                    }, typedErr.code);
+                }
+                throw err;
+            }
+        }
+        // ========================================================================
         // DEFAULT RESPONSE
         // ========================================================================
         return res.json({
             success: false,
-            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, GET /ping',
+            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /delete-account, GET /ping',
         });
     }
     catch (err) {

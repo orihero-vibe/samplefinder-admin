@@ -35,14 +35,21 @@ Sample `200` Response:
 
 ## ⚙️ Configuration
 
-| Setting           | Value         |
-| ----------------- | ------------- |
-| Runtime           | Node (18.0)   |
-| Entrypoint        | `src/main.js` |
-| Build Commands    | `npm install` |
-| Permissions       | `any`         |
-| Timeout (Seconds) | 15            |
+| Setting           | Value                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| Runtime           | Node (18.0)                                                                            |
+| Entrypoint        | `src/main.js`                                                                          |
+| Build Commands    | `npm install`                                                                          |
+| Permissions       | `any`                                                                                  |
+| Timeout (Seconds) | 15                                                                                     |
+| Endpoints         | `/ping`, `/get-events-by-location`, `/get-active-trivia`, `/submit-answer`, `/delete-account` |
 
 ## 🔒 Environment Variables
 
-No environment variables required.
+The following environment variables are automatically provided by Appwrite:
+
+- `APPWRITE_FUNCTION_API_ENDPOINT` - Appwrite API endpoint
+- `APPWRITE_FUNCTION_PROJECT_ID` - Project ID
+- `APPWRITE_FUNCTION_KEY` - API key with admin privileges (required for user deletion)
+
+No additional configuration required.
