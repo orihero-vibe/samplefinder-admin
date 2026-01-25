@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 
 interface UserData {
@@ -21,6 +21,7 @@ interface UserData {
   referralCode?: string
   reviews?: string
   triviasWon?: string
+  isBlocked?: boolean
 }
 
 interface EditUserModalProps {
@@ -47,26 +48,29 @@ const EditUserModal = ({
     zipCode: '',
     phoneNumber: '',
     userPoints: '',
-    baBadge: 'Yes',
+    baBadge: '',
     signUpDate: '',
     password: '',
     checkIns: '',
-    tierLevel: 'SuperSampler',
+    tierLevel: '',
     username: '',
     email: '',
     checkInReviewPoints: '',
-    influencerBadge: 'No',
+    influencerBadge: '',
     lastLogin: '',
     referralCode: '',
     reviews: '',
     triviasWon: '',
+    isBlocked: false,
   })
 
   const [showPassword, setShowPassword] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const wasOpenRef = useRef(false)
 
+  // Initialize form data only when modal opens (transition from closed to open)
   useEffect(() => {
-    if (initialData) {
+    if (isOpen && !wasOpenRef.current && initialData) {
       setFormData({
         image: initialData.image || null,
         firstName: initialData.firstName || '',
@@ -74,19 +78,20 @@ const EditUserModal = ({
         zipCode: initialData.zipCode || '',
         phoneNumber: initialData.phoneNumber || '',
         userPoints: initialData.userPoints || '',
-        baBadge: initialData.baBadge || 'Yes',
+        baBadge: initialData.baBadge || '',
         signUpDate: initialData.signUpDate || '',
         password: initialData.password || '',
         checkIns: initialData.checkIns || '',
-        tierLevel: initialData.tierLevel || 'SuperSampler',
+        tierLevel: initialData.tierLevel || '',
         username: initialData.username || '',
         email: initialData.email || '',
         checkInReviewPoints: initialData.checkInReviewPoints || '',
-        influencerBadge: initialData.influencerBadge || 'No',
+        influencerBadge: initialData.influencerBadge || '',
         lastLogin: initialData.lastLogin || '',
         referralCode: initialData.referralCode || '',
         reviews: initialData.reviews || '',
         triviasWon: initialData.triviasWon || '',
+        isBlocked: initialData.isBlocked || false,
       })
 
       // Set image preview if initial data has image
@@ -102,7 +107,21 @@ const EditUserModal = ({
         }
       }
     }
-  }, [initialData, isOpen])
+    
+    // Track modal open/close state
+    wasOpenRef.current = isOpen
+  }, [isOpen, initialData])
+  
+  // Separate effect to update only the isBlocked field without resetting form
+  useEffect(() => {
+    if (initialData && isOpen) {
+      setFormData(prev => ({
+        ...prev,
+        isBlocked: initialData.isBlocked || false,
+      }))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData?.isBlocked, isOpen])
 
   if (!isOpen) return null
 
@@ -168,6 +187,19 @@ const EditUserModal = ({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6">
+          {/* Blocked Status Banner */}
+          {formData.isBlocked && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
+              <Icon icon="mdi:alert-circle" className="w-6 h-6 text-red-600 flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-semibold text-red-900">User is Currently Blocked</h3>
+                <p className="text-xs text-red-700 mt-1">
+                  This user is in the blacklist and cannot login. Click "Remove from Blacklist" below to unblock.
+                </p>
+              </div>
+            </div>
+          )}
+          
           {/* Image Section */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -540,10 +572,14 @@ const EditUserModal = ({
                 onClick={() => {
                   onAddToBlacklist()
                 }}
-                className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors font-semibold flex items-center gap-2"
+                className={`px-4 py-2 rounded-lg transition-colors font-semibold flex items-center gap-2 ${
+                  formData.isBlocked
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-black text-white hover:bg-gray-800'
+                }`}
               >
-                <Icon icon="mdi:lock" className="w-5 h-5" />
-                Add to Blacklist
+                <Icon icon={formData.isBlocked ? 'mdi:lock-open' : 'mdi:lock'} className="w-5 h-5" />
+                {formData.isBlocked ? 'Remove from Blacklist' : 'Add to Blacklist'}
               </button>
             )}
             {onDelete && (

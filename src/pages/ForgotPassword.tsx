@@ -24,11 +24,11 @@ const ForgotPassword = () => {
         message: 'Please check your email for password reset instructions.',
       })
       navigate('/email-confirmation')
-    } catch (err: any) {
+    } catch (err: unknown) {
       addNotification({
         type: 'error',
         title: 'Failed to send reset email',
-        message: err.message || 'Please try again later.',
+        message: (err as Error).message || 'Please try again later.',
       })
     } finally {
       setIsSubmitting(false)

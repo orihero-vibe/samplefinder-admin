@@ -160,7 +160,22 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error(errorMessage)
       }
       
-      // Step 3: Check if user has admin role
+      // Step 3: Check if user is blacklisted
+      if (userProfile.isBlocked) {
+        // User is blacklisted - force logout
+        await account.deleteSession({ sessionId: 'current' })
+        const errorMessage = 'Your account has been blocked. Please contact administrator.'
+        set({
+          error: errorMessage,
+          isLoading: false,
+          isAuthenticated: false,
+          user: null,
+          userProfile: null,
+        })
+        throw new Error(errorMessage)
+      }
+      
+      // Step 4: Check if user has admin role
       if (userProfile.role !== 'admin') {
         // User has profile but is not admin
         await account.deleteSession({ sessionId: 'current' })
@@ -175,7 +190,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error(errorMessage)
       }
       
-      // Step 4: Success - user is authenticated and authorized
+      // Step 5: Success - user is authenticated and authorized
       set({ 
         user, 
         userProfile,
@@ -358,6 +373,19 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Check if user has admin role
       if (userProfile.role !== 'admin') {
         // User has profile but is not admin
+        await account.deleteSession({ sessionId: 'current' })
+        set({ 
+          user: null, 
+          userProfile: null,
+          isAuthenticated: false, 
+          isLoading: false 
+        })
+        return
+      }
+      
+      // Check if user is blacklisted
+      if (userProfile.isBlocked) {
+        // User is blacklisted - force logout
         await account.deleteSession({ sessionId: 'current' })
         set({ 
           user: null, 

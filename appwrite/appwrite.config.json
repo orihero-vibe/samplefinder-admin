@@ -162,7 +162,7 @@
                 "topics.read",
                 "subscribers.read"
             ],
-            "schedule": "",
+            "schedule": "*/15 * * * *",
             "timeout": 15,
             "enabled": true,
             "logging": true,
@@ -287,6 +287,15 @@
                     "required": true,
                     "array": false,
                     "size": 36,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "savedEventIds",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 1000000,
                     "default": null,
                     "encrypt": false
                 }
@@ -593,6 +602,27 @@
                     "required": false,
                     "array": false,
                     "default": false
+                },
+                {
+                    "key": "reminder24hSent",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
+                },
+                {
+                    "key": "reminder1hSent",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
+                },
+                {
+                    "key": "location",
+                    "type": "point",
+                    "required": false,
+                    "array": false,
+                    "default": null
                 }
             ],
             "indexes": []

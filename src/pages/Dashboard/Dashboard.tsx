@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Models } from 'appwrite'
 import { DashboardLayout, ShimmerPage, ConfirmationModal } from '../../components'
 import type { ConfirmationType } from '../../components'
-import { eventsService, categoriesService, clientsService, statisticsService, type DashboardStats } from '../../lib/services'
+import { eventsService, categoriesService, clientsService, statisticsService, type DashboardStats, type ClientDocument } from '../../lib/services'
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { formatDateWithTimezone } from '../../lib/dateUtils'
@@ -64,6 +64,8 @@ const Dashboard = () => {
     reviewPoints?: string
     eventInfo?: string
     radius?: string
+    latitude?: string
+    longitude?: string
   } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false)
@@ -121,18 +123,35 @@ const Dashboard = () => {
       return `${month}/${day}/${year}`
     }
 
-    // Format time from HH:MM or ISO string to 12-hour format
+    // Format time from ISO datetime string to 12-hour format
     const formatTime = (timeStr?: string): string => {
       if (!timeStr) return ''
-      // If it's already in HH:MM format, format it
-      if (timeStr.includes(':')) {
-        const [hours, minutes] = timeStr.split(':')
-        const hour = parseInt(hours, 10)
-        const ampm = hour >= 12 ? 'PM' : 'AM'
-        const hour12 = hour % 12 || 12
-        return `${hour12}:${minutes.padStart(2, '0')} ${ampm}`
+      
+      // Parse as Date object to handle ISO datetime strings correctly
+      const date = new Date(timeStr)
+      if (isNaN(date.getTime())) {
+        // If not a valid date, try to parse as HH:MM format
+        if (timeStr.includes(':')) {
+          const parts = timeStr.split(':')
+          if (parts.length >= 2) {
+            const hour = parseInt(parts[0], 10)
+            const minute = parseInt(parts[1], 10)
+            if (!isNaN(hour) && !isNaN(minute)) {
+              const ampm = hour >= 12 ? 'PM' : 'AM'
+              const hour12 = hour % 12 || 12
+              return `${hour12}:${String(minute).padStart(2, '0')} ${ampm}`
+            }
+          }
+        }
+        return timeStr
       }
-      return timeStr
+      
+      // Format date object to 12-hour time
+      const hours = date.getHours()
+      const minutes = date.getMinutes()
+      const ampm = hours >= 12 ? 'PM' : 'AM'
+      const hour12 = hours % 12 || 12
+      return `${hour12}:${String(minutes).padStart(2, '0')} ${ampm}`
     }
 
     // Derive status from isArchived and isHidden fields
@@ -262,24 +281,30 @@ const Dashboard = () => {
         setCurrentPage(1)
       }
       
-      // Map events and fetch client names
-      const mappedEventsPromises = result.documents.map(async (doc) => {
+      // OPTIMIZATION: Collect all unique client IDs and fetch them in a single batch
+      const clientIds = [...new Set(
+        result.documents
+          .map(doc => doc.client as string | undefined)
+          .filter((id): id is string => !!id)
+      )]
+      
+      // Batch fetch all clients at once using the optimized service method
+      const clientsMap = clientIds.length > 0 
+        ? await clientsService.getByIds(clientIds)
+        : new Map<string, ClientDocument>()
+      
+      // Map events using the pre-fetched client data
+      let mappedEvents = result.documents.map((doc) => {
         const event = mapEventDocumentToEvent(doc as unknown as LocalEventDocument)
         
-        // Fetch client name if client relationship exists
+        // Look up client name from the map (instant lookup)
         if (doc.client) {
-          try {
-            const client = await clientsService.getById(doc.client as string)
-            event.brand = client.name || ''
-          } catch (err) {
-            console.error('Error fetching client:', err)
-          }
+          const client = clientsMap.get(doc.client as string)
+          event.brand = client?.name || ''
         }
         
         return event
       })
-      
-      let mappedEvents = await Promise.all(mappedEventsPromises)
       
       // Apply client-side brand sorting if needed (since brand is a relationship)
       if (sortBy === 'brand') {
@@ -331,6 +356,10 @@ const Dashboard = () => {
 
   // Format event document for edit modal initialData
   const formatEventForEditModal = async (eventDoc: EventDocument) => {
+    // Debug: Log the raw event document to see what productType looks like
+    console.log('Event document for edit:', eventDoc)
+    console.log('productType field:', eventDoc.productType)
+    
     // Fetch category title if category relationship exists
     let categoryTitle = ''
     if (eventDoc.categories) {
@@ -377,10 +406,27 @@ const Dashboard = () => {
       ? eventDoc.products.split(',').map(p => p.trim()).filter(p => p)
       : ['']
 
-    // Convert discount number to "Yes"/"No" format for the select dropdown
+    // Format discount number for the input field
     const formatDiscount = (discount?: number): string => {
       if (discount === undefined || discount === null) return ''
-      return discount > 0 ? 'Yes' : 'No'
+      return discount.toString()
+    }
+
+    // Handle productType - ensure it's always an array
+    const productTypesArray = Array.isArray(eventDoc.productType) 
+      ? eventDoc.productType 
+      : eventDoc.productType 
+        ? [eventDoc.productType as unknown as string]
+        : []
+
+    console.log('Formatted productTypes:', productTypesArray)
+
+    // Extract latitude and longitude from location array if it exists
+    let latitude = ''
+    let longitude = ''
+    if (eventDoc.location && Array.isArray(eventDoc.location) && eventDoc.location.length === 2) {
+      longitude = eventDoc.location[0]?.toString() || ''
+      latitude = eventDoc.location[1]?.toString() || ''
     }
 
     return {
@@ -393,7 +439,7 @@ const Dashboard = () => {
       state: eventDoc.state || '',
       zipCode: eventDoc.zipCode || '',
       category: categoryTitle,
-      productTypes: eventDoc.productType || [],
+      productTypes: productTypesArray,
       products: productsArray.length > 0 ? productsArray : [''],
       discount: formatDiscount(eventDoc.discount),
       discountImage: eventDoc.discountImageURL || null,
@@ -404,6 +450,8 @@ const Dashboard = () => {
       reviewPoints: eventDoc.reviewPoints?.toString() || '',
       eventInfo: eventDoc.eventInfo || '',
       radius: eventDoc.radius?.toString() || '',
+      latitude: latitude,
+      longitude: longitude,
     }
   }
 
@@ -458,6 +506,7 @@ const Dashboard = () => {
   }
 
   // Parse CSV file
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const parseCSV = (csvText: string): any[] => {
     const lines = csvText.split('\n').filter(line => line.trim())
     if (lines.length < 2) {
@@ -503,6 +552,7 @@ const Dashboard = () => {
     }
 
     // Parse data rows
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data: any[] = []
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim()
@@ -527,6 +577,7 @@ const Dashboard = () => {
       values.push(currentValue.trim()) // Add last value
 
       // Map values to headers
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const row: any = {}
       headers.forEach((header, index) => {
         const normalizedHeader = normalizeHeader(header)
@@ -564,9 +615,30 @@ const Dashboard = () => {
         const row = csvData[i]
         try {
           // Map CSV row to event data format
-          const eventDate = new Date(row['Date'])
+          // Parse date - handle multiple formats: DD-MM-YYYY, YYYY-MM-DD, MM/DD/YYYY
+          let eventDate: Date
+          const dateStr = row['Date'].trim()
+          
+          // Try DD-MM-YYYY format (e.g., "20-01-2026")
+          if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
+            const [day, month, year] = dateStr.split('-').map(Number)
+            eventDate = new Date(year, month - 1, day)
+          }
+          // Try YYYY-MM-DD format (e.g., "2026-01-20")
+          else if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            eventDate = new Date(dateStr)
+          }
+          // Try MM/DD/YYYY format (e.g., "01/20/2026")
+          else if (dateStr.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+            eventDate = new Date(dateStr)
+          }
+          // Fallback to default Date parsing
+          else {
+            eventDate = new Date(dateStr)
+          }
+          
           if (isNaN(eventDate.getTime())) {
-            throw new Error(`Invalid date format in row ${i + 2}: ${row['Date']}`)
+            throw new Error(`Invalid date format: ${row['Date']}. Expected formats: DD-MM-YYYY, YYYY-MM-DD, or MM/DD/YYYY`)
           }
 
           // Default times (can be extended if CSV includes time columns)
@@ -586,14 +658,19 @@ const Dashboard = () => {
           // Find client by brand name
           let clientId: string | null = null
           if (row['Brand Name']) {
-            const client = await clientsService.findByName(row['Brand Name'])
-            clientId = client?.$id || null
-            if (!clientId) {
-              throw new Error(`Brand "${row['Brand Name']}" not found`)
+            try {
+              const client = await clientsService.findByName(row['Brand Name'].trim())
+              clientId = client?.$id || null
+              if (!clientId) {
+                throw new Error(`Brand "${row['Brand Name']}" not found in database`)
+              }
+            } catch (brandErr) {
+              throw new Error(`Brand lookup failed: ${extractErrorMessage(brandErr)}`)
             }
           }
 
           // Prepare event payload
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const eventPayload: any = {
             name: row['Event Name'],
             date: formatDateWithTimezone(eventDate),
@@ -609,6 +686,7 @@ const Dashboard = () => {
             checkInPoints: parseFloat(row['Points']) || 0,
             reviewPoints: parseFloat(row['Points']) || 0, // Use same points for review
             eventInfo: `Event at ${row['Address'] || row['City'] || 'location'}`,
+            radius: parseInt(row['Radius']) || 0, // Default radius value
             isArchived: false,
             isHidden: false,
           }
@@ -619,12 +697,16 @@ const Dashboard = () => {
           }
 
           // Create event
+          console.log(`Creating event for row ${i + 2}:`, eventPayload)
           await eventsService.create(eventPayload)
           successCount++
+          console.log(`Successfully created event: ${row['Event Name']}`)
         } catch (err) {
           errorCount++
           const errorMsg = extractErrorMessage(err)
-          errors.push(`Row ${i + 2} (${row['Event Name'] || 'Unknown'}): ${errorMsg}`)
+          const errorDetail = `Row ${i + 2} (${row['Event Name'] || 'Unknown'}): ${errorMsg}`
+          errors.push(errorDetail)
+          console.error(`CSV Upload Error - ${errorDetail}`, err)
         }
       }
 
@@ -637,13 +719,14 @@ const Dashboard = () => {
         })
       } else if (successCount > 0 && errorCount > 0) {
         addNotification({
-          type: 'error',
+          type: 'warning',
           title: 'Partial CSV Upload',
-          message: `Created ${successCount} event${successCount > 1 ? 's' : ''}, but ${errorCount} failed. Check console for details.`,
+          message: `Created ${successCount} event${successCount > 1 ? 's' : ''}, but ${errorCount} failed:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n... and ${errors.length - 3} more` : ''}`,
         })
-        console.error('CSV Upload Errors:', errors)
+        console.error('CSV Upload Errors (Full List):', errors)
       } else {
-        throw new Error(`Failed to create any events. ${errorCount} error${errorCount > 1 ? 's' : ''} occurred.`)
+        const errorSummary = errors.slice(0, 3).join('\n') + (errors.length > 3 ? `\n... and ${errors.length - 3} more errors` : '')
+        throw new Error(`Failed to create any events. ${errorCount} error${errorCount > 1 ? 's' : ''} occurred:\n\n${errorSummary}\n\nCheck console for full error details.`)
       }
 
       // Refresh events list - reset to page 1 after CSV upload
@@ -662,8 +745,12 @@ const Dashboard = () => {
   }
 
   // Handle event creation
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleCreateEvent = async (eventData: any) => {
     try {
+      console.log('handleCreateEvent - Received eventData:', eventData)
+      console.log('handleCreateEvent - productTypes:', eventData.productTypes)
+      
       // 1. Upload discount image if provided
       let discountImageURL: string | null = null
       if (eventData.discountImage && eventData.discountImage instanceof File) {
@@ -703,6 +790,7 @@ const Dashboard = () => {
       endDateTime.setHours(endHours, endMinutes, 0, 0)
 
       // 5. Prepare event data according to database schema
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const eventPayload: any = {
         name: eventData.eventName,
         date: formatDateWithTimezone(eventDate),
@@ -723,6 +811,16 @@ const Dashboard = () => {
         radius: parseInt(eventData.radius) || 0,
         isArchived: false,
         isHidden: false,
+      }
+      
+      console.log('handleCreateEvent - eventPayload.productType:', eventPayload.productType)
+
+      // Add location as [longitude, latitude] array if both are provided
+      if (eventData.longitude && eventData.latitude) {
+        eventPayload.location = [
+          parseFloat(eventData.longitude),
+          parseFloat(eventData.latitude)
+        ]
       }
 
       // Optional fields
@@ -780,6 +878,7 @@ const Dashboard = () => {
   }
 
   // Handle event update
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleUpdateEvent = async (eventData: any) => {
     try {
       if (!selectedEventDoc) {
@@ -833,6 +932,9 @@ const Dashboard = () => {
       endDateTime.setHours(endHours, endMinutes, 0, 0)
 
       // 5. Prepare event data according to database schema
+      console.log('Update event - incoming productTypes:', eventData.productTypes)
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const eventPayload: any = {
         name: eventData.eventName,
         date: formatDateWithTimezone(eventDate),
@@ -851,6 +953,16 @@ const Dashboard = () => {
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
         radius: parseInt(eventData.radius) || 0,
+      }
+      
+      console.log('Update event - payload productType:', eventPayload.productType)
+
+      // Add location as [longitude, latitude] array if both are provided
+      if (eventData.longitude && eventData.latitude) {
+        eventPayload.location = [
+          parseFloat(eventData.longitude),
+          parseFloat(eventData.latitude)
+        ]
       }
 
       // Preserve existing status fields
@@ -880,18 +992,11 @@ const Dashboard = () => {
         eventPayload.discountImageURL = discountImageURL
       }
 
-      // Parse discount - convert "Yes"/"No" to number, or keep existing value
-      if (eventData.discount) {
-        if (eventData.discount === 'Yes') {
-          eventPayload.discount = 1 // Or any positive number to indicate discount exists
-        } else if (eventData.discount === 'No') {
-          eventPayload.discount = 0
-        } else {
-          // Try to parse as number if it's a numeric string
-          const discountValue = parseFloat(eventData.discount)
-          if (!isNaN(discountValue)) {
-            eventPayload.discount = discountValue
-          }
+      // Parse discount as number
+      if (eventData.discount !== undefined && eventData.discount !== '') {
+        const discountValue = parseFloat(eventData.discount)
+        if (!isNaN(discountValue)) {
+          eventPayload.discount = discountValue
         }
       } else if (selectedEventDoc.discount !== undefined) {
         // Keep existing discount if no new one provided
@@ -1094,10 +1199,16 @@ const Dashboard = () => {
   }, [searchTerm, statusFilter, sortBy, sortOrder, dateRange.start, dateRange.end])
 
   // Fetch categories, brands, and statistics on component mount
+  // OPTIMIZATION: Fetch all initial data in parallel
   useEffect(() => {
-    fetchCategories()
-    fetchBrands()
-    fetchStatistics()
+    Promise.all([
+      fetchCategories(),
+      fetchBrands(),
+      fetchStatistics()
+    ]).catch(err => {
+      console.error('Error fetching initial data:', err)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (isLoading) {
@@ -1253,6 +1364,7 @@ const Dashboard = () => {
           })
         }}
         initialData={editModalInitialData || undefined}
+        categories={categories}
         brands={brands}
       />
 

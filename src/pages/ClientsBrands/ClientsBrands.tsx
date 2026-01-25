@@ -73,7 +73,10 @@ const ClientsBrands = () => {
   const [error, setError] = useState<string | null>(null)
 
   // Transform ClientDocument to UIClient for display
-  const transformToUIClient = (doc: ClientDocument): UIClient => {
+  const transformToUIClient = (
+    doc: ClientDocument,
+    stats?: { totalEvents: number; totalFavorites: number; totalCheckIns: number; totalPoints: number }
+  ): UIClient => {
     // Extract latitude and longitude from location point [longitude, latitude]
     let latitude: number | undefined = undefined
     let longitude: number | undefined = undefined
@@ -85,10 +88,11 @@ const ClientsBrands = () => {
     return {
       id: doc.$id,
       clientName: doc.name,
-      totalEvents: 0, // TODO: Calculate from events
-      numberOfFavorites: 0, // TODO: Calculate from favorites
-      numberOfCheckIns: 0, // TODO: Calculate from check-ins
-      totalPoints: 0, // TODO: Calculate total points
+      // Use computed stats from related collections
+      totalEvents: stats?.totalEvents ?? 0,
+      numberOfFavorites: stats?.totalFavorites ?? 0,
+      numberOfCheckIns: stats?.totalCheckIns ?? 0,
+      totalPoints: stats?.totalPoints ?? 0,
       joinDate: doc.$createdAt ? new Date(doc.$createdAt).toLocaleDateString() : '',
       productTypes: doc.productType || [],
       logoUrl: doc.logoURL,
@@ -168,7 +172,18 @@ const ClientsBrands = () => {
         setCurrentPage(1)
       }
       
-      const transformedClients = result.documents.map(transformToUIClient)
+      // Get client IDs for stats computation
+      const clientIds = result.documents.map(doc => doc.$id)
+      
+      // Fetch stats for all clients on this page
+      const statsMap = await clientsService.getClientsStats(clientIds)
+      
+      // Transform clients with stats
+      const transformedClients = result.documents.map(doc => {
+        const stats = statsMap.get(doc.$id)
+        return transformToUIClient(doc, stats)
+      })
+      
       setClients(transformedClients)
       setCurrentPage(page)
     } catch (err) {
@@ -321,11 +336,6 @@ const ClientsBrands = () => {
     logo: File | null
     clientName: string
     productTypes: string[]
-    city?: string
-    address?: string
-    state?: string
-    zip?: string
-    location?: [number, number] // Point format: [longitude, latitude]
   }) => {
     try {
       // Upload logo if provided
@@ -338,22 +348,10 @@ const ClientsBrands = () => {
       const formData: {
         name: string
         productType: string[]
-        city?: string
-        address?: string
-        state?: string
-        zip?: string
-        longitude?: number
-        latitude?: number
         logoURL?: string
       } = {
         name: clientData.clientName,
         productType: clientData.productTypes,
-        city: clientData.city,
-        address: clientData.address,
-        state: clientData.state,
-        zip: clientData.zip,
-        longitude: clientData.location?.[0],
-        latitude: clientData.location?.[1],
         logoURL,
       }
       
@@ -391,11 +389,6 @@ const ClientsBrands = () => {
     logo: File | null
     clientName: string
     productTypes: string[]
-    city?: string
-    address?: string
-    state?: string
-    zip?: string
-    location?: [number, number] // Point format: [longitude, latitude]
   }) => {
     if (!selectedClient?.id) return
 
@@ -410,22 +403,10 @@ const ClientsBrands = () => {
       const formData: Partial<{
         name: string
         productType: string[]
-        city?: string
-        address?: string
-        state?: string
-        zip?: string
-        longitude?: number
-        latitude?: number
         logoURL?: string
       }> = {
         name: clientData.clientName,
         productType: clientData.productTypes,
-        city: clientData.city,
-        address: clientData.address,
-        state: clientData.state,
-        zip: clientData.zip,
-        longitude: clientData.location?.[0],
-        latitude: clientData.location?.[1],
       }
 
       // Only include logoURL if a new logo was uploaded
@@ -508,12 +489,6 @@ const ClientsBrands = () => {
                 clientName: selectedClient.clientName,
                 productTypes: selectedClient.productTypes || [],
                 logoUrl: selectedClient.logoUrl,
-                city: selectedClient.city,
-                address: selectedClient.address,
-                state: selectedClient.state,
-                zip: selectedClient.zip,
-                latitude: selectedClient.latitude,
-                longitude: selectedClient.longitude,
               }
             : undefined
         }

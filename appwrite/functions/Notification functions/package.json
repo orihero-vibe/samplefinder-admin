@@ -8,6 +8,7 @@
     "format": "prettier --write .",
     "build": "tsc && cp dist/main.js src/main.js",
     "test:local": "tsx test-local.ts",
+    "test:reminders": "tsx test-reminders.ts",
     "dev": "tsx watch src/main.ts"
   },
   "dependencies": {

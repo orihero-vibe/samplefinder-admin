@@ -88,6 +88,32 @@ export class DatabaseService {
 export interface UserProfile extends Models.Document {
   authID: string
   role: string
+  firstname?: string
+  lastname?: string
+  username?: string
+  phoneNumber?: string
+  dob?: string
+  zipCode?: string
+  isBlocked?: boolean
+  idAdult?: boolean
+  // Points & stats fields (match actual database column names)
+  totalPoints?: number
+  totalReviews?: number
+  totalEvents?: number
+  isAmbassador?: boolean
+  isInfluencer?: boolean
+  referralCode?: string
+  favoriteIds?: string | string[] // JSON string array or array of event IDs
+  savedEventIds?: string // JSON string with saved event data
+  // Legacy field names for backward compatibility
+  userPoints?: number
+  tierLevel?: string
+  baBadge?: boolean
+  influencerBadge?: boolean
+  checkIns?: number
+  reviews?: number
+  triviasWon?: number
+  checkInReviewPoints?: number
   [key: string]: unknown
 }
 
@@ -129,6 +155,11 @@ export interface ClientDocument extends Models.Document {
   state?: string
   zip?: string
   location?: [number, number] // [longitude, latitude]
+  // Stats fields (if they exist in the database)
+  totalEvents?: number
+  totalFavorites?: number
+  totalCheckIns?: number
+  totalPoints?: number
   [key: string]: unknown
 }
 
@@ -172,6 +203,28 @@ export const clientsService = {
     DatabaseService.getById<ClientDocument>(appwriteConfig.collections.clients, id),
   list: (queries?: string[]) =>
     DatabaseService.list<ClientDocument>(appwriteConfig.collections.clients, queries),
+  // OPTIMIZATION: Batch fetch multiple clients by IDs
+  getByIds: async (ids: string[]): Promise<Map<string, ClientDocument>> => {
+    const clientsMap = new Map<string, ClientDocument>()
+    if (ids.length === 0) return clientsMap
+    
+    try {
+      // Fetch all clients in parallel
+      const clientPromises = ids.map(id => DatabaseService.getById<ClientDocument>(appwriteConfig.collections.clients, id))
+      const clients = await Promise.all(clientPromises)
+      
+      // Build a map of clientId -> client for O(1) lookup
+      clients.forEach((client, index) => {
+        if (client) {
+          clientsMap.set(ids[index], client)
+        }
+      })
+    } catch (err) {
+      console.error('Error fetching clients batch:', err)
+    }
+    
+    return clientsMap
+  },
   update: (id: string, data: Partial<ClientFormData>) => {
     const dbData: Record<string, unknown> = {
       ...data,
@@ -202,6 +255,182 @@ export const clientsService = {
     )
     return result.documents[0] || null
   },
+  
+  // Compute stats for a single client
+  getClientStats: async (clientId: string): Promise<{
+    totalEvents: number
+    totalFavorites: number
+    totalCheckIns: number
+    totalPoints: number
+  }> => {
+    try {
+      // 1. Get all events for this client
+      const eventsResult = await DatabaseService.list<EventDocument>(
+        appwriteConfig.collections.events,
+        [Query.equal('client', [clientId]), Query.limit(1000)]
+      )
+      const events = eventsResult.documents
+      const totalEvents = eventsResult.total
+      const eventIds = events.map(e => e.$id)
+      
+      if (eventIds.length === 0) {
+        return { totalEvents: 0, totalFavorites: 0, totalCheckIns: 0, totalPoints: 0 }
+      }
+      
+      // 2. Count reviews (check-ins) for these events and sum points
+      let totalCheckIns = 0
+      let totalPoints = 0
+      
+      // Query reviews for each event (batch in chunks to avoid query limits)
+      const chunkSize = 100
+      for (let i = 0; i < eventIds.length; i += chunkSize) {
+        const chunk = eventIds.slice(i, i + chunkSize)
+        const reviewsResult = await DatabaseService.list<ReviewDocument>(
+          appwriteConfig.collections.reviews,
+          [Query.equal('event', chunk), Query.limit(1000)]
+        )
+        totalCheckIns += reviewsResult.total
+        totalPoints += reviewsResult.documents.reduce((sum, r) => sum + (r.pointsEarned || 0), 0)
+      }
+      
+      // 3. Count favorites - query users who have these events in favoriteIds
+      let totalFavorites = 0
+      const usersResult = await DatabaseService.list<UserProfile>(
+        appwriteConfig.collections.userProfiles,
+        [Query.limit(1000)]
+      )
+      
+      for (const user of usersResult.documents) {
+        if (user.favoriteIds) {
+          try {
+            // favoriteIds is stored as JSON string array
+            const favoriteIds = typeof user.favoriteIds === 'string' 
+              ? JSON.parse(user.favoriteIds as string) 
+              : user.favoriteIds
+            if (Array.isArray(favoriteIds)) {
+              const hasClientEvent = favoriteIds.some((favId: string) => eventIds.includes(favId))
+              if (hasClientEvent) totalFavorites++
+            }
+          } catch {
+            // Skip if favoriteIds is not valid JSON
+          }
+        }
+      }
+      
+      return { totalEvents, totalFavorites, totalCheckIns, totalPoints }
+    } catch (err) {
+      console.error('Error computing client stats:', err)
+      return { totalEvents: 0, totalFavorites: 0, totalCheckIns: 0, totalPoints: 0 }
+    }
+  },
+  
+  // Compute stats for multiple clients (batch operation)
+  getClientsStats: async (clientIds: string[]): Promise<Map<string, {
+    totalEvents: number
+    totalFavorites: number
+    totalCheckIns: number
+    totalPoints: number
+  }>> => {
+    const statsMap = new Map<string, { totalEvents: number; totalFavorites: number; totalCheckIns: number; totalPoints: number }>()
+    
+    if (clientIds.length === 0) return statsMap
+    
+    try {
+      // 1. Get all events for all clients in one query
+      const eventsResult = await DatabaseService.list<EventDocument>(
+        appwriteConfig.collections.events,
+        [Query.equal('client', clientIds), Query.limit(5000)]
+      )
+      
+      // Group events by client ID
+      const eventsByClient = new Map<string, EventDocument[]>()
+      const allEventIds: string[] = []
+      
+      for (const event of eventsResult.documents) {
+        const clientId = event.client as string
+        if (clientId) {
+          if (!eventsByClient.has(clientId)) {
+            eventsByClient.set(clientId, [])
+          }
+          eventsByClient.get(clientId)!.push(event)
+          allEventIds.push(event.$id)
+        }
+      }
+      
+      // 2. Get all reviews for all events
+      const reviewsByEvent = new Map<string, ReviewDocument[]>()
+      if (allEventIds.length > 0) {
+        const chunkSize = 100
+        for (let i = 0; i < allEventIds.length; i += chunkSize) {
+          const chunk = allEventIds.slice(i, i + chunkSize)
+          const reviewsResult = await DatabaseService.list<ReviewDocument>(
+            appwriteConfig.collections.reviews,
+            [Query.equal('event', chunk), Query.limit(5000)]
+          )
+          for (const review of reviewsResult.documents) {
+            const eventId = review.event as string
+            if (eventId) {
+              if (!reviewsByEvent.has(eventId)) {
+                reviewsByEvent.set(eventId, [])
+              }
+              reviewsByEvent.get(eventId)!.push(review)
+            }
+          }
+        }
+      }
+      
+      // 3. Get all users for favorite counting
+      const usersResult = await DatabaseService.list<UserProfile>(
+        appwriteConfig.collections.userProfiles,
+        [Query.limit(5000)]
+      )
+      
+      // 4. Compute stats for each client
+      for (const clientId of clientIds) {
+        const clientEvents = eventsByClient.get(clientId) || []
+        const clientEventIds = clientEvents.map(e => e.$id)
+        
+        let totalCheckIns = 0
+        let totalPoints = 0
+        
+        for (const eventId of clientEventIds) {
+          const eventReviews = reviewsByEvent.get(eventId) || []
+          totalCheckIns += eventReviews.length
+          totalPoints += eventReviews.reduce((sum, r) => sum + (r.pointsEarned || 0), 0)
+        }
+        
+        // Count favorites
+        let totalFavorites = 0
+        for (const user of usersResult.documents) {
+          if (user.favoriteIds) {
+            try {
+              const favoriteIds = typeof user.favoriteIds === 'string'
+                ? JSON.parse(user.favoriteIds as string)
+                : user.favoriteIds
+              if (Array.isArray(favoriteIds)) {
+                const hasClientEvent = favoriteIds.some((favId: string) => clientEventIds.includes(favId))
+                if (hasClientEvent) totalFavorites++
+              }
+            } catch {
+              // Skip invalid JSON
+            }
+          }
+        }
+        
+        statsMap.set(clientId, {
+          totalEvents: clientEvents.length,
+          totalFavorites,
+          totalCheckIns,
+          totalPoints,
+        })
+      }
+      
+      return statsMap
+    } catch (err) {
+      console.error('Error computing clients stats batch:', err)
+      return statsMap
+    }
+  },
 }
 
 // Event Document interface
@@ -224,6 +453,8 @@ export interface EventDocument extends Models.Document {
   eventInfo: string
   isArchived: boolean
   isHidden: boolean
+  radius?: number
+  location?: [number, number] // [longitude, latitude]
   client?: string // Client ID (relationship)
   categories?: string // Category ID (relationship)
   [key: string]: unknown
@@ -715,6 +946,26 @@ export const appUsersService = {
       }) as AppUser[]
     } catch (error) {
       console.error('Error searching users:', error)
+      throw error
+    }
+  },
+
+  // Block a user (add to blacklist)
+  blockUser: async (userId: string): Promise<void> => {
+    try {
+      await userProfilesService.update(userId, { isBlocked: true })
+    } catch (error) {
+      console.error('Error blocking user:', error)
+      throw error
+    }
+  },
+
+  // Unblock a user (remove from blacklist)
+  unblockUser: async (userId: string): Promise<void> => {
+    try {
+      await userProfilesService.update(userId, { isBlocked: false })
+    } catch (error) {
+      console.error('Error unblocking user:', error)
       throw error
     }
   },

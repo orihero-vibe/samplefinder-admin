@@ -24,7 +24,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         message: 'You have been successfully logged out.',
       })
       navigate('/login')
-    } catch (error) {
+    } catch {
       addNotification({
         type: 'error',
         title: 'Logout failed',

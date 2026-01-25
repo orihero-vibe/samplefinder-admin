@@ -67,7 +67,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
       await onUpload(selectedFile)
       setSelectedFile(null)
       onClose()
-    } catch (error) {
+    } catch {
       // Error is handled by parent component via notification
       // Keep modal open so user can retry
     } finally {
@@ -80,7 +80,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
     const headers = requiredColumns.join(',')
     const sampleRow = [
       'Sample Event Name',
-      '2024-12-25',
+      '25-01-2026', // DD-MM-YYYY format
       '123 Main Street',
       'New York',
       'NY',

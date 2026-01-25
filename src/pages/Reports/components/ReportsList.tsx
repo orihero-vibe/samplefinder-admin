@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import ReportCard from './ReportCard'
 import { Pagination } from '../../../components'
+import type { DownloadFormat } from '../../../components'
 
 interface Report {
   id: string
@@ -16,6 +17,7 @@ interface ReportsListProps {
   totalReports?: number
   pageSize?: number
   onPageChange?: (page: number) => void
+  onExport: (reportId: string, format: DownloadFormat) => void
 }
 
 const ReportsList = ({
@@ -25,6 +27,7 @@ const ReportsList = ({
   totalReports = 0,
   pageSize = 25,
   onPageChange,
+  onExport,
 }: ReportsListProps) => {
   const navigate = useNavigate()
 
@@ -47,6 +50,7 @@ const ReportsList = ({
               icon={report.icon}
               lastGenerated={report.lastGenerated}
               onPreview={() => handlePreview(report.id)}
+              onExport={(format) => onExport(report.id, format)}
             />
           ))
         )}

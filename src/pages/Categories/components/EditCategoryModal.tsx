@@ -43,7 +43,7 @@ const EditCategoryModal = ({ isOpen, onClose, onSave, initialData }: EditCategor
     setIsSubmitting(true)
     try {
       await onSave({ title: title.trim(), isAdult })
-    } catch (err) {
+    } catch {
       // Error is handled by parent component via notification
       setError('Failed to update category. Please try again.')
     } finally {

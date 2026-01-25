@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { DashboardLayout, ShimmerPage } from '../../components'
+import type { DownloadFormat } from '../../components'
 import { ReportsHeader, SearchAndFilter, ReportsList } from './components'
+import { exportService, type ReportType } from '../../lib/exportService'
+import { useNotificationStore } from '../../stores/notificationStore'
 
 interface Report {
   id: string
@@ -18,6 +21,7 @@ const Reports = () => {
   })
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize] = useState(25)
+  const { addNotification } = useNotificationStore()
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -106,6 +110,57 @@ const Reports = () => {
     setCurrentPage(1)
   }, [searchQuery])
 
+  // Map reportId to ReportType
+  const getReportType = (reportId: string): ReportType => {
+    const reportTypeMap: Record<string, ReportType> = {
+      '1': 'dashboard-all',
+      '2': 'dashboard-date-range',
+      '3': 'event-list',
+      '4': 'clients-brands',
+      '5': 'app-users',
+      '6': 'points-earned-all',
+      '7': 'points-earned-all', // Points Earned with Date Range - same as all for now
+    }
+    return reportTypeMap[reportId] || 'dashboard-all'
+  }
+
+  // Handle export
+  const handleExport = async (reportId: string, format: DownloadFormat) => {
+    try {
+      const reportType = getReportType(reportId)
+      const report = reports.find(r => r.id === reportId)
+      const reportName = report?.name || 'Report'
+      const timestamp = new Date().toISOString().split('T')[0]
+      const filename = `${reportName}_${timestamp}.${format}`
+
+      // Use date range for date-range reports
+      const useDateRange = reportId === '2' || reportId === '7' ? dateRange : undefined
+
+      if (format === 'csv') {
+        await exportService.exportReport(reportType, filename, useDateRange)
+        addNotification({
+          type: 'success',
+          title: 'Export Successful',
+          message: `Report has been exported to ${filename}`,
+        })
+      } else if (format === 'pdf') {
+        await exportService.exportReportToPDF(reportType, filename, useDateRange)
+        addNotification({
+          type: 'success',
+          title: 'Export Successful',
+          message: `Report has been exported to ${filename}`,
+        })
+      }
+    } catch (error) {
+      console.error('Error exporting report:', error)
+      addNotification({
+        type: 'error',
+        title: 'Export Failed',
+        message: error instanceof Error ? error.message : 'Failed to export report. Please try again.',
+      })
+    }
+  }
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -131,6 +186,7 @@ const Reports = () => {
           totalReports={totalReports}
           pageSize={pageSize}
           onPageChange={handlePageChange}
+          onExport={handleExport}
         />
       </div>
     </DashboardLayout>

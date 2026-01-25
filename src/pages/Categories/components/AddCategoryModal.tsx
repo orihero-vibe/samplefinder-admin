@@ -39,7 +39,7 @@ const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) =>
     setIsSubmitting(true)
     try {
       await onSave({ title: title.trim(), isAdult })
-    } catch (err) {
+    } catch {
       // Error is handled by parent component via notification
       setError('Failed to create category. Please try again.')
     } finally {

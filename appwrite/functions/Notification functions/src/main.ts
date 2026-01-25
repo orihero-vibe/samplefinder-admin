@@ -21,7 +21,25 @@ interface NotificationData {
 interface UserProfile {
   $id: string;
   authID: string;
+  savedEventIds?: string; // JSON string with array of {eventId, addedAt}
   [key: string]: unknown;
+}
+
+interface Event {
+  $id: string;
+  name: string;
+  date: string;
+  startTime: string;
+  city: string;
+  address: string;
+  [key: string]: unknown;
+}
+
+interface SavedEventData {
+  eventId: string;
+  addedAt: string;
+  reminder24hSent?: boolean;
+  reminder1hSent?: boolean;
 }
 
 interface PushResult {
@@ -34,6 +52,7 @@ interface PushResult {
 const DATABASE_ID = '69217af50038b9005a61';
 const NOTIFICATIONS_TABLE_ID = 'notifications';
 const USER_PROFILES_TABLE_ID = 'user_profiles';
+const EVENTS_TABLE_ID = 'events';
 
 /**
  * Get notification by ID
@@ -247,6 +266,195 @@ async function sendNotification(
   }
 }
 
+/**
+ * Check and send event reminders
+ * This function runs on a schedule to check for events that need reminders
+ * and sends push notifications to users who have saved those events
+ * 
+ * NEW: Uses user-level reminder tracking instead of event-level tracking
+ * This allows users who save events late to still receive remaining reminders
+ */
+async function checkAndSendEventReminders(
+  databases: Databases,
+  messaging: Messaging,
+  log: (message: string) => void
+): Promise<{ success: boolean; reminders24h: number; reminders1h: number }> {
+  try {
+    log('Starting event reminder check with user-level tracking...');
+    
+    const now = new Date();
+    const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const in1Hour = new Date(now.getTime() + 60 * 60 * 1000);
+    
+    // Define time windows for checking (±15 minutes for flexibility)
+    const time24hStart = new Date(in24Hours.getTime() - 15 * 60 * 1000);
+    const time24hEnd = new Date(in24Hours.getTime() + 15 * 60 * 1000);
+    const time1hStart = new Date(in1Hour.getTime() - 15 * 60 * 1000);
+    const time1hEnd = new Date(in1Hour.getTime() + 15 * 60 * 1000);
+
+    log(`Checking for events at ${now.toISOString()}`);
+    log(`24h window: ${time24hStart.toISOString()} to ${time24hEnd.toISOString()}`);
+    log(`1h window: ${time1hStart.toISOString()} to ${time1hEnd.toISOString()}`);
+
+    // Fetch all events
+    const eventsResponse = await databases.listDocuments(
+      DATABASE_ID,
+      EVENTS_TABLE_ID,
+      []
+    );
+
+    const events = eventsResponse.documents as unknown as Event[];
+    log(`Found ${events.length} total events`);
+
+    // Create a map of events by ID for quick lookup
+    const eventsMap = new Map<string, Event>();
+    const events24h: Event[] = [];
+    const events1h: Event[] = [];
+
+    for (const event of events) {
+      const eventDate = new Date(event.startTime || event.date);
+      eventsMap.set(event.$id, event);
+      
+      // Check if event is in 24h window
+      if (eventDate >= time24hStart && eventDate <= time24hEnd) {
+        events24h.push(event);
+      }
+      
+      // Check if event is in 1h window
+      if (eventDate >= time1hStart && eventDate <= time1hEnd) {
+        events1h.push(event);
+      }
+    }
+
+    log(`Events in 24h window: ${events24h.length}, in 1h window: ${events1h.length}`);
+
+    // Fetch all users
+    const usersResponse = await databases.listDocuments(
+      DATABASE_ID,
+      USER_PROFILES_TABLE_ID,
+      []
+    );
+
+    const allUsers = usersResponse.documents as unknown as UserProfile[];
+    log(`Checking ${allUsers.length} users for saved events`);
+
+    let reminders24hSent = 0;
+    let reminders1hSent = 0;
+
+    // Process each user
+    for (const user of allUsers) {
+      try {
+        if (!user.savedEventIds || !user.authID) {
+          continue;
+        }
+
+        let savedEvents: SavedEventData[] = [];
+        try {
+          savedEvents = JSON.parse(user.savedEventIds);
+        } catch {
+          log(`Error parsing savedEventIds for user ${user.$id}`);
+          continue;
+        }
+
+        let needsUpdate = false;
+
+        // Check each saved event
+        for (const savedEvent of savedEvents) {
+          const event = eventsMap.get(savedEvent.eventId);
+          if (!event) continue;
+
+          const eventDate = new Date(event.startTime || event.date);
+
+          // Check if user needs 24h reminder for this event
+          if (
+            eventDate >= time24hStart &&
+            eventDate <= time24hEnd &&
+            !savedEvent.reminder24hSent
+          ) {
+            log(`User ${user.$id} needs 24h reminder for event "${event.name}"`);
+            
+            // Send push notification
+            await sendPushNotificationToUsers(
+              messaging,
+              [user.authID],
+              `Event Reminder: ${event.name}`,
+              `Your saved event "${event.name}" starts in 24 hours! Location: ${event.address}, ${event.city}`,
+              log,
+              {
+                eventId: event.$id,
+                reminderType: '24h',
+                type: 'Event Reminder',
+              }
+            );
+
+            // Mark as sent in the savedEvent object
+            savedEvent.reminder24hSent = true;
+            needsUpdate = true;
+            reminders24hSent++;
+          }
+
+          // Check if user needs 1h reminder for this event
+          if (
+            eventDate >= time1hStart &&
+            eventDate <= time1hEnd &&
+            !savedEvent.reminder1hSent
+          ) {
+            log(`User ${user.$id} needs 1h reminder for event "${event.name}"`);
+            
+            // Send push notification
+            await sendPushNotificationToUsers(
+              messaging,
+              [user.authID],
+              `Event Reminder: ${event.name}`,
+              `Your saved event "${event.name}" starts in 1 hour! Location: ${event.address}, ${event.city}`,
+              log,
+              {
+                eventId: event.$id,
+                reminderType: '1h',
+                type: 'Event Reminder',
+              }
+            );
+
+            // Mark as sent in the savedEvent object
+            savedEvent.reminder1hSent = true;
+            needsUpdate = true;
+            reminders1hSent++;
+          }
+        }
+
+        // Update user's savedEventIds if any reminders were sent
+        if (needsUpdate) {
+          await databases.updateDocument(
+            DATABASE_ID,
+            USER_PROFILES_TABLE_ID,
+            user.$id,
+            {
+              savedEventIds: JSON.stringify(savedEvents),
+            }
+          );
+          log(`Updated reminder flags for user ${user.$id}`);
+        }
+      } catch (userError: unknown) {
+        const errorMessage = userError instanceof Error ? userError.message : String(userError);
+        log(`Error processing user ${user.$id}: ${errorMessage}`);
+        // Continue with next user
+      }
+    }
+
+    log(`Reminder check complete. 24h reminders: ${reminders24hSent}, 1h reminders: ${reminders1hSent}`);
+
+    return {
+      success: true,
+      reminders24h: reminders24hSent,
+      reminders1h: reminders1hSent,
+    };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Error checking event reminders: ${errorMessage}`);
+    throw error instanceof Error ? error : new Error(errorMessage);
+  }
+}
+
 // Main function handler
 interface HandlerRequest {
   path: string;
@@ -346,6 +554,26 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       );
 
       log(`Notification sent. Recipients: ${result.recipients}${result.messageId ? `, Message ID: ${result.messageId}` : ''}`);
+
+      return res.json({
+        ...result,
+      });
+    }
+
+    // Handle check event reminders endpoint (for scheduled execution)
+    if (req.path === '/check-event-reminders' || req.method === 'GET') {
+      log('Processing check-event-reminders request');
+
+      // This endpoint can be triggered by:
+      // 1. Appwrite's scheduled execution
+      // 2. Manual trigger for testing
+      const result = await checkAndSendEventReminders(
+        databases,
+        messaging,
+        log
+      );
+
+      log(`Event reminders check complete. 24h: ${result.reminders24h}, 1h: ${result.reminders1h}`);
 
       return res.json({
         ...result,

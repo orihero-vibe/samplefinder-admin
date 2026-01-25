@@ -11,6 +11,7 @@ interface User {
   email?: string
   role?: string
   $createdAt?: string
+  isBlocked?: boolean
 }
 
 interface UsersTableProps {
@@ -79,6 +80,12 @@ const UsersTable = ({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
+                  Status
+                </div>
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <div className="flex items-center gap-2">
+                  <Icon icon="mdi:filter" className="w-4 h-4" />
                   Created At
                 </div>
               </th>
@@ -90,7 +97,7 @@ const UsersTable = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {users.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-8 text-center text-sm text-gray-500">
+                <td colSpan={9} className="px-6 py-8 text-center text-sm text-gray-500">
                   No users found
                 </td>
               </tr>
@@ -116,6 +123,19 @@ const UsersTable = ({
                     <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
                       {user.role || 'user'}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {user.isBlocked ? (
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center gap-1 w-fit">
+                        <Icon icon="mdi:lock" className="w-3 h-3" />
+                        Blocked
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 flex items-center gap-1 w-fit">
+                        <Icon icon="mdi:check-circle" className="w-3 h-3" />
+                        Active
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {user.$createdAt

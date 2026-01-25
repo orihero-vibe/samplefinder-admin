@@ -124,8 +124,7 @@ async function getDashboardStats(
   log: (message: string) => void
 ): Promise<DashboardStats> {
   try {
-    // Get current and last month ranges
-    const thisMonth = getThisMonthRange();
+    // Get last month range for comparisons
     const lastMonth = getLastMonthRange();
 
     // Total Clients/Brands
@@ -173,10 +172,11 @@ async function getDashboardStats(
       } else if (checkin.event) {
         // If checkin has event relationship, get the event's checkInPoints
         try {
+          const eventRef = checkin.event as { $id?: string; id?: string } | string | null;
           const eventId =
-            typeof checkin.event === 'string'
-              ? checkin.event
-              : (checkin.event as any)?.$id || (checkin.event as any)?.id;
+            typeof eventRef === 'string'
+              ? eventRef
+              : eventRef?.$id || eventRef?.id;
 
           if (eventId) {
             const eventDoc = await databases.getDocument(
@@ -240,8 +240,8 @@ async function getDashboardStats(
       totalCheckinsChange: 0,
       reviewsChange: 0,
     };
-  } catch (error: any) {
-    log(`Error getting dashboard stats: ${error.message}`);
+  } catch (error: unknown) {
+    log(`Error getting dashboard stats: ${(error as Error).message}`);
     throw error;
   }
 }
@@ -278,8 +278,8 @@ async function getClientsStats(
       totalClients,
       newThisMonth,
     };
-  } catch (error: any) {
-    log(`Error getting clients stats: ${error.message}`);
+  } catch (error: unknown) {
+    log(`Error getting clients stats: ${(error as Error).message}`);
     throw error;
   }
 }
@@ -352,10 +352,11 @@ async function getUsersStats(
       } else if (checkin.event) {
         // If checkin has event relationship, get the event's checkInPoints
         try {
+          const eventRef = checkin.event as { $id?: string; id?: string } | string | null;
           const eventId =
-            typeof checkin.event === 'string'
-              ? checkin.event
-              : (checkin.event as any)?.$id || (checkin.event as any)?.id;
+            typeof eventRef === 'string'
+              ? eventRef
+              : eventRef?.$id || eventRef?.id;
 
           if (eventId) {
             const eventDoc = await databases.getDocument(
@@ -381,8 +382,8 @@ async function getUsersStats(
       newThisWeek,
       usersInBlacklist,
     };
-  } catch (error: any) {
-    log(`Error getting users stats: ${error.message}`);
+  } catch (error: unknown) {
+    log(`Error getting users stats: ${(error as Error).message}`);
     throw error;
   }
 }
@@ -395,8 +396,6 @@ async function getNotificationsStats(
   log: (message: string) => void
 ): Promise<NotificationsStats> {
   try {
-    const now = new Date();
-    const nowISO = now.toISOString();
 
     // Total Sent
     const notificationsResponse = await databases.listDocuments(
@@ -431,8 +430,8 @@ async function getNotificationsStats(
       avgClickRate,
       scheduled,
     };
-  } catch (error: any) {
-    log(`Error getting notifications stats: ${error.message}`);
+  } catch (error: unknown) {
+    log(`Error getting notifications stats: ${(error as Error).message}`);
     throw error;
   }
 }
@@ -488,13 +487,14 @@ async function getTriviaStats(
       active,
       completed,
     };
-  } catch (error: any) {
-    log(`Error getting trivia stats: ${error.message}`);
+  } catch (error: unknown) {
+    log(`Error getting trivia stats: ${(error as Error).message}`);
     throw error;
   }
 }
 
 // Main function handler
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default async function handler({ req, res, log, error }: any) {
   try {
     // Initialize Appwrite client
@@ -571,6 +571,7 @@ export default async function handler({ req, res, log, error }: any) {
 
       log(`Fetching statistics for page: ${body.page}`);
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let statistics: any;
 
       switch (body.page) {
@@ -614,13 +615,13 @@ export default async function handler({ req, res, log, error }: any) {
       error:
         'Invalid endpoint. Use POST /get-statistics with { "page": "dashboard|clients|users|notifications|trivia" }',
     });
-  } catch (err: any) {
-    error(`Function error: ${err.message}`);
+  } catch (err: unknown) {
+    error(`Function error: ${(err as Error).message}`);
     console.error('Function error:', err);
     return res.json(
       {
         success: false,
-        error: err.message || 'Internal server error',
+        error: (err as Error).message || 'Internal server error',
       },
       500
     );

@@ -66,12 +66,13 @@ const PasswordReset = () => {
         message: 'Your password has been successfully reset.',
       })
       navigate('/password-reset-success')
-    } catch (err: any) {
-      setPasswordError(err.message || 'Failed to update password. Please try again.')
+    } catch (err: unknown) {
+      const errorMessage = (err as Error).message || 'Failed to update password. Please try again.'
+      setPasswordError(errorMessage)
       addNotification({
         type: 'error',
         title: 'Failed to update password',
-        message: err.message || 'Please try again.',
+        message: errorMessage,
       })
     } finally {
       setIsSubmitting(false)

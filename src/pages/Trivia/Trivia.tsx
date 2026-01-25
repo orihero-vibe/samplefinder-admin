@@ -71,6 +71,7 @@ const Trivia = () => {
   }
 
   // Transform TriviaDocument to TriviaQuiz for UI with statistics
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const transformToUITrivia = async (doc: TriviaDocument, responses: any[]): Promise<TriviaQuiz> => {
     // Calculate status from dates
     const now = new Date()
@@ -251,6 +252,7 @@ const Trivia = () => {
     setCurrentPage(1)
     fetchTrivia(1)
     fetchStatistics()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, sortBy])
 
   useEffect(() => {

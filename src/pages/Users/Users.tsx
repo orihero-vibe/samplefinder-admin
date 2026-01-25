@@ -25,6 +25,11 @@ const Users = () => {
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [blockModalState, setBlockModalState] = useState<{
+    isOpen: boolean
+    user: AppUser | null
+    isLoading: boolean
+  }>({ isOpen: false, user: null, isLoading: false })
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null)
   const [userToDelete, setUserToDelete] = useState<AppUser | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
@@ -108,6 +113,7 @@ const Users = () => {
   useEffect(() => {
     fetchUsers()
     fetchStatistics()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (isLoading) {
@@ -166,6 +172,60 @@ const Users = () => {
         title: 'Error',
         message: 'Failed to delete user. Please try again.',
       })
+    }
+  }
+
+  const handleBlockUser = async () => {
+    if (!blockModalState.user?.$id) return
+
+    try {
+      setBlockModalState(prev => ({ ...prev, isLoading: true }))
+      const isCurrentlyBlocked = (blockModalState.user as { isBlocked?: boolean }).isBlocked || false
+      
+      if (isCurrentlyBlocked) {
+        // Unblock user
+        await appUsersService.unblockUser(blockModalState.user.$id)
+        addNotification({
+          type: 'success',
+          title: 'User unblocked successfully',
+          message: 'User can now login to the system',
+        })
+      } else {
+        // Block user
+        await appUsersService.blockUser(blockModalState.user.$id)
+        addNotification({
+          type: 'success',
+          title: 'User blocked successfully',
+          message: 'User has been added to blacklist and will be logged out',
+        })
+      }
+      
+      // Refresh list and statistics
+      await fetchUsers(currentPage)
+      await fetchStatistics()
+      
+      // Update selectedUser with new blocked status to refresh Edit Modal
+      // Only update the isBlocked field to avoid re-rendering the entire form
+      if (selectedUser && selectedUser.$id === blockModalState.user.$id) {
+        setSelectedUser(prev => prev ? {
+          ...prev,
+          isBlocked: !isCurrentlyBlocked,
+        } as AppUser : null)
+      }
+      
+      // Close block modal
+      
+      // Keep Edit User Modal open
+    } catch (err) {
+      console.error('Error blocking/unblocking user:', err)
+      addNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to update user status. Please try again.',
+      })
+    } finally {
+      setBlockModalState({ isOpen: false, user: null, isLoading: false })
+
     }
   }
 
@@ -289,8 +349,7 @@ const Users = () => {
           })
         }}
         onAddToBlacklist={() => {
-          console.log('Add to blacklist:', selectedUser)
-          // TODO: Implement blacklist functionality
+          setBlockModalState({ isOpen: true, user: selectedUser, isLoading: false })
         }}
         onDelete={() => {
           setUserToDelete(selectedUser)
@@ -301,29 +360,49 @@ const Users = () => {
             ? {
                 firstName: String(selectedUser.firstname ?? selectedUser.firstName ?? ''),
                 lastName: String(selectedUser.lastname ?? selectedUser.lastName ?? ''),
-                zipCode: '',
+                zipCode: String(selectedUser.zipCode ?? ''),
                 phoneNumber: String(selectedUser.phoneNumber ?? ''),
-                userPoints: '',
-                baBadge: 'Yes',
+                // Use correct database field name: totalPoints
+                userPoints: String(selectedUser.totalPoints ?? selectedUser.userPoints ?? '0'),
+                // Use correct database field name: isAmbassador
+                baBadge: (selectedUser.isAmbassador ?? selectedUser.baBadge) ? 'Yes' : 'No',
                 signUpDate: selectedUser.$createdAt
-                  ? new Date(selectedUser.$createdAt).toLocaleDateString()
+                  ? new Date(selectedUser.$createdAt).toISOString().split('T')[0]
                   : '',
                 password: '**********',
-                checkIns: '',
-                tierLevel: 'SuperSampler',
+                // Use correct database field name: totalEvents
+                checkIns: String(selectedUser.totalEvents ?? selectedUser.checkIns ?? '0'),
+                tierLevel: String(selectedUser.tierLevel ?? ''),
                 username: String(selectedUser.username ?? ''),
                 email: selectedUser.email,
-                checkInReviewPoints: '750',
-                influencerBadge: 'No',
-                lastLogin: selectedUser.$createdAt
-                  ? new Date(selectedUser.$createdAt).toLocaleDateString()
+                checkInReviewPoints: String(selectedUser.checkInReviewPoints ?? '0'),
+                // Use correct database field name: isInfluencer
+                influencerBadge: (selectedUser.isInfluencer ?? selectedUser.influencerBadge) ? 'Yes' : 'No',
+                lastLogin: selectedUser.$updatedAt
+                  ? new Date(selectedUser.$updatedAt).toISOString().split('T')[0]
                   : '',
-                referralCode: '',
-                reviews: '',
-                triviasWon: '750',
+                referralCode: String(selectedUser.referralCode ?? ''),
+                // Use correct database field name: totalReviews
+                reviews: String(selectedUser.totalReviews ?? selectedUser.reviews ?? '0'),
+                triviasWon: String(selectedUser.triviasWon ?? '0'),
+                isBlocked: (selectedUser as { isBlocked?: boolean }).isBlocked || false,
               }
             : undefined
         }
+      />
+
+      {/* Block/Unblock Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={blockModalState.isOpen}
+        onClose={() => {
+          if (!blockModalState.isLoading) {
+            setBlockModalState({ isOpen: false, user: null, isLoading: false })
+          }
+        }}
+        onConfirm={handleBlockUser}
+        type={(blockModalState.user as { isBlocked?: boolean })?.isBlocked ? 'unblock' : 'block'}
+        itemName="user"
+        isLoading={blockModalState.isLoading}
       />
 
       {/* Delete Confirmation Modal */}

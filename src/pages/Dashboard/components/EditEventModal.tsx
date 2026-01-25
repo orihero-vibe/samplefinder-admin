@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import type { Models } from 'appwrite'
+import LocationPicker from '../../../components/LocationPicker'
 
 interface EventData {
   eventName?: string
@@ -23,23 +24,31 @@ interface EventData {
   reviewPoints?: string
   eventInfo?: string
   radius?: string
+  latitude?: string
+  longitude?: string
+}
+
+interface Category extends Models.Document {
+  title: string
 }
 
 interface Brand extends Models.Document {
   name: string
+  productType?: string[]
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type EventFormData = any
 
 interface EditEventModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (eventData: any) => Promise<void>
-  onArchive?: () => void
-  onHide?: () => void
-  onDelete?: () => void
+  onSave: (eventData: EventFormData) => Promise<void>
   onShowArchiveConfirm?: () => void
   onShowHideConfirm?: () => void
   onShowDeleteConfirm?: () => void
   initialData?: EventData
+  categories?: Category[]
   brands?: Brand[]
 }
 
@@ -47,13 +56,11 @@ const EditEventModal = ({
   isOpen,
   onClose,
   onSave,
-  onArchive: _onArchive,
-  onHide: _onHide,
-  onDelete: _onDelete,
   onShowArchiveConfirm,
   onShowHideConfirm,
   onShowDeleteConfirm,
   initialData,
+  categories = [],
   brands = [],
 }: EditEventModalProps) => {
   const [formData, setFormData] = useState({
@@ -65,7 +72,7 @@ const EditEventModal = ({
     address: '',
     state: '',
     zipCode: '',
-    category: 'Beverage',
+    category: '',
     productTypes: [] as string[],
     products: [''] as string[],
     discount: '',
@@ -77,32 +84,12 @@ const EditEventModal = ({
     reviewPoints: '',
     eventInfo: '',
     radius: '',
+    latitude: '',
+    longitude: '',
   })
 
-  const [_newProductType, setNewProductType] = useState('')
-  const [isProductTypeDropdownOpen, setIsProductTypeDropdownOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const availableProductTypes = ['Product 1', 'Product 2', 'Product 3', 'Lana', 'Beauty', 'Fashion']
-  const productTypeDropdownRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        productTypeDropdownRef.current &&
-        !productTypeDropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsProductTypeDropdownOpen(false)
-      }
-    }
-
-    if (isProductTypeDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [isProductTypeDropdownOpen])
+  const [availableProductTypes, setAvailableProductTypes] = useState<string[]>([])
 
   useEffect(() => {
     if (initialData) {
@@ -115,7 +102,7 @@ const EditEventModal = ({
         address: initialData.address || '',
         state: initialData.state || '',
         zipCode: initialData.zipCode || '',
-        category: initialData.category || 'Beverage',
+        category: initialData.category || '',
         productTypes: initialData.productTypes || [],
         products: initialData.products && initialData.products.length > 0 ? initialData.products : [''],
         discount: initialData.discount || '',
@@ -127,25 +114,30 @@ const EditEventModal = ({
         reviewPoints: initialData.reviewPoints || '',
         eventInfo: initialData.eventInfo || '',
         radius: initialData.radius || '',
+        latitude: initialData.latitude || '',
+        longitude: initialData.longitude || '',
       })
     }
   }, [initialData, isOpen])
+
+  // Update available product types when brand changes
+  useEffect(() => {
+    if (formData.brandName) {
+      const selectedBrand = brands.find((brand) => brand.name === formData.brandName)
+      if (selectedBrand && selectedBrand.productType) {
+        setAvailableProductTypes(selectedBrand.productType)
+      } else {
+        setAvailableProductTypes([])
+      }
+    } else {
+      setAvailableProductTypes([])
+    }
+  }, [formData.brandName, brands])
 
   if (!isOpen) return null
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-  }
-
-  const handleAddProductType = (type: string) => {
-    if (!formData.productTypes.includes(type)) {
-      setFormData((prev) => ({
-        ...prev,
-        productTypes: [...prev.productTypes, type],
-      }))
-    }
-    setIsProductTypeDropdownOpen(false)
-    setNewProductType('')
   }
 
   const handleRemoveProductType = (type: string) => {
@@ -179,6 +171,9 @@ const EditEventModal = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    console.log('EditEventModal - Submitting form data:', formData)
+    console.log('EditEventModal - productTypes being submitted:', formData.productTypes)
+    
     // Prevent double submission
     if (isSubmitting) {
       return
@@ -189,17 +184,13 @@ const EditEventModal = ({
       await onSave(formData)
       // Only close on success - parent will handle closing
       onClose()
-    } catch (error) {
+    } catch {
       // Error is handled by parent component via notification
       // Keep modal open so user can fix and retry
     } finally {
       setIsSubmitting(false)
     }
   }
-
-  const filteredProductTypes = availableProductTypes.filter(
-    (type) => !formData.productTypes.includes(type)
-  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -358,72 +349,91 @@ const EditEventModal = ({
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               >
-                <option value="Beverage">Beverage</option>
-                <option value="Beauty">Beauty</option>
-                <option value="Fashion">Fashion</option>
-                <option value="Food">Food</option>
-                <option value="Other">Other</option>
+                <option value="">Choose Category</option>
+                {categories.map((category) => (
+                  <option key={category.$id} value={category.title}>
+                    {category.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Brand Name */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Brand Name <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.brandName}
+                onChange={(e) => handleInputChange('brandName', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              >
+                <option value="">Choose Brand Name</option>
+                {brands.map((brand) => (
+                  <option key={brand.$id} value={brand.name}>
+                    {brand.name}
+                  </option>
+                ))}
               </select>
             </div>
 
             {/* Product Type */}
-            <div className="relative">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Product Type <span className="text-red-500">*</span>
               </label>
-              <div className="relative" ref={productTypeDropdownRef}>
-                <div
-                  className="flex flex-wrap gap-2 min-h-[42px] p-2 border border-gray-300 rounded-lg cursor-pointer"
-                  onClick={() => setIsProductTypeDropdownOpen(!isProductTypeDropdownOpen)}
-                >
-                  {formData.productTypes.length > 0 ? (
-                    formData.productTypes.map((type, index) => (
-                      <span
-                        key={index}
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-[#1D0A74]/10 text-[#1D0A74] rounded-full text-sm"
-                        onClick={(e) => e.stopPropagation()}
+              <select
+                value=""
+                onChange={(e) => {
+                  const selectedType = e.target.value
+                  if (selectedType && !formData.productTypes.includes(selectedType)) {
+                    setFormData((prev) => ({
+                      ...prev,
+                      productTypes: [...prev.productTypes, selectedType],
+                    }))
+                  }
+                }}
+                disabled={!formData.brandName || availableProductTypes.length === 0}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              >
+                <option value="">
+                  {!formData.brandName 
+                    ? 'Select a brand first' 
+                    : availableProductTypes.length === 0 
+                    ? 'No product types available' 
+                    : 'Choose Product Type'}
+                </option>
+                {availableProductTypes.map((type, index) => (
+                  <option 
+                    key={index} 
+                    value={type}
+                    disabled={formData.productTypes.includes(type)}
+                  >
+                    {type}
+                  </option>
+                ))}
+              </select>
+              {/* Selected Product Types */}
+              {formData.productTypes.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {formData.productTypes.map((type, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-[#1D0A74]/10 text-[#1D0A74] rounded-full text-sm"
+                    >
+                      {type}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveProductType(type)}
+                        className="hover:text-[#1D0A74]/70"
                       >
-                        {type}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRemoveProductType(type)
-                          }}
-                          className="hover:text-[#1D0A74]/70"
-                        >
-                          <Icon icon="mdi:close" className="w-4 h-4" />
-                        </button>
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-gray-400 text-sm">Select product types</span>
-                  )}
-                  <Icon
-                    icon="mdi:chevron-down"
-                    className={`absolute right-2 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 transition-transform ${
-                      isProductTypeDropdownOpen ? 'rotate-180' : ''
-                    }`}
-                  />
+                        <Icon icon="mdi:close" className="w-4 h-4" />
+                      </button>
+                    </span>
+                  ))}
                 </div>
-                {isProductTypeDropdownOpen && (
-                  <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {filteredProductTypes.length > 0 ? (
-                      filteredProductTypes.map((type) => (
-                        <div
-                          key={type}
-                          className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
-                          onClick={() => handleAddProductType(type)}
-                        >
-                          {type}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="px-4 py-2 text-gray-400 text-sm">No more options</div>
-                    )}
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           </div>
 
@@ -472,15 +482,15 @@ const EditEventModal = ({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Discount
               </label>
-              <select
+              <input
+                type="number"
+                placeholder="Enter discount percentage"
                 value={formData.discount}
                 onChange={(e) => handleInputChange('discount', e.target.value)}
+                min="0"
+                max="100"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              >
-                <option value="">Select</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </select>
+              />
             </div>
 
             <div>
@@ -544,25 +554,6 @@ const EditEventModal = ({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Brand Name <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.brandName}
-                onChange={(e) => handleInputChange('brandName', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              >
-                <option value="">Choose Brand Name</option>
-                {brands.map((brand) => (
-                  <option key={brand.$id} value={brand.name}>
-                    {brand.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Check In Points <span className="text-red-500">*</span>
               </label>
               <input
@@ -619,6 +610,25 @@ const EditEventModal = ({
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent resize-none"
             />
           </div>
+
+          {/* Location Picker Section */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Event Location <span className="text-red-500">*</span>
+            </label>
+            <LocationPicker
+              latitude={formData.latitude}
+              longitude={formData.longitude}
+              onLocationChange={(lat, lng) => {
+                setFormData((prev) => ({ ...prev, latitude: lat, longitude: lng }))
+              }}
+              address={formData.address}
+            />
+          </div>
+
+          {/* Hidden inputs for validation */}
+          <input type="hidden" value={formData.latitude} required />
+          <input type="hidden" value={formData.longitude} required />
 
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">

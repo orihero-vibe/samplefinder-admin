@@ -21,7 +21,7 @@ interface ClientData {
   address?: string;
   state?: string;
   zip?: string;
-  location?: [number, number]; // [longitude, latitude]
+  location?: [number, number]; // [longitude, latitude] - DEPRECATED: Location moved to events
   [key: string]: unknown;
 }
 
@@ -45,6 +45,7 @@ interface EventData {
   eventInfo: string;
   isArchived: boolean;
   isHidden: boolean;
+  location?: [number, number]; // [longitude, latitude]
   client?: string;
   categories?: string;
   [key: string]: unknown;
@@ -269,6 +270,40 @@ async function getEventsByLocation(
     let clientData: ClientData | null = null;
     let distance: number = Infinity;
 
+    // Calculate distance using event location
+    // Handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
+    if (event.location) {
+      let eventLon: number | undefined;
+      let eventLat: number | undefined;
+
+      if (Array.isArray(event.location) && event.location.length >= 2) {
+        // Direct array format: [longitude, latitude]
+        eventLon = event.location[0];
+        eventLat = event.location[1];
+      } else if (
+        typeof event.location === 'object' &&
+        event.location !== null &&
+        'coordinates' in event.location &&
+        Array.isArray((event.location as { coordinates: number[] }).coordinates) &&
+        (event.location as { coordinates: number[] }).coordinates.length >= 2
+      ) {
+        // GeoJSON format: {coordinates: [longitude, latitude]}
+        const coords = (event.location as { coordinates: number[] }).coordinates;
+        eventLon = coords[0];
+        eventLat = coords[1];
+      }
+
+      if (
+        eventLon !== undefined &&
+        eventLat !== undefined &&
+        !isNaN(eventLon) &&
+        !isNaN(eventLat)
+      ) {
+        distance = haversineDistance(userLat, userLon, eventLat, eventLon);
+      }
+    }
+
+    // Fetch client data if available
     if (event.client) {
       try {
         // Handle relationship field - could be string ID or populated object
@@ -295,39 +330,6 @@ async function getEventsByLocation(
             }
           }
         }
-
-        // Calculate distance if client has location
-        // Handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
-        if (clientData && clientData.location) {
-          let clientLon: number | undefined;
-          let clientLat: number | undefined;
-
-          if (Array.isArray(clientData.location) && clientData.location.length >= 2) {
-            // Direct array format: [longitude, latitude]
-            clientLon = clientData.location[0];
-            clientLat = clientData.location[1];
-          } else if (
-            typeof clientData.location === 'object' &&
-            clientData.location !== null &&
-            'coordinates' in clientData.location &&
-            Array.isArray((clientData.location as { coordinates: number[] }).coordinates) &&
-            (clientData.location as { coordinates: number[] }).coordinates.length >= 2
-          ) {
-            // GeoJSON format: {coordinates: [longitude, latitude]}
-            const coords = (clientData.location as { coordinates: number[] }).coordinates;
-            clientLon = coords[0];
-            clientLat = coords[1];
-          }
-
-          if (
-            clientLon !== undefined &&
-            clientLat !== undefined &&
-            !isNaN(clientLon) &&
-            !isNaN(clientLat)
-          ) {
-            distance = haversineDistance(userLat, userLon, clientLat, clientLon);
-          }
-        }
       } catch (err: unknown) {
         const clientInfo =
           typeof event.client === 'string'
@@ -346,9 +348,9 @@ async function getEventsByLocation(
     });
   }
 
-  // Filter out events without valid client locations
+  // Filter out events without valid event locations
   const validEvents = eventsWithClients.filter(
-    (event) => event.client !== null && event.distance !== Infinity
+    (event) => event.distance !== Infinity
   );
 
   // Sort by distance (nearest first)
@@ -625,7 +627,7 @@ async function deleteUserAccount(
         }
         log(`Deleted ${profileQuery.total} user profile(s) from database`);
       }
-    } catch (profileError: any) {
+    } catch (profileError: unknown) {
       // Log the full error for debugging
       log(`Error during profile deletion process`);
       log(`Error type: ${profileError?.constructor?.name || 'Unknown'}`);

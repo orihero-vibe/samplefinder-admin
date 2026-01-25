@@ -1,6 +1,6 @@
 import { Icon } from '@iconify/react'
 
-export type ConfirmationType = 'delete' | 'archive' | 'hide'
+export type ConfirmationType = 'delete' | 'archive' | 'hide' | 'block' | 'unblock'
 
 interface ConfirmationModalProps {
   isOpen: boolean
@@ -10,6 +10,7 @@ interface ConfirmationModalProps {
   title?: string
   message?: string
   itemName?: string // e.g., "client", "event" - for dynamic titles
+  isLoading?: boolean // Loading state for async actions
 }
 
 const ConfirmationModal = ({
@@ -20,6 +21,7 @@ const ConfirmationModal = ({
   title,
   message,
   itemName = 'item',
+  isLoading = false,
 }: ConfirmationModalProps) => {
   if (!isOpen) return null
 
@@ -30,27 +32,55 @@ const ConfirmationModal = ({
       iconColor: 'text-red-500',
       iconBg: 'bg-red-50',
       buttonBg: 'bg-red-500 hover:bg-red-600',
+      buttonBgDisabled: 'bg-red-400',
       defaultTitle: `Are you sure you want to delete ${itemName}?`,
       defaultMessage: `All information about ${itemName} will be lost.`,
       confirmText: 'Yes, delete',
+      loadingText: 'Deleting...',
     },
     archive: {
       icon: 'mdi:cloud-upload',
       iconColor: 'text-orange-500',
       iconBg: 'bg-orange-50',
       buttonBg: 'bg-orange-500 hover:bg-orange-600',
+      buttonBgDisabled: 'bg-orange-400',
       defaultTitle: 'Are you sure you want to archive?',
       defaultMessage: 'All data about your event will be archived.',
       confirmText: 'Yes, archive',
+      loadingText: 'Archiving...',
     },
     hide: {
       icon: 'mdi:eye-off',
       iconColor: 'text-green-500',
       iconBg: 'bg-green-50',
       buttonBg: 'bg-[#1D0A74] hover:bg-[#15065c]',
+      buttonBgDisabled: 'bg-[#2D1A84]',
       defaultTitle: 'Are you sure you want to hide?',
       defaultMessage: 'All data about your event will be hidden.',
       confirmText: 'Yes, hide',
+      loadingText: 'Hiding...',
+    },
+    block: {
+      icon: 'mdi:lock',
+      iconColor: 'text-gray-900',
+      iconBg: 'bg-gray-50',
+      buttonBg: 'bg-black hover:bg-gray-800',
+      buttonBgDisabled: 'bg-gray-600',
+      defaultTitle: `Block ${itemName}?`,
+      defaultMessage: `This ${itemName} will be added to blacklist, logged out immediately, and prevented from logging in until unblocked.`,
+      confirmText: 'Yes, block',
+      loadingText: 'Blocking...',
+    },
+    unblock: {
+      icon: 'mdi:lock-open',
+      iconColor: 'text-green-500',
+      iconBg: 'bg-green-50',
+      buttonBg: 'bg-green-500 hover:bg-green-600',
+      buttonBgDisabled: 'bg-green-400',
+      defaultTitle: `Unblock ${itemName}?`,
+      defaultMessage: `This ${itemName} will be removed from blacklist and will be able to login again.`,
+      confirmText: 'Yes, unblock',
+      loadingText: 'Unblocking...',
     },
   }
 
@@ -58,7 +88,7 @@ const ConfirmationModal = ({
 
   const handleConfirm = () => {
     onConfirm()
-    onClose()
+    // Don't close here - let parent handle closing after async operation
   }
 
   return (
@@ -66,7 +96,7 @@ const ConfirmationModal = ({
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={isLoading ? undefined : onClose}
       />
 
       {/* Modal */}
@@ -74,7 +104,11 @@ const ConfirmationModal = ({
         <div className="p-6">
           {/* Icon */}
           <div className="flex justify-center mb-6">
-            <Icon icon={config.icon} className={`w-20 h-20 ${config.iconColor}`} />
+            {isLoading ? (
+              <Icon icon="mdi:loading" className={`w-20 h-20 ${config.iconColor} animate-spin`} />
+            ) : (
+              <Icon icon={config.icon} className={`w-20 h-20 ${config.iconColor}`} />
+            )}
           </div>
 
           {/* Title */}
@@ -92,16 +126,19 @@ const ConfirmationModal = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+              disabled={isLoading}
+              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleConfirm}
-              className={`flex-1 px-6 py-3 ${config.buttonBg} text-white rounded-lg transition-colors font-semibold`}
+              disabled={isLoading}
+              className={`flex-1 px-6 py-3 ${isLoading ? config.buttonBgDisabled : config.buttonBg} text-white rounded-lg transition-colors font-semibold disabled:cursor-not-allowed flex items-center justify-center gap-2`}
             >
-              {config.confirmText}
+              {isLoading && <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />}
+              {isLoading ? config.loadingText : config.confirmText}
             </button>
           </div>
         </div>

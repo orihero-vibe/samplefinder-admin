@@ -31,6 +31,7 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
       fetchTrivia()
       fetchBrands()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, triviaId])
 
   const fetchBrands = async () => {
