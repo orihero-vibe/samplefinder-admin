@@ -47,7 +47,6 @@ const SearchAndFilter = ({
     const sortLabels: Record<string, string> = {
       name: 'Client Name',
       $createdAt: 'Join Date',
-      city: 'City',
     }
     const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
     return `${sortLabels[sortBy] || 'Sort'} ${orderIcon}`
@@ -67,7 +66,7 @@ const SearchAndFilter = ({
           />
           <input
             type="text"
-            placeholder="Search by client name, city, state, or address"
+            placeholder="Search by client name"
             value={localSearchTerm}
             onChange={(e) => setLocalSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
@@ -80,7 +79,6 @@ const SearchAndFilter = ({
         >
           <option value="$createdAt">Sort by: Join Date</option>
           <option value="name">Sort by: Client Name</option>
-          <option value="city">Sort by: City</option>
         </select>
         <button
           onClick={handleSortOrderToggle}

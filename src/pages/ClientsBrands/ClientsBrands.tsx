@@ -27,12 +27,6 @@ interface UIClient {
   joinDate: string
   productTypes?: string[]
   logoUrl?: string
-  city?: string
-  address?: string
-  state?: string
-  zip?: string
-  latitude?: number
-  longitude?: number
 }
 
 // Helper function to extract error message from Appwrite error
@@ -77,14 +71,6 @@ const ClientsBrands = () => {
     doc: ClientDocument,
     stats?: { totalEvents: number; totalFavorites: number; totalCheckIns: number; totalPoints: number }
   ): UIClient => {
-    // Extract latitude and longitude from location point [longitude, latitude]
-    let latitude: number | undefined = undefined
-    let longitude: number | undefined = undefined
-    if (doc.location && Array.isArray(doc.location) && doc.location.length === 2) {
-      longitude = doc.location[0] // First element is longitude
-      latitude = doc.location[1] // Second element is latitude
-    }
-
     return {
       id: doc.$id,
       clientName: doc.name,
@@ -96,12 +82,6 @@ const ClientsBrands = () => {
       joinDate: doc.$createdAt ? new Date(doc.$createdAt).toLocaleDateString() : '',
       productTypes: doc.productType || [],
       logoUrl: doc.logoURL,
-      city: doc.city,
-      address: doc.address,
-      state: doc.state,
-      zip: doc.zip,
-      latitude,
-      longitude,
     }
   }
 
@@ -124,18 +104,10 @@ const ClientsBrands = () => {
       // Build base queries
       const queries: string[] = []
       
-      // Apply search using Query.contains with Query.or (doesn't require fulltext indexes)
+      // Apply search using Query.contains (doesn't require fulltext indexes)
       if (searchTerm.trim()) {
         const trimmedSearch = searchTerm.trim()
-        // Use Query.or to search across multiple fields
-        queries.push(
-          Query.or([
-            Query.contains('name', trimmedSearch),
-            Query.contains('city', trimmedSearch),
-            Query.contains('state', trimmedSearch),
-            Query.contains('address', trimmedSearch),
-          ])
-        )
+        queries.push(Query.contains('name', trimmedSearch))
       }
       
       // Apply sorting
@@ -144,8 +116,6 @@ const ClientsBrands = () => {
         queries.push(orderMethod('name'))
       } else if (sortBy === '$createdAt') {
         queries.push(orderMethod('$createdAt'))
-      } else if (sortBy === 'city') {
-        queries.push(orderMethod('city'))
       }
       
       // Add pagination

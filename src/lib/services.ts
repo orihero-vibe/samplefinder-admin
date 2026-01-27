@@ -150,16 +150,6 @@ export interface ClientDocument extends Models.Document {
   name: string
   logoURL?: string
   productType?: string[]
-  city?: string
-  address?: string
-  state?: string
-  zip?: string
-  location?: [number, number] // [longitude, latitude]
-  // Stats fields (if they exist in the database)
-  totalEvents?: number
-  totalFavorites?: number
-  totalCheckIns?: number
-  totalPoints?: number
   [key: string]: unknown
 }
 
@@ -171,12 +161,6 @@ export interface ClientFormData {
   name: string
   logoURL?: string
   productType?: string[]
-  city?: string
-  address?: string
-  state?: string
-  zip?: string
-  latitude?: number
-  longitude?: number
 }
 
 // Clients service
@@ -186,15 +170,6 @@ export const clientsService = {
       name: data.name,
       logoURL: data.logoURL || null,
       productType: data.productType || [],
-      city: data.city || null,
-      address: data.address || null,
-      state: data.state || null,
-      zip: data.zip || null,
-    }
-
-    // Add location if provided
-    if (data.latitude !== undefined && data.longitude !== undefined) {
-      dbData.location = [data.longitude, data.latitude] // Appwrite expects [longitude, latitude]
     }
 
     return DatabaseService.create<ClientDocument>(appwriteConfig.collections.clients, dbData)
@@ -230,13 +205,6 @@ export const clientsService = {
       ...data,
     }
 
-    // Handle location update
-    if (data.latitude !== undefined && data.longitude !== undefined) {
-      dbData.location = [data.longitude, data.latitude]
-      delete dbData.latitude
-      delete dbData.longitude
-    }
-
     return DatabaseService.update<ClientDocument>(appwriteConfig.collections.clients, id, dbData)
   },
   delete: (id: string) =>
@@ -245,7 +213,7 @@ export const clientsService = {
     DatabaseService.search<ClientDocument>(
       appwriteConfig.collections.clients,
       searchTerm,
-      ['name', 'city', 'state', 'address'],
+      ['name'],
       queries
     ),
   findByName: async (name: string): Promise<ClientDocument | null> => {
