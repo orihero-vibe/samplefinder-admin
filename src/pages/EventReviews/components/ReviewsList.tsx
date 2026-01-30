@@ -27,6 +27,7 @@ interface Review {
   sentimentColor: string
   reviewText: string
   helpfulCount: number
+  isHidden?: boolean
 }
 
 interface ReviewsListProps {
@@ -36,6 +37,9 @@ interface ReviewsListProps {
   totalReviews?: number
   pageSize?: number
   onPageChange?: (page: number) => void
+  onHideReview?: (reviewId: string) => void
+  onUnhideReview?: (reviewId: string) => void
+  onDeleteReview?: (reviewId: string) => void
 }
 
 const ReviewsList = ({
@@ -45,6 +49,9 @@ const ReviewsList = ({
   totalReviews = 0,
   pageSize = 25,
   onPageChange,
+  onHideReview,
+  onUnhideReview,
+  onDeleteReview,
 }: ReviewsListProps) => {
   return (
     <div>
@@ -55,7 +62,13 @@ const ReviewsList = ({
           </div>
         ) : (
           reviews.map((review) => (
-            <ReviewCard key={review.id} review={review} />
+            <ReviewCard
+              key={review.id}
+              review={review}
+              onHide={onHideReview}
+              onUnhide={onUnhideReview}
+              onDelete={onDeleteReview}
+            />
           ))
         )}
       </div>

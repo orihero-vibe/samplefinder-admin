@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import type { Models } from 'appwrite'
 import LocationPicker from '../../../components/LocationPicker'
+import { ImageCropper } from '../../../components'
 
 interface EventData {
   eventName?: string
@@ -68,7 +69,7 @@ const EditEventModal = ({
     eventDate: '',
     startTime: '',
     endTime: '',
-    city: 'New York',
+    city: '',
     address: '',
     state: '',
     zipCode: '',
@@ -90,15 +91,27 @@ const EditEventModal = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [availableProductTypes, setAvailableProductTypes] = useState<string[]>([])
+  const [isDragging, setIsDragging] = useState(false)
+  const [discountImagePreview, setDiscountImagePreview] = useState<string | null>(null)
+  const [showCropper, setShowCropper] = useState(false)
+  const [tempImageForCrop, setTempImageForCrop] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialData) {
+      // Set preview for existing image URL
+      if (typeof initialData.discountImage === 'string' && initialData.discountImage) {
+        setDiscountImagePreview(initialData.discountImage)
+      } else {
+        setDiscountImagePreview(null)
+      }
+      setShowCropper(false)
+      setTempImageForCrop(null)
       setFormData({
         eventName: initialData.eventName || '',
         eventDate: initialData.eventDate || '',
         startTime: initialData.startTime || '',
         endTime: initialData.endTime || '',
-        city: initialData.city || 'New York',
+        city: initialData.city || '',
         address: initialData.address || '',
         state: initialData.state || '',
         zipCode: initialData.zipCode || '',
@@ -164,8 +177,54 @@ const EditEventModal = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      setFormData((prev) => ({ ...prev, discountImage: file }))
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setTempImageForCrop(reader.result as string)
+        setShowCropper(true)
+      }
+      reader.readAsDataURL(file)
     }
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setTempImageForCrop(reader.result as string)
+        setShowCropper(true)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = () => {
+    setIsDragging(false)
+  }
+
+  const handleCropComplete = (croppedBlob: Blob) => {
+    const croppedFile = new File([croppedBlob], 'discount-image.jpg', { type: 'image/jpeg' })
+    setFormData((prev) => ({ ...prev, discountImage: croppedFile }))
+    setDiscountImagePreview(URL.createObjectURL(croppedBlob))
+    setShowCropper(false)
+    setTempImageForCrop(null)
+  }
+
+  const handleCropCancel = () => {
+    setShowCropper(false)
+    setTempImageForCrop(null)
+  }
+
+  const handleRemoveDiscountImage = () => {
+    setFormData((prev) => ({ ...prev, discountImage: null }))
+    setDiscountImagePreview(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -193,14 +252,24 @@ const EditEventModal = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={isSubmitting ? undefined : onClose}
-      />
+    <>
+      {showCropper && tempImageForCrop && (
+        <ImageCropper
+          image={tempImageForCrop}
+          onCropComplete={handleCropComplete}
+          onCancel={handleCropCancel}
+          aspectRatio={3 / 1}
+        />
+      )}
+      
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={isSubmitting ? undefined : onClose}
+        />
 
-      {/* Modal */}
+        {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto m-4">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
@@ -274,65 +343,6 @@ const EditEventModal = ({
                 type="time"
                 value={formData.endTime}
                 onChange={(e) => handleInputChange('endTime', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            {/* City */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                City <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.city}
-                onChange={(e) => handleInputChange('city', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            {/* Address */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Address <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Enter Address"
-                value={formData.address}
-                onChange={(e) => handleInputChange('address', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            {/* State */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                State <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Enter State"
-                value={formData.state}
-                onChange={(e) => handleInputChange('state', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            {/* ZIP Code */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                ZIP Code <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Enter ZIP Code"
-                value={formData.zipCode}
-                onChange={(e) => handleInputChange('zipCode', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
@@ -512,14 +522,44 @@ const EditEventModal = ({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Discount Image Upload
             </label>
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                <Icon icon="mdi:cloud-upload" className="w-10 h-10 text-gray-400 mb-2" />
-                <p className="mb-2 text-sm text-gray-500">
-                  <span className="font-semibold">Click to upload</span> or drag and drop
-                </p>
-                <p className="text-xs text-gray-500">Your discount Image here</p>
-              </div>
+            <label 
+              className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                isDragging 
+                  ? 'border-[#1D0A74] bg-[#1D0A74]/5' 
+                  : 'border-gray-300 hover:bg-gray-50'
+              }`}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+            >
+              {discountImagePreview ? (
+                <div className="flex flex-col items-center justify-center py-4">
+                  <img
+                    src={discountImagePreview}
+                    alt="Discount"
+                    className="max-h-28 max-w-full object-contain rounded-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleRemoveDiscountImage()
+                    }}
+                    className="mt-3 text-[#1D0A74] hover:text-[#15065c] font-medium text-sm"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <Icon icon="mdi:cloud-upload" className="w-10 h-10 text-gray-400 mb-2" />
+                  <p className="mb-2 text-sm text-gray-500">
+                    <span className="font-semibold">Click to upload</span> or drag and drop
+                  </p>
+                  <p className="text-xs text-gray-500">Image will be cropped to 3:1 ratio</p>
+                </div>
+              )}
               <input
                 type="file"
                 accept="image/*"
@@ -527,13 +567,6 @@ const EditEventModal = ({
                 className="hidden"
               />
             </label>
-            {formData.discountImage && (
-              <p className="mt-2 text-sm text-gray-600">
-                {typeof formData.discountImage === 'string'
-                  ? formData.discountImage
-                  : formData.discountImage.name}
-              </p>
-            )}
           </div>
 
           {/* Additional Fields */}
@@ -622,7 +655,23 @@ const EditEventModal = ({
               onLocationChange={(lat, lng) => {
                 setFormData((prev) => ({ ...prev, latitude: lat, longitude: lng }))
               }}
+              onAddressFromCoords={(components) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  address: components.address || prev.address,
+                  city: components.city || prev.city,
+                  state: components.state || prev.state,
+                  zipCode: components.zipCode, // Always update, even if empty
+                }))
+              }}
               address={formData.address}
+              city={formData.city}
+              state={formData.state}
+              zipCode={formData.zipCode}
+              onCityChange={(value) => handleInputChange('city', value)}
+              onStateChange={(value) => handleInputChange('state', value)}
+              onZipCodeChange={(value) => handleInputChange('zipCode', value)}
+              onAddressChange={(value) => handleInputChange('address', value)}
             />
           </div>
 
@@ -686,8 +735,9 @@ const EditEventModal = ({
             </button>
           </div>
         </form>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 

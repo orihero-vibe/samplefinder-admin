@@ -1251,6 +1251,7 @@ export interface ReviewDocument extends Models.Document {
   event?: string // Event ID (relationship)
   pointsEarned?: number
   helpfulCount?: number
+  isHidden?: boolean // Flag for content moderation - hidden reviews are not shown to users
   [key: string]: unknown
 }
 
@@ -1280,5 +1281,21 @@ export const reviewsService = {
       queries
     )
     return result.documents
+  },
+  // Hide a review (moderation action)
+  hideReview: async (reviewId: string): Promise<ReviewDocument> => {
+    return DatabaseService.update<ReviewDocument>(
+      appwriteConfig.collections.reviews,
+      reviewId,
+      { isHidden: true }
+    )
+  },
+  // Unhide a review (restore visibility)
+  unhideReview: async (reviewId: string): Promise<ReviewDocument> => {
+    return DatabaseService.update<ReviewDocument>(
+      appwriteConfig.collections.reviews,
+      reviewId,
+      { isHidden: false }
+    )
   },
 }

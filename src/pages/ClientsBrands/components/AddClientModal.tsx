@@ -24,6 +24,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showCropper, setShowCropper] = useState(false)
   const [tempImageForCrop, setTempImageForCrop] = useState<string | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   // Reset form when modal closes
   useEffect(() => {
@@ -40,6 +41,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
         setIsSubmitting(false)
         setShowCropper(false)
         setTempImageForCrop(null)
+        setIsDragging(false)
       })
     }
   }, [isOpen])
@@ -61,6 +63,29 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
       }
       reader.readAsDataURL(file)
     }
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setTempImageForCrop(reader.result as string)
+        setShowCropper(true)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = () => {
+    setIsDragging(false)
   }
 
   const handleCropComplete = (croppedBlob: Blob) => {
@@ -173,7 +198,16 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
         <form onSubmit={handleSubmit} className="p-6">
           {/* Logo Upload Section */}
           <div className="mb-6">
-            <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+            <label 
+              className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                isDragging 
+                  ? 'border-[#1D0A74] bg-[#1D0A74]/5' 
+                  : 'border-gray-300 hover:bg-gray-50'
+              }`}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+            >
               {logoPreview ? (
                 <div className="flex flex-col items-center justify-center pt-5 pb-6 w-full h-full">
                   <img
@@ -199,16 +233,9 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
               ) : (
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
                   <Icon icon="mdi:cloud-upload" className="w-12 h-12 text-gray-400 mb-3" />
-                  <button
-                    type="button"
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors mb-2"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      document.getElementById('logo-upload')?.click()
-                    }}
-                  >
-                    Upload Logo
-                  </button>
+                  <p className="mb-2 text-sm text-gray-500">
+                    <span className="font-semibold">Click to upload</span> or drag and drop
+                  </p>
                   <p className="text-xs text-gray-500">Upload an image to crop into 1:1 ratio (square)</p>
                 </div>
               )}

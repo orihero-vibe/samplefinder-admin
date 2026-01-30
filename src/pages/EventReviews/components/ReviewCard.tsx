@@ -28,13 +28,17 @@ interface Review {
   sentimentColor: string
   reviewText: string
   helpfulCount: number
+  isHidden?: boolean
 }
 
 interface ReviewCardProps {
   review: Review
+  onHide?: (reviewId: string) => void
+  onUnhide?: (reviewId: string) => void
+  onDelete?: (reviewId: string) => void
 }
 
-const ReviewCard = ({ review }: ReviewCardProps) => {
+const ReviewCard = ({ review, onHide, onUnhide, onDelete }: ReviewCardProps) => {
   const navigate = useNavigate()
 
   const handleEventClick = (e: React.MouseEvent) => {
@@ -53,7 +57,14 @@ const ReviewCard = ({ review }: ReviewCardProps) => {
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
+    <div className={`bg-white border rounded-lg p-6 hover:shadow-md transition-shadow ${review.isHidden ? 'border-yellow-300 bg-yellow-50' : 'border-gray-200'}`}>
+      {/* Hidden Badge */}
+      {review.isHidden && (
+        <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-yellow-100 rounded-lg">
+          <Icon icon="mdi:eye-off" className="w-4 h-4 text-yellow-700" />
+          <span className="text-sm font-medium text-yellow-700">This review is hidden from users</span>
+        </div>
+      )}
       {/* Reviewer Info and Rating Row */}
       <div className="flex items-start justify-between mb-4">
         {/* Reviewer Info */}
@@ -141,10 +152,50 @@ const ReviewCard = ({ review }: ReviewCardProps) => {
       <p className="text-gray-700 mb-4 leading-relaxed">{review.reviewText}</p>
 
       {/* Footer */}
-      <div className="flex items-center pt-4 border-t border-gray-100">
+      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
         <div className="flex items-center gap-1 text-gray-600">
           <Icon icon="mdi:thumb-up" className="w-4 h-4" />
           <span className="text-sm">{review.helpfulCount} found helpful</span>
+        </div>
+        
+        {/* Moderation Actions */}
+        <div className="flex items-center gap-2">
+          {review.isHidden ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onUnhide?.(review.id)
+              }}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
+              title="Show this review to users"
+            >
+              <Icon icon="mdi:eye" className="w-4 h-4" />
+              <span>Unhide</span>
+            </button>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onHide?.(review.id)
+              }}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-yellow-700 bg-yellow-50 hover:bg-yellow-100 rounded-lg transition-colors"
+              title="Hide this review from users"
+            >
+              <Icon icon="mdi:eye-off" className="w-4 h-4" />
+              <span>Hide</span>
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete?.(review.id)
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+            title="Permanently delete this review"
+          >
+            <Icon icon="mdi:delete" className="w-4 h-4" />
+            <span>Delete</span>
+          </button>
         </div>
       </div>
     </div>
