@@ -86,7 +86,9 @@ const ConfirmationModal = ({
 
   const config = configs[type]
 
-  const handleConfirm = () => {
+  const handleConfirm = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
     onConfirm()
     // Don't close here - let parent handle closing after async operation
   }
@@ -100,7 +102,10 @@ const ConfirmationModal = ({
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md m-4">
+      <div 
+        className="relative bg-white rounded-lg shadow-xl w-full max-w-md m-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-6">
           {/* Icon */}
           <div className="flex justify-center mb-6">
@@ -127,7 +132,7 @@ const ConfirmationModal = ({
               type="button"
               onClick={onClose}
               disabled={isLoading}
-              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
@@ -135,7 +140,7 @@ const ConfirmationModal = ({
               type="button"
               onClick={handleConfirm}
               disabled={isLoading}
-              className={`flex-1 px-6 py-3 ${isLoading ? config.buttonBgDisabled : config.buttonBg} text-white rounded-lg transition-colors font-semibold disabled:cursor-not-allowed flex items-center justify-center gap-2`}
+              className={`flex-1 px-6 py-3 ${isLoading ? config.buttonBgDisabled : config.buttonBg} text-white rounded-lg transition-colors font-semibold cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2`}
             >
               {isLoading && <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />}
               {isLoading ? config.loadingText : config.confirmText}

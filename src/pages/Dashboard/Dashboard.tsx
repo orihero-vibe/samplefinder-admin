@@ -1293,9 +1293,29 @@ const Dashboard = () => {
             setConfirmationModal({
               isOpen: true,
               type: 'delete',
-              onConfirm: () => {
-                console.log('Delete event:', event)
-                // TODO: Implement delete functionality
+              onConfirm: async () => {
+                try {
+                  const eventId = (event as Event & { id?: string }).id
+                  if (!eventId) {
+                    throw new Error('Event ID not found')
+                  }
+                  await eventsService.delete(eventId)
+                  addNotification({
+                    type: 'success',
+                    title: 'Event Deleted',
+                    message: `Event "${event.venueName}" has been deleted successfully.`,
+                  })
+                  setConfirmationModal({ ...confirmationModal, isOpen: false })
+                  await fetchEvents(currentPage)
+                } catch (err) {
+                  const errorMessage = extractErrorMessage(err)
+                  addNotification({
+                    type: 'error',
+                    title: 'Error Deleting Event',
+                    message: errorMessage,
+                  })
+                  console.error('Error deleting event:', err)
+                }
               },
               itemName: `event "${event.venueName}"`,
             })
@@ -1354,11 +1374,33 @@ const Dashboard = () => {
           setConfirmationModal({
             isOpen: true,
             type: 'delete',
-            onConfirm: () => {
-              console.log('Delete event:', selectedEvent)
-              // TODO: Implement delete functionality
-              setIsEditModalOpen(false)
-              setSelectedEvent(null)
+            onConfirm: async () => {
+              try {
+                const eventId = selectedEventDoc?.$id || (selectedEvent as Event & { id?: string })?.id
+                if (!eventId) {
+                  throw new Error('Event ID not found')
+                }
+                await eventsService.delete(eventId)
+                addNotification({
+                  type: 'success',
+                  title: 'Event Deleted',
+                  message: `Event has been deleted successfully.`,
+                })
+                setConfirmationModal({ ...confirmationModal, isOpen: false })
+                setIsEditModalOpen(false)
+                setSelectedEvent(null)
+                setSelectedEventDoc(null)
+                setEditModalInitialData(null)
+                await fetchEvents(currentPage)
+              } catch (err) {
+                const errorMessage = extractErrorMessage(err)
+                addNotification({
+                  type: 'error',
+                  title: 'Error Deleting Event',
+                  message: errorMessage,
+                })
+                console.error('Error deleting event:', err)
+              }
             },
             itemName: 'this event',
           })

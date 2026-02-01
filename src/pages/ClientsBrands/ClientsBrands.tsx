@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   ConfirmationModal,
   DashboardLayout,
@@ -63,6 +63,7 @@ const ClientsBrands = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [selectedClient, setSelectedClient] = useState<UIClient | null>(null)
   const [clientToDelete, setClientToDelete] = useState<UIClient | null>(null)
+  const isDeletingRef = useRef(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -256,14 +257,23 @@ const ClientsBrands = () => {
   }
 
   const handleDeleteClick = (client: UIClient) => {
+    // Prevent opening modal if delete is in progress
+    if (isDeletingRef.current) return
     setClientToDelete(client)
     setIsDeleteModalOpen(true)
   }
 
   const handleConfirmDelete = async () => {
-    if (clientToDelete?.id) {
+    if (clientToDelete?.id && !isDeletingRef.current) {
+      const clientId = clientToDelete.id
+      isDeletingRef.current = true
+      
+      // Close modal and clear state first
+      setIsDeleteModalOpen(false)
+      setClientToDelete(null)
+      
       try {
-        await clientsService.delete(clientToDelete.id)
+        await clientsService.delete(clientId)
         // Check if we need to go back a page if current page becomes empty
         if (clients.length === 1 && currentPage > 1) {
           setCurrentPage(currentPage - 1)
@@ -271,10 +281,11 @@ const ClientsBrands = () => {
         } else {
           await fetchClients(currentPage) // Refresh list
         }
-        setClientToDelete(null)
       } catch (err) {
         console.error('Error deleting client:', err)
         setError('Failed to delete client. Please try again.')
+      } finally {
+        isDeletingRef.current = false
       }
     }
   }

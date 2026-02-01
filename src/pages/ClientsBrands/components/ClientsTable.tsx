@@ -82,8 +82,8 @@ const ClientsTable = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {clients.map((client, index) => (
-              <tr key={index} className="hover:bg-gray-50">
+            {clients.map((client) => (
+              <tr key={client.id || client.clientName} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                   {client.clientName}
                 </td>
@@ -105,13 +105,19 @@ const ClientsTable = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => onEditClick(client)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onEditClick(client)
+                      }}
                       className="hover:text-blue-600 transition-colors"
                     >
                       <Icon icon="mdi:pencil" className="w-5 h-5" />
                     </button>
                     <button
-                      onClick={() => onDeleteClick(client)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteClick(client)
+                      }}
                       className="hover:text-red-600 transition-colors"
                     >
                       <Icon icon="mdi:trash-can" className="w-5 h-5" />
