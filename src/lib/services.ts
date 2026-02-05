@@ -2,6 +2,18 @@ import { databases, appwriteConfig, ID, Query, functions, ExecutionMethod } from
 import type { Models } from 'appwrite'
 import { formatDateWithTimezone } from './dateUtils'
 
+// Collection IDs
+export const COLLECTION_IDS = {
+  USER_PROFILES: 'user_profiles',
+  CLIENTS: 'clients',
+  CATEGORIES: 'categories',
+  EVENTS: 'events',
+  NOTIFICATIONS: 'notifications',
+  TRIVIA: 'trivia',
+  TRIVIA_RESPONSES: 'trivia_responses',
+  REVIEWS: 'reviews',
+} as const
+
 // Generic database service functions
 export class DatabaseService {
   // Create a document
@@ -69,18 +81,94 @@ export class DatabaseService {
     )
   }
 
-  // Search documents
+  // Search documents (client-side filtering since full-text indexes may not be configured)
   static async search<T extends Models.Document>(
     collectionId: string,
     searchTerm: string,
     searchFields: string[],
     queries?: string[]
   ): Promise<Models.DocumentList<T>> {
-    const searchQueries = searchFields.map((field) =>
-      Query.search(field, searchTerm)
-    )
-    const allQueries = [...(queries || []), ...searchQueries]
-    return await this.list<T>(collectionId, allQueries)
+    // Fetch documents with the provided queries (without search)
+    const result = await this.list<T>(collectionId, queries)
+    
+    // If no search term, return all results
+    if (!searchTerm.trim()) {
+      return result
+    }
+    
+    // Client-side filtering: match search term against any of the specified fields
+    const lowerSearchTerm = searchTerm.toLowerCase().trim()
+    const filteredDocuments = result.documents.filter((doc) => {
+      return searchFields.some((field) => {
+        const fieldValue = (doc as Record<string, unknown>)[field]
+        if (typeof fieldValue === 'string') {
+          return fieldValue.toLowerCase().includes(lowerSearchTerm)
+        }
+        return false
+      })
+    })
+    
+    return {
+      total: filteredDocuments.length,
+      documents: filteredDocuments,
+    } as Models.DocumentList<T>
+  }
+
+  // Get most recent document update time from a collection
+  static async getMostRecentUpdateTime(collectionId: string): Promise<Date | null> {
+    try {
+      const result = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        collectionId,
+        [
+          Query.orderDesc('$updatedAt'),
+          Query.limit(1)
+        ]
+      )
+      
+      if (result.documents.length > 0) {
+        return new Date(result.documents[0].$updatedAt)
+      }
+      return null
+    } catch (error) {
+      console.error(`Error fetching most recent update time for ${collectionId}:`, error)
+      return null
+    }
+  }
+}
+
+// Reports metadata service
+export const reportsService = {
+  // Get last generated time for each report type based on source data
+  getReportMetadata: async () => {
+    try {
+      const [
+        eventsTime,
+        clientsTime,
+        usersTime,
+        reviewsTime,
+      ] = await Promise.all([
+        DatabaseService.getMostRecentUpdateTime(COLLECTION_IDS.EVENTS),
+        DatabaseService.getMostRecentUpdateTime(COLLECTION_IDS.CLIENTS),
+        DatabaseService.getMostRecentUpdateTime(COLLECTION_IDS.USER_PROFILES),
+        DatabaseService.getMostRecentUpdateTime(COLLECTION_IDS.REVIEWS),
+      ])
+
+      return {
+        events: eventsTime,
+        clients: clientsTime,
+        users: usersTime,
+        reviews: reviewsTime,
+      }
+    } catch (error) {
+      console.error('Error fetching report metadata:', error)
+      return {
+        events: null,
+        clients: null,
+        users: null,
+        reviews: null,
+      }
+    }
   }
 }
 
@@ -96,6 +184,7 @@ export interface UserProfile extends Models.Document {
   zipCode?: string
   isBlocked?: boolean
   idAdult?: boolean
+  avatarURL?: string // User profile image URL
   // Points & stats fields (match actual database column names)
   totalPoints?: number
   totalReviews?: number
@@ -493,6 +582,8 @@ export interface TriviaDocument extends Models.Document {
   startDate: string
   endDate: string
   points: number
+  views?: number // Number of times trivia was viewed
+  skips?: number // Number of times trivia was skipped
   [key: string]: unknown
 }
 
@@ -615,6 +706,7 @@ export interface AppUser extends UserProfile {
   email?: string
   firstName?: string // Mapped from firstname for UI compatibility
   lastName?: string // Mapped from lastname for UI compatibility
+  lastLoginDate?: string // Last login date from Auth (accessedAt)
   // Additional fields from Auth user can be added here
 }
 
@@ -676,12 +768,13 @@ export const appUsersService = {
     try {
       const profiles = await userProfilesService.list(queries)
       
-      // Fetch Auth user emails via Cloud Function
+      // Fetch Auth user emails and last login dates via Cloud Function
       const authIDs = profiles.documents
         .map((profile) => (profile as { authID?: string }).authID)
         .filter((id): id is string => !!id)
 
       let emailMap: Record<string, string> = {}
+      let lastLoginMap: Record<string, string> = {}
       
       if (authIDs.length > 0 && appwriteConfig.functions.statisticsFunctionId) {
         try {
@@ -698,8 +791,13 @@ export const appUsersService = {
           if (execution.status === 'completed' && execution.responseBody) {
             try {
               const response = JSON.parse(execution.responseBody)
-              if (response.success && response.emails) {
-                emailMap = response.emails
+              if (response.success) {
+                if (response.emails) {
+                  emailMap = response.emails
+                }
+                if (response.lastLogins) {
+                  lastLoginMap = response.lastLogins
+                }
               }
             } catch (parseError) {
               console.warn('Failed to parse email response:', parseError)
@@ -711,7 +809,7 @@ export const appUsersService = {
         }
       }
       
-      // Map profiles with emails and name fields
+      // Map profiles with emails, last login dates, and name fields
       return profiles.documents.map((profile) => {
         const authID = (profile as { authID?: string }).authID
         return {
@@ -721,6 +819,8 @@ export const appUsersService = {
           lastName: (profile as { lastname?: string }).lastname,
           // Add email from Auth user
           email: authID ? emailMap[authID] : undefined,
+          // Add last login date from Auth user
+          lastLoginDate: authID ? lastLoginMap[authID] : undefined,
         }
       }) as AppUser[]
     } catch (error) {
@@ -734,12 +834,13 @@ export const appUsersService = {
     try {
       const profiles = await userProfilesService.list(queries)
       
-      // Fetch Auth user emails via Cloud Function
+      // Fetch Auth user emails and last login dates via Cloud Function
       const authIDs = profiles.documents
         .map((profile) => (profile as { authID?: string }).authID)
         .filter((id): id is string => !!id)
 
       let emailMap: Record<string, string> = {}
+      let lastLoginMap: Record<string, string> = {}
       
       if (authIDs.length > 0 && appwriteConfig.functions.statisticsFunctionId) {
         try {
@@ -756,8 +857,13 @@ export const appUsersService = {
           if (execution.status === 'completed' && execution.responseBody) {
             try {
               const response = JSON.parse(execution.responseBody)
-              if (response.success && response.emails) {
-                emailMap = response.emails
+              if (response.success) {
+                if (response.emails) {
+                  emailMap = response.emails
+                }
+                if (response.lastLogins) {
+                  lastLoginMap = response.lastLogins
+                }
               }
             } catch (parseError) {
               console.warn('Failed to parse email response:', parseError)
@@ -769,7 +875,7 @@ export const appUsersService = {
         }
       }
       
-      // Map profiles with emails and name fields
+      // Map profiles with emails, last login dates, and name fields
       const users = profiles.documents.map((profile) => {
         const authID = (profile as { authID?: string }).authID
         return {
@@ -779,6 +885,8 @@ export const appUsersService = {
           lastName: (profile as { lastname?: string }).lastname,
           // Add email from Auth user
           email: authID ? emailMap[authID] : undefined,
+          // Add last login date from Auth user
+          lastLoginDate: authID ? lastLoginMap[authID] : undefined,
         }
       }) as AppUser[]
       
@@ -918,20 +1026,76 @@ export const appUsersService = {
     }
   },
 
-  // Block a user (add to blacklist)
+  // Block a user (update both Appwrite Auth and user_profile)
+  // Note: userId parameter is the user_profile document ID
   blockUser: async (userId: string): Promise<void> => {
     try {
-      await userProfilesService.update(userId, { isBlocked: true })
+      if (!appwriteConfig.functions.mobileApiFunctionId) {
+        throw new Error('Mobile API function ID is not configured')
+      }
+
+      // Get the user profile to retrieve the authID
+      const userProfile = await userProfilesService.getById(userId)
+      if (!userProfile.authID) {
+        throw new Error('User profile does not have an authID')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.mobileApiFunctionId,
+        xpath: '/update-user-status',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ userId: userProfile.authID, block: true }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (execution.responseStatusCode !== 200) {
+        throw new Error(`Failed to block user: ${execution.responseBody}`)
+      }
+
+      const response = JSON.parse(execution.responseBody)
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to block user')
+      }
     } catch (error) {
       console.error('Error blocking user:', error)
       throw error
     }
   },
 
-  // Unblock a user (remove from blacklist)
+  // Unblock a user (update both Appwrite Auth and user_profile)
+  // Note: userId parameter is the user_profile document ID
   unblockUser: async (userId: string): Promise<void> => {
     try {
-      await userProfilesService.update(userId, { isBlocked: false })
+      if (!appwriteConfig.functions.mobileApiFunctionId) {
+        throw new Error('Mobile API function ID is not configured')
+      }
+
+      // Get the user profile to retrieve the authID
+      const userProfile = await userProfilesService.getById(userId)
+      if (!userProfile.authID) {
+        throw new Error('User profile does not have an authID')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.mobileApiFunctionId,
+        xpath: '/update-user-status',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ userId: userProfile.authID, block: false }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (execution.responseStatusCode !== 200) {
+        throw new Error(`Failed to unblock user: ${execution.responseBody}`)
+      }
+
+      const response = JSON.parse(execution.responseBody)
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to unblock user')
+      }
     } catch (error) {
       console.error('Error unblocking user:', error)
       throw error
@@ -1143,15 +1307,25 @@ export const notificationsService = {
     DatabaseService.list<NotificationDocument>(appwriteConfig.collections.notifications, queries),
 
   update: (id: string, data: Partial<NotificationFormData>) => {
-    const dbData: Record<string, unknown> = { ...data }
+    // Only include actual database fields
+    const dbData: Record<string, unknown> = {
+      title: data.title,
+      message: data.message,
+      type: data.type,
+      targetAudience: data.targetAudience,
+    }
     
     // Handle scheduling updates
-    if (data.scheduledAt && data.scheduledTime) {
+    if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
       const [hours, minutes] = data.scheduledTime.split(':')
       const scheduledDate = new Date(data.scheduledAt)
       scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
       dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
-      delete dbData.scheduledTime
+      dbData.status = 'Scheduled'
+    } else if (data.schedule === 'Send Immediately') {
+      // Clear scheduledAt if switching to immediate
+      dbData.scheduledAt = null
+      dbData.status = 'Draft'
     }
 
     return DatabaseService.update<NotificationDocument>(

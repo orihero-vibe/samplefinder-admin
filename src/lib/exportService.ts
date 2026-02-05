@@ -30,27 +30,31 @@ const dashboardColumns: ReportColumn[] = [
   { header: 'Discount?', key: 'discount' },
 ]
 
-// Event List columns
+// Event List columns - ordered to match CSV upload requirements and AddEventModal field sequence
+// These column names must exactly match what CSVUploadModal expects for re-import compatibility
 const eventListColumns: ReportColumn[] = [
   { header: 'Event Name', key: 'name' },
-  { header: 'Brand Name', key: 'brandName' },
-  { header: 'Event Date', key: 'date' },
+  { header: 'Date', key: 'date' },
   { header: 'Start Time', key: 'startTime' },
   { header: 'End Time', key: 'endTime' },
+  { header: 'Category', key: 'category' },
+  { header: 'Brand Name', key: 'brandName' },
+  { header: 'Product Type', key: 'productType' },
+  { header: 'Product', key: 'products' },
+  { header: 'Discount', key: 'discount' },
+  { header: 'Discount Link', key: 'discountLink' },
+  { header: 'Discount Image URL', key: 'discountImageURL' },
+  { header: 'Check-in Code', key: 'checkInCode' },
+  { header: 'Points', key: 'checkInPoints' },
+  { header: 'Review Points', key: 'reviewPoints' },
+  { header: 'Radius', key: 'radius' },
+  { header: 'Event Info', key: 'eventInfo' },
   { header: 'Address', key: 'address' },
   { header: 'City', key: 'city' },
   { header: 'State', key: 'state' },
-  { header: 'Zip', key: 'zipCode' },
-  { header: 'Product Type', key: 'productType' },
-  { header: 'Product 1', key: 'product1' },
-  { header: 'Product 2', key: 'product2' },
-  { header: 'Product 3', key: 'product3' },
-  { header: 'Event Info', key: 'eventInfo' },
-  { header: 'Discount Text', key: 'discountText' },
-  { header: 'Discount Image File?', key: 'discountImageFile' },
-  { header: 'Check-In Code', key: 'checkInCode' },
-  { header: 'Check-in Points', key: 'checkInPoints' },
-  { header: 'Review Points', key: 'reviewPoints' },
+  { header: 'Zip Code', key: 'zipCode' },
+  { header: 'Latitude', key: 'latitude' },
+  { header: 'Longitude', key: 'longitude' },
 ]
 
 // Clients & Brands columns
@@ -71,7 +75,6 @@ const appUsersColumns: ReportColumn[] = [
   { header: 'DOB', key: 'dob' },
   { header: 'Sign-Up Date', key: 'signUpDate' },
   { header: 'Last Login Date', key: 'lastLoginDate' },
-  { header: 'Password', key: 'password' },
   { header: 'Referral Code', key: 'referralCode' },
   { header: 'User Points', key: 'userPoints' },
   { header: 'Check-in/Review Pts', key: 'checkInReviewPoints' },
@@ -92,7 +95,7 @@ const pointsEarnedColumns: ReportColumn[] = [
   { header: 'Check-in/Review Pts', key: 'checkInReviewPoints' },
 ]
 
-// Helper function to format date
+// Helper function to format date for display (MM/DD/YYYY)
 const formatDate = (dateStr?: string): string => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
@@ -103,7 +106,18 @@ const formatDate = (dateStr?: string): string => {
   return `${month}/${day}/${year}`
 }
 
-// Helper function to format time
+// Helper function to format date for CSV upload (YYYY-MM-DD)
+const formatDateForUpload = (dateStr?: string): string => {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+// Helper function to format time for display (12-hour with AM/PM)
 const formatTime = (timeStr?: string): string => {
   if (!timeStr) return ''
   const date = new Date(timeStr)
@@ -113,6 +127,16 @@ const formatTime = (timeStr?: string): string => {
   const ampm = hours >= 12 ? 'PM' : 'AM'
   const hour12 = hours % 12 || 12
   return `${hour12}:${String(minutes).padStart(2, '0')} ${ampm}`
+}
+
+// Helper function to format time for CSV upload (24-hour HH:MM format)
+const formatTimeForUpload = (timeStr?: string): string => {
+  if (!timeStr) return ''
+  const date = new Date(timeStr)
+  if (isNaN(date.getTime())) return ''
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
 }
 
 // Helper function to convert product types array to string
@@ -230,29 +254,41 @@ export const exportService = {
           }
         }
 
-        // Parse products (comma-separated string)
-        const products = event.products ? event.products.split(',').map(p => p.trim()) : []
+        // Extract latitude and longitude from location array [longitude, latitude]
+        let latitude = ''
+        let longitude = ''
+        if (event.location && Array.isArray(event.location) && event.location.length === 2) {
+          longitude = event.location[0]?.toString() || ''
+          latitude = event.location[1]?.toString() || ''
+        }
+        
+        // Get discount link if available (not in standard schema but may be in record)
+        const eventRecord = event as Record<string, unknown>
+        const discountLink = (eventRecord.discountLink as string) || ''
         
         return {
           name: event.name || '',
+          date: formatDateForUpload(event.date),
+          startTime: formatTimeForUpload(event.startTime),
+          endTime: formatTimeForUpload(event.endTime),
+          category: event.categories || '',
           brandName: brandName,
-          date: formatDate(event.date),
-          startTime: formatTime(event.startTime),
-          endTime: formatTime(event.endTime),
+          productType: formatProductTypes(event.productType),
+          products: event.products || '',
+          discount: event.discount?.toString() || '',
+          discountLink: discountLink,
+          discountImageURL: event.discountImageURL || '',
+          checkInCode: event.checkInCode || '',
+          checkInPoints: event.checkInPoints?.toString() || '0',
+          reviewPoints: event.reviewPoints?.toString() || '0',
+          radius: event.radius?.toString() || '',
+          eventInfo: event.eventInfo || '',
           address: event.address || '',
           city: event.city || '',
           state: event.state || '',
           zipCode: event.zipCode || '',
-          productType: formatProductTypes(event.productType),
-          product1: products[0] || '',
-          product2: products[1] || '',
-          product3: products[2] || '',
-          eventInfo: event.eventInfo || '',
-          discountText: event.discount && event.discount > 0 ? `${event.discount}% Off` : '',
-          discountImageFile: event.discountImageURL ? 'Yes' : 'No',
-          checkInCode: event.checkInCode || '',
-          checkInPoints: event.checkInPoints?.toString() || '0',
-          reviewPoints: event.reviewPoints?.toString() || '0',
+          latitude: latitude,
+          longitude: longitude,
         }
       })
     )
@@ -287,12 +323,38 @@ export const exportService = {
 
   /**
    * Generate App Users report
+   * Fetches data from user_profiles collection with correct field mappings
    */
   async generateAppUsersReport(): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const usersResult = await appUsersService.list([Query.orderDesc('$createdAt')])
     
     const rows = usersResult.map((user: AppUser) => {
       const userRecord = user as Record<string, unknown>
+      
+      // Map user_profiles fields to report columns
+      // totalPoints = total points earned by user
+      // totalReviews = number of reviews submitted
+      // totalEvents = number of check-ins (events attended)
+      // isAmbassador = BA Badge status
+      // isInfluencer = Influencer Badge status
+      const totalPoints = (userRecord.totalPoints as number) ?? (userRecord.userPoints as number) ?? 0
+      const totalReviews = (userRecord.totalReviews as number) ?? (userRecord.reviews as number) ?? 0
+      const totalEvents = (userRecord.totalEvents as number) ?? (userRecord.checkIns as number) ?? 0
+      const isAmbassador = (userRecord.isAmbassador as boolean) ?? (userRecord.baBadge as boolean) ?? false
+      const isInfluencer = (userRecord.isInfluencer as boolean) ?? (userRecord.influencerBadge as boolean) ?? false
+      const checkInReviewPoints = (userRecord.checkInReviewPoints as number) ?? 0
+      const triviasWon = (userRecord.triviasWon as number) ?? 0
+      
+      // Determine tier level based on totalPoints if not explicitly set
+      let tierLevel = (userRecord.tierLevel as string) || ''
+      if (!tierLevel && totalPoints > 0) {
+        if (totalPoints >= 1000) tierLevel = 'ProSampler'
+        else if (totalPoints >= 500) tierLevel = 'Sampler'
+        else tierLevel = 'NewbieSampler'
+      } else if (!tierLevel) {
+        tierLevel = 'NewbieSampler'
+      }
+      
       return {
         firstName: user.firstName || '',
         lastName: user.lastName || '',
@@ -300,17 +362,16 @@ export const exportService = {
         email: user.email || '',
         dob: formatDate(userRecord.dob as string | undefined),
         signUpDate: formatDate(user.$createdAt),
-        lastLoginDate: '', // TODO: Implement last login tracking
-        password: '********', // Never export actual passwords
+        lastLoginDate: formatDate(user.lastLoginDate),
         referralCode: (userRecord.referralCode as string) || '',
-        userPoints: (userRecord.userPoints as number | undefined)?.toString() || '0',
-        checkInReviewPoints: (userRecord.checkInReviewPoints as number | undefined)?.toString() || '0',
-        baBadge: (userRecord.baBadge as boolean) ? 'Yes' : 'No',
-        influencerBadge: (userRecord.influencerBadge as boolean) ? 'Yes' : 'No',
-        tierLevel: (userRecord.tierLevel as string) || '',
-        checkIns: (userRecord.checkIns as number | undefined)?.toString() || '0',
-        reviews: (userRecord.reviews as number | undefined)?.toString() || '0',
-        triviasWon: (userRecord.triviasWon as number | undefined)?.toString() || '0',
+        userPoints: totalPoints.toString(),
+        checkInReviewPoints: checkInReviewPoints.toString(),
+        baBadge: isAmbassador ? 'Yes' : 'No',
+        influencerBadge: isInfluencer ? 'Yes' : 'No',
+        tierLevel: tierLevel,
+        checkIns: totalEvents.toString(),
+        reviews: totalReviews.toString(),
+        triviasWon: triviasWon.toString(),
       }
     })
 
@@ -322,6 +383,7 @@ export const exportService = {
 
   /**
    * Generate Points Earned report
+   * Fetches data from user_profiles collection with correct field mappings
    */
   async generatePointsEarnedReport(): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     // Fetch all users without ordering by userPoints (since it may not be in schema)
@@ -331,12 +393,17 @@ export const exportService = {
     
     const rows = usersResult.map((user: AppUser) => {
       const userRecord = user as Record<string, unknown>
+      
+      // Map user_profiles fields - totalPoints is the main field for user points
+      const totalPoints = (userRecord.totalPoints as number) ?? (userRecord.userPoints as number) ?? 0
+      const checkInReviewPoints = (userRecord.checkInReviewPoints as number) ?? 0
+      
       return {
         firstName: user.firstName || '',
         lastName: user.lastName || '',
         username: (userRecord.username as string) || '',
-        userPoints: (userRecord.userPoints as number | undefined)?.toString() || '0',
-        checkInReviewPoints: (userRecord.checkInReviewPoints as number | undefined)?.toString() || '0',
+        userPoints: totalPoints.toString(),
+        checkInReviewPoints: checkInReviewPoints.toString(),
       }
     })
 

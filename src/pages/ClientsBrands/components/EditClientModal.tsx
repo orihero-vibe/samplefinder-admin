@@ -243,7 +243,7 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
           {/* Product Type Multi-select */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Product Type <span className="text-red-500">*</span>
+              Product Type <span className="text-red-500">*</span> (Please press enter to add more products)
             </label>
             <div className="flex flex-wrap gap-2 min-h-[42px] p-2 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-[#1D0A74] focus-within:border-transparent">
               {formData.productTypes.map((type, index) => (

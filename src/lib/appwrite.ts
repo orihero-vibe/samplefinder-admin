@@ -22,6 +22,7 @@ export const appwriteConfig = {
     bucketId: import.meta.env.VITE_APPWRITE_STORAGE_BUCKET_ID || '',
   },
   functions: {
+    mobileApiFunctionId: import.meta.env.VITE_APPWRITE_MOBILE_API_FUNCTION_ID || '',
     statisticsFunctionId: import.meta.env.VITE_APPWRITE_STATISTICS_FUNCTION_ID || '',
     notificationFunctionId: import.meta.env.VITE_APPWRITE_NOTIFICATION_FUNCTION_ID || '',
   },

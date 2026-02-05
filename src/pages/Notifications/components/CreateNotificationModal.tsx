@@ -1,34 +1,42 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
+import type { NotificationFormData } from '../../../lib/services'
 
 interface CreateNotificationModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (notificationData: {
-    title: string
-    message: string
-    type: 'Event Reminder' | 'Promotional' | 'Engagement'
-    targetAudience: 'All' | 'Targeted' | 'Specific Segment'
-    schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring'
-    scheduledAt?: string
-    scheduledTime?: string
-  }) => void
+  onSave: (notificationData: NotificationFormData) => void
+  initialData?: NotificationFormData | null
+  isEditMode?: boolean
+}
+
+const defaultFormData: NotificationFormData = {
+  title: '',
+  message: '',
+  type: 'Event Reminder',
+  targetAudience: 'All',
+  schedule: 'Send Immediately',
+  scheduledAt: '',
+  scheduledTime: '',
 }
 
 const CreateNotificationModal = ({
   isOpen,
   onClose,
   onSave,
+  initialData,
+  isEditMode = false,
 }: CreateNotificationModalProps) => {
-  const [formData, setFormData] = useState({
-    title: '',
-    message: '',
-    type: 'Event Reminder' as 'Event Reminder' | 'Promotional' | 'Engagement',
-    targetAudience: 'All' as 'All' | 'Targeted' | 'Specific Segment',
-    schedule: 'Send Immediately' as 'Send Immediately' | 'Schedule for Later' | 'Recurring',
-    scheduledAt: '',
-    scheduledTime: '',
-  })
+  const [formData, setFormData] = useState<NotificationFormData>(defaultFormData)
+
+  // Update form data when initialData changes (for edit mode)
+  useEffect(() => {
+    if (initialData) {
+      setFormData(initialData)
+    } else {
+      setFormData(defaultFormData)
+    }
+  }, [initialData, isOpen])
 
   if (!isOpen) return null
 
@@ -56,29 +64,13 @@ const CreateNotificationModal = ({
     
     onSave(formData)
     // Reset form
-    setFormData({
-      title: '',
-      message: '',
-      type: 'Event Reminder',
-      targetAudience: 'All',
-      schedule: 'Send Immediately',
-      scheduledAt: '',
-      scheduledTime: '',
-    })
+    setFormData(defaultFormData)
     onClose()
   }
 
   const handleClose = () => {
     // Reset form on close
-    setFormData({
-      title: '',
-      message: '',
-      type: 'Event Reminder',
-      targetAudience: 'All',
-      schedule: 'Send Immediately',
-      scheduledAt: '',
-      scheduledTime: '',
-    })
+    setFormData(defaultFormData)
     onClose()
   }
 
@@ -95,9 +87,13 @@ const CreateNotificationModal = ({
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Create Notification</h2>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {isEditMode ? 'Edit Notification' : 'Create Notification'}
+            </h2>
             <p className="text-sm text-gray-600 mt-1">
-              Send targeted push notifications to your app users.
+              {isEditMode 
+                ? 'Update the notification details below.'
+                : 'Send targeted push notifications to your app users.'}
             </p>
           </div>
           <button
@@ -281,7 +277,7 @@ const CreateNotificationModal = ({
               type="submit"
               className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold"
             >
-              Create Notification
+              {isEditMode ? 'Update Notification' : 'Create Notification'}
             </button>
           </div>
         </form>

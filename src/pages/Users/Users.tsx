@@ -21,7 +21,7 @@ const Users = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [tierFilter, setTierFilter] = useState('All Tiers')
   const [sortBy, setSortBy] = useState('Date')
-  const [isLoading, setIsLoading] = useState(true)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -40,18 +40,29 @@ const Users = () => {
   const [totalUsers, setTotalUsers] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
 
-  // Fetch users from Appwrite with pagination
+  // Fetch users from Appwrite with pagination and search
   const fetchUsers = async (page: number = currentPage) => {
     try {
-      setIsLoading(true)
       setError(null)
       
-      // Build pagination queries
-      const queries = [
-        Query.limit(pageSize),
-        Query.offset((page - 1) * pageSize),
-        Query.orderDesc('$createdAt'), // Most recent users first
-      ]
+      // Build queries
+      const queries: string[] = []
+      
+      // Apply search using Query.contains (searches firstname, lastname, or username)
+      if (searchQuery.trim()) {
+        const trimmedSearch = searchQuery.trim()
+        // Search across firstname, lastname, and username using OR logic
+        queries.push(Query.or([
+          Query.contains('firstname', trimmedSearch),
+          Query.contains('lastname', trimmedSearch),
+          Query.contains('username', trimmedSearch),
+        ]))
+      }
+      
+      // Add sorting and pagination
+      queries.push(Query.orderDesc('$createdAt')) // Most recent users first
+      queries.push(Query.limit(pageSize))
+      queries.push(Query.offset((page - 1) * pageSize))
       
       const result = await appUsersService.listWithPagination(queries)
       
@@ -83,7 +94,7 @@ const Users = () => {
         message: 'Failed to load users. Please try again.',
       })
     } finally {
-      setIsLoading(false)
+      setIsInitialLoad(false)
     }
   }
 
@@ -116,7 +127,19 @@ const Users = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  if (isLoading) {
+  // Refetch users when search query, tier filter, or sort changes
+  useEffect(() => {
+    fetchUsers(1)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, tierFilter, sortBy])
+
+  // Handle search change
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value)
+    setCurrentPage(1) // Reset to page 1 when search changes
+  }
+
+  if (isInitialLoad) {
     return (
       <DashboardLayout>
         <ShimmerPage />
@@ -229,14 +252,6 @@ const Users = () => {
     }
   }
 
-  if (isLoading) {
-    return (
-      <DashboardLayout>
-        <ShimmerPage />
-      </DashboardLayout>
-    )
-  }
-
   return (
     <DashboardLayout>
       <div className="p-8">
@@ -288,7 +303,7 @@ const Users = () => {
         )}
         <SearchAndFilter
           searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+          onSearchChange={handleSearchChange}
           tierFilter={tierFilter}
           onTierFilterChange={setTierFilter}
           sortBy={sortBy}

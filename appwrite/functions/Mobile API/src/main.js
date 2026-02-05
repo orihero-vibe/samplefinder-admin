@@ -93,6 +93,34 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
     for (const event of events) {
         let clientData = null;
         let distance = Infinity;
+        // Calculate distance using event location
+        // Handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
+        if (event.location) {
+            let eventLon;
+            let eventLat;
+            if (Array.isArray(event.location) && event.location.length >= 2) {
+                // Direct array format: [longitude, latitude]
+                eventLon = event.location[0];
+                eventLat = event.location[1];
+            }
+            else if (typeof event.location === 'object' &&
+                event.location !== null &&
+                'coordinates' in event.location &&
+                Array.isArray(event.location.coordinates) &&
+                event.location.coordinates.length >= 2) {
+                // GeoJSON format: {coordinates: [longitude, latitude]}
+                const coords = event.location.coordinates;
+                eventLon = coords[0];
+                eventLat = coords[1];
+            }
+            if (eventLon !== undefined &&
+                eventLat !== undefined &&
+                !isNaN(eventLon) &&
+                !isNaN(eventLat)) {
+                distance = haversineDistance(userLat, userLon, eventLat, eventLon);
+            }
+        }
+        // Fetch client data if available
         if (event.client) {
             try {
                 // Handle relationship field - could be string ID or populated object
@@ -113,33 +141,6 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
                         }
                     }
                 }
-                // Calculate distance if client has location
-                // Handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
-                if (clientData && clientData.location) {
-                    let clientLon;
-                    let clientLat;
-                    if (Array.isArray(clientData.location) && clientData.location.length >= 2) {
-                        // Direct array format: [longitude, latitude]
-                        clientLon = clientData.location[0];
-                        clientLat = clientData.location[1];
-                    }
-                    else if (typeof clientData.location === 'object' &&
-                        clientData.location !== null &&
-                        'coordinates' in clientData.location &&
-                        Array.isArray(clientData.location.coordinates) &&
-                        clientData.location.coordinates.length >= 2) {
-                        // GeoJSON format: {coordinates: [longitude, latitude]}
-                        const coords = clientData.location.coordinates;
-                        clientLon = coords[0];
-                        clientLat = coords[1];
-                    }
-                    if (clientLon !== undefined &&
-                        clientLat !== undefined &&
-                        !isNaN(clientLon) &&
-                        !isNaN(clientLat)) {
-                        distance = haversineDistance(userLat, userLon, clientLat, clientLon);
-                    }
-                }
             }
             catch (err) {
                 const clientInfo = typeof event.client === 'string'
@@ -156,8 +157,8 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
             distance,
         });
     }
-    // Filter out events without valid client locations
-    const validEvents = eventsWithClients.filter((event) => event.client !== null && event.distance !== Infinity);
+    // Filter out events without valid event locations
+    const validEvents = eventsWithClients.filter((event) => event.distance !== Infinity);
     // Sort by distance (nearest first)
     validEvents.sort((a, b) => a.distance - b.distance);
     // Calculate pagination
@@ -304,6 +305,70 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
     };
 }
 // ============================================================================
+// USER STATUS MANAGEMENT FUNCTION
+// ============================================================================
+/**
+ * Update user status (block/unblock) in both Appwrite Auth and user profile.
+ * This is a server-side-only operation because updating user status in Appwrite Auth
+ * requires an API key with appropriate permissions.
+ *
+ * It will:
+ * 1. Update the user status in Appwrite Auth (enable/disable the account)
+ * 2. Update the isBlocked field in the user_profiles collection
+ */
+async function updateUserStatus(users, databases, userId, block, log) {
+    log(`Starting user status update for user: ${userId}, block: ${block}`);
+    try {
+        // 1. Verify the user exists in Auth
+        try {
+            await users.get(userId);
+            log(`User ${userId} found in Auth`);
+        }
+        catch {
+            throw { code: 404, message: 'User not found in authentication system' };
+        }
+        // 2. Update user status in Appwrite Auth
+        // When block=true, set status to false (disabled)
+        // When block=false, set status to true (enabled)
+        log(`Updating user auth status to: ${!block ? 'enabled' : 'disabled'}`);
+        await users.updateStatus(userId, !block);
+        log(`User auth status updated successfully`);
+        // 3. Update user profile isBlocked field
+        try {
+            log(`Attempting to find user profile by authID: ${userId}`);
+            const profileQuery = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId)]);
+            log(`Profile query completed. Total found: ${profileQuery.total}`);
+            if (profileQuery.total === 0) {
+                throw { code: 404, message: 'User profile not found' };
+            }
+            // Update the profile document
+            const profile = profileQuery.documents[0];
+            log(`Updating user profile document: ${profile.$id}`);
+            await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, profile.$id, { isBlocked: block });
+            log(`User profile updated successfully`);
+        }
+        catch (profileError) {
+            const typedProfileError = profileError;
+            log(`Error updating profile: ${typedProfileError.message || 'Unknown error'}`);
+            // If profile update fails, revert the auth status
+            await users.updateStatus(userId, block);
+            throw {
+                code: 500,
+                message: `Failed to update user profile: ${typedProfileError.message || 'Unknown error'}`,
+            };
+        }
+        return {
+            success: true,
+            message: block ? 'User successfully blocked' : 'User successfully unblocked',
+        };
+    }
+    catch (err) {
+        const typedErr = err;
+        log(`Error during user status update: ${typedErr.message || 'Unknown error'}`);
+        throw typedErr;
+    }
+}
+// ============================================================================
 // ACCOUNT DELETION FUNCTION
 // ============================================================================
 /**
@@ -350,21 +415,22 @@ async function deleteUserAccount(users, databases, userId, log) {
         }
         catch (profileError) {
             // Log the full error for debugging
+            const typedProfileError = profileError;
             log(`Error during profile deletion process`);
-            log(`Error type: ${profileError?.constructor?.name || 'Unknown'}`);
-            log(`Error message: ${profileError?.message || 'N/A'}`);
-            log(`Error code: ${profileError?.code || 'N/A'}`);
-            log(`Error type field: ${profileError?.type || 'N/A'}`);
+            log(`Error type: ${typedProfileError.constructor?.name || 'Unknown'}`);
+            log(`Error message: ${typedProfileError.message || 'N/A'}`);
+            log(`Error code: ${typedProfileError.code || 'N/A'}`);
+            log(`Error type field: ${typedProfileError.type || 'N/A'}`);
             log(`Full error details: ${JSON.stringify({
-                message: profileError?.message,
-                code: profileError?.code,
-                type: profileError?.type,
-                response: profileError?.response,
+                message: typedProfileError.message,
+                code: typedProfileError.code,
+                type: typedProfileError.type,
+                response: typedProfileError.response,
             })}`);
             // For any error, throw it to prevent partial deletion
             throw {
                 code: 500,
-                message: `Failed to delete user profile: ${profileError?.message || 'Unknown error'}`,
+                message: `Failed to delete user profile: ${typedProfileError.message || 'Unknown error'}`,
             };
         }
         // 3. Delete the user from Appwrite Auth
@@ -542,11 +608,42 @@ export default async function handler({ req, res, log, error }) {
             }
         }
         // ========================================================================
+        // USER STATUS MANAGEMENT
+        // ========================================================================
+        // UPDATE user status (block/unblock)
+        if (req.path === '/update-user-status' && req.method === 'POST') {
+            log('Processing update-user-status request');
+            const body = req.body;
+            if (!body || !body.userId || typeof body.block !== 'boolean') {
+                return res.json({
+                    success: false,
+                    error: 'userId and block (boolean) are required',
+                }, 400);
+            }
+            try {
+                const result = await updateUserStatus(users, databases, body.userId, body.block, log);
+                return res.json({
+                    success: true,
+                    ...result,
+                });
+            }
+            catch (err) {
+                const typedErr = err;
+                if (typedErr.code && typedErr.message) {
+                    return res.json({
+                        success: false,
+                        error: typedErr.message,
+                    }, typedErr.code);
+                }
+                throw err;
+            }
+        }
+        // ========================================================================
         // DEFAULT RESPONSE
         // ========================================================================
         return res.json({
             success: false,
-            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /delete-account, GET /ping',
+            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /delete-account, POST /update-user-status, GET /ping',
         });
     }
     catch (err) {

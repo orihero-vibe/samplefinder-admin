@@ -17,13 +17,29 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
   const requiredColumns = [
     'Event Name',
     'Date',
+    'Start Time',
+    'End Time',
+    'Category',
+    'Brand Name',
+    'Product Type',
     'Address',
     'City',
     'State',
     'Zip Code',
+    'Check In Code',
+    'Check In Points',
+    'Review Points',
+    'Radius',
+    'Event Info',
+    'Latitude',
+    'Longitude',
+  ]
+  
+  const optionalColumns = [
     'Product',
-    'Brand Name',
-    'Points',
+    'Discount',
+    'Discount Link',
+    'Discount Image URL',
   ]
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -76,19 +92,43 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
   }
 
   const handleDownloadTemplate = () => {
-    // Create CSV template with headers and sample data
-    const headers = requiredColumns.join(',')
-    const sampleRow = [
-      'Sample Event Name',
-      '25-01-2026', // DD-MM-YYYY format
-      '123 Main Street',
-      'New York',
-      'NY',
-      '10001',
-      'Sample Product',
-      'Sample Brand',
-      '100',
-    ].join(',')
+    // Create CSV template with headers and sample data (required + optional columns)
+    const allColumns = [...requiredColumns, ...optionalColumns]
+    const headers = allColumns.join(',')
+    const sampleValues = [
+      // Required columns (in order)
+      'My Event Name',                    // Event Name - Replace with your event name
+      '2026-01-25',                       // Date (YYYY-MM-DD format)
+      '09:00',                            // Start Time (HH:MM)
+      '17:00',                            // End Time (HH:MM)
+      '[REPLACE WITH EXISTING CATEGORY]', // Category - Must exist in your database
+      '[REPLACE WITH EXISTING BRAND]',    // Brand Name - Must exist in your database
+      'Beer',                             // Product Type
+      '123 Main Street',                  // Address
+      'New York',                         // City
+      'NY',                               // State
+      '10001',                            // Zip Code
+      'CHK001',                           // Check In Code
+      '100',                              // Check In Points
+      '50',                               // Review Points
+      '100',                              // Radius (in meters)
+      'Event description goes here',      // Event Info
+      '40.7128',                          // Latitude
+      '-74.0060',                         // Longitude
+      // Optional columns
+      'Product Name',                     // Product (optional)
+      '10',                               // Discount percentage (optional)
+      'https://example.com/discount',     // Discount Link (optional)
+      'https://example.com/image.jpg',    // Discount Image URL (optional)
+    ]
+    // Properly escape CSV values (wrap in quotes if contains comma, quote, or newline)
+    const escapeCSV = (value: string) => {
+      if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+        return `"${value.replace(/"/g, '""')}"`
+      }
+      return value
+    }
+    const sampleRow = sampleValues.map(escapeCSV).join(',')
     const csvContent = `data:text/csv;charset=utf-8,${headers}\n${sampleRow}`
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement('a')
@@ -166,7 +206,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
           </div>
 
           {/* Required Columns Section */}
-          <div className="mb-6">
+          <div className="mb-4">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Required columns</h3>
             <div className="flex flex-wrap gap-2">
               {requiredColumns.map((column, index) => (
@@ -180,11 +220,32 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
             </div>
           </div>
 
+          {/* Optional Columns Section */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Optional columns</h3>
+            <div className="flex flex-wrap gap-2">
+              {optionalColumns.map((column, index) => (
+                <span
+                  key={index}
+                  className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500 font-medium"
+                >
+                  {column}
+                </span>
+              ))}
+            </div>
+          </div>
+
           {/* Instructions */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800">
-              Make sure your CSV file contains all the required columns with the exact names listed above. The first row should be the header row.
-            </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+            <p className="text-sm text-blue-800 font-semibold">Important Instructions:</p>
+            <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
+              <li>The first row must be the header row with exact column names</li>
+              <li><strong>Brand Name</strong> and <strong>Category</strong> must match existing values in the database</li>
+              <li><strong>Date</strong> format: YYYY-MM-DD (e.g., 2026-01-25)</li>
+              <li><strong>Time</strong> format: HH:MM (e.g., 09:00, 17:00)</li>
+              <li><strong>Latitude/Longitude</strong>: Decimal coordinates (e.g., 40.7128, -74.0060)</li>
+              <li>Download the template and replace sample values with your actual data</li>
+            </ul>
           </div>
         </div>
 

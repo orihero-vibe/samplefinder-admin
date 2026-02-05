@@ -8,6 +8,7 @@ interface DownloadModalProps {
   onDownload: (format: DownloadFormat) => void
   title?: string
   description?: string
+  isLoading?: boolean
 }
 
 const DownloadModal = ({
@@ -16,12 +17,12 @@ const DownloadModal = ({
   onDownload,
   title = 'Download Report',
   description = 'Choose a file format to download.',
+  isLoading = false,
 }: DownloadModalProps) => {
   if (!isOpen) return null
 
   const handleDownload = (format: DownloadFormat) => {
     onDownload(format)
-    onClose()
   }
 
   return (
@@ -29,7 +30,7 @@ const DownloadModal = ({
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={!isLoading ? onClose : undefined}
       />
 
       {/* Modal */}
@@ -42,7 +43,8 @@ const DownloadModal = ({
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            disabled={isLoading}
+            className={`text-gray-400 hover:text-gray-600 transition-colors ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Icon icon="mdi:close" className="w-6 h-6" />
           </button>
@@ -50,22 +52,31 @@ const DownloadModal = ({
 
         {/* Action Buttons */}
         <div className="p-6 flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={() => handleDownload('csv')}
-            className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold flex items-center justify-center gap-2"
-          >
-            <Icon icon="mdi:file-excel" className="w-5 h-5" />
-            Export CSV
-          </button>
-          <button
-            type="button"
-            onClick={() => handleDownload('pdf')}
-            className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold flex items-center justify-center gap-2"
-          >
-            <Icon icon="mdi:file-pdf-box" className="w-5 h-5" />
-            Export PDF
-          </button>
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-4">
+              <Icon icon="mdi:loading" className="w-10 h-10 text-[#1D0A74] animate-spin" />
+              <p className="text-gray-600 font-medium">Generating report...</p>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => handleDownload('csv')}
+                className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold flex items-center justify-center gap-2"
+              >
+                <Icon icon="mdi:file-excel" className="w-5 h-5" />
+                Export CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownload('pdf')}
+                className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold flex items-center justify-center gap-2"
+              >
+                <Icon icon="mdi:file-pdf-box" className="w-5 h-5" />
+                Export PDF
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

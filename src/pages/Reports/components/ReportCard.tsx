@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { DownloadModal } from '../../../components'
 import type { DownloadFormat } from '../../../components'
 
@@ -9,10 +9,20 @@ interface ReportCardProps {
   lastGenerated: string
   onPreview: () => void
   onExport: (format: DownloadFormat) => void
+  isDownloading?: boolean
 }
 
-const ReportCard = ({ name, icon, lastGenerated, onPreview, onExport }: ReportCardProps) => {
+const ReportCard = ({ name, icon, lastGenerated, onPreview, onExport, isDownloading }: ReportCardProps) => {
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false)
+  const wasDownloading = useRef(false)
+
+  // Close modal when download completes
+  useEffect(() => {
+    if (wasDownloading.current && !isDownloading) {
+      setIsDownloadModalOpen(false)
+    }
+    wasDownloading.current = isDownloading || false
+  }, [isDownloading])
 
   const handleExportClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -58,8 +68,9 @@ const ReportCard = ({ name, icon, lastGenerated, onPreview, onExport }: ReportCa
       {/* Download Modal */}
       <DownloadModal
         isOpen={isDownloadModalOpen}
-        onClose={() => setIsDownloadModalOpen(false)}
+        onClose={() => !isDownloading && setIsDownloadModalOpen(false)}
         onDownload={handleDownload}
+        isLoading={isDownloading}
       />
     </>
   )

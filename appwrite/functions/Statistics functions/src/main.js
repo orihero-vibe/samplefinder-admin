@@ -1,4 +1,4 @@
-import { Client, Databases, Query } from 'node-appwrite';
+import { Client, Databases, Query, Users } from 'node-appwrite';
 // Constants
 const DATABASE_ID = '69217af50038b9005a61';
 const CLIENTS_TABLE_ID = 'clients';
@@ -8,6 +8,25 @@ const REVIEWS_TABLE_ID = 'reviews';
 const TRIVIA_TABLE_ID = 'trivia';
 const CHECKINS_TABLE_ID = 'checkins';
 const NOTIFICATIONS_TABLE_ID = 'notifications';
+// Tier thresholds
+const TIER_THRESHOLDS = [
+    { level: 5, name: 'SampleMaster', minPoints: 100000 },
+    { level: 4, name: 'VIS', minPoints: 25000 },
+    { level: 3, name: 'SuperSampler', minPoints: 5000 },
+    { level: 2, name: 'SampleFan', minPoints: 1000 },
+    { level: 1, name: 'NewbieSampler', minPoints: 0 },
+];
+/**
+ * Calculate tier based on points
+ */
+function getTierFromPoints(points) {
+    for (const tier of TIER_THRESHOLDS) {
+        if (points >= tier.minPoints) {
+            return { level: tier.level, name: tier.name };
+        }
+    }
+    return { level: 1, name: 'NewbieSampler' };
+}
 /**
  * Get date range for this month
  */
@@ -62,8 +81,7 @@ function calculateChange(current, previous) {
  */
 async function getDashboardStats(databases, log) {
     try {
-        // Get current and last month ranges
-        const thisMonth = getThisMonthRange();
+        // Get last month range for comparisons
         const lastMonth = getLastMonthRange();
         // Total Clients/Brands
         const clientsResponse = await databases.listDocuments(DATABASE_ID, CLIENTS_TABLE_ID);
@@ -94,9 +112,10 @@ async function getDashboardStats(databases, log) {
             else if (checkin.event) {
                 // If checkin has event relationship, get the event's checkInPoints
                 try {
-                    const eventId = typeof checkin.event === 'string'
-                        ? checkin.event
-                        : checkin.event?.$id || checkin.event?.id;
+                    const eventRef = checkin.event;
+                    const eventId = typeof eventRef === 'string'
+                        ? eventRef
+                        : eventRef?.$id || eventRef?.id;
                     if (eventId) {
                         const eventDoc = await databases.getDocument(DATABASE_ID, EVENTS_TABLE_ID, eventId);
                         const checkInPoints = eventDoc.checkInPoints || 0;
@@ -211,9 +230,10 @@ async function getUsersStats(databases, log) {
             else if (checkin.event) {
                 // If checkin has event relationship, get the event's checkInPoints
                 try {
-                    const eventId = typeof checkin.event === 'string'
-                        ? checkin.event
-                        : checkin.event?.$id || checkin.event?.id;
+                    const eventRef = checkin.event;
+                    const eventId = typeof eventRef === 'string'
+                        ? eventRef
+                        : eventRef?.$id || eventRef?.id;
                     if (eventId) {
                         const eventDoc = await databases.getDocument(DATABASE_ID, EVENTS_TABLE_ID, eventId);
                         const checkInPoints = eventDoc.checkInPoints || 0;
@@ -244,8 +264,6 @@ async function getUsersStats(databases, log) {
  */
 async function getNotificationsStats(databases, log) {
     try {
-        const now = new Date();
-        const nowISO = now.toISOString();
         // Total Sent
         const notificationsResponse = await databases.listDocuments(DATABASE_ID, NOTIFICATIONS_TABLE_ID);
         const totalSent = notificationsResponse.total;
@@ -310,22 +328,27 @@ async function getTriviaStats(databases, log) {
     }
 }
 // Main function handler
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default async function handler({ req, res, log, error }) {
     try {
         // Initialize Appwrite client
         const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT ||
             'https://nyc.cloud.appwrite.io/v1';
         const projectId = process.env.APPWRITE_FUNCTION_PROJECT_ID || '691d4a54003b21bf0136';
-        const apiKey = process.env.APPWRITE_FUNCTION_KEY ||
-            process.env.APPWRITE_API_KEY ||
+        // Prioritize custom APPWRITE_API_KEY for full scopes, fallback to function key
+        const apiKey = process.env.APPWRITE_API_KEY ||
+            process.env.APPWRITE_FUNCTION_KEY ||
             req.headers['x-appwrite-key'] ||
             req.headers['x-appwrite-function-key'] ||
             '';
+        // Debug logging to identify which key is being used
+        log(`API Key source: ${process.env.APPWRITE_API_KEY ? 'APPWRITE_API_KEY' : process.env.APPWRITE_FUNCTION_KEY ? 'APPWRITE_FUNCTION_KEY' : 'headers or empty'}`);
+        log(`API Key present: ${apiKey ? 'yes (length: ' + apiKey.length + ')' : 'no'}`);
         if (!apiKey) {
             error('API key is missing');
             return res.json({
                 success: false,
-                error: 'Server configuration error: API key missing',
+                error: 'Server configuration error: API key missing. Please set APPWRITE_API_KEY environment variable.',
             }, 500);
         }
         const client = new Client()
@@ -362,6 +385,7 @@ export default async function handler({ req, res, log, error }) {
                 }, 400);
             }
             log(`Fetching statistics for page: ${body.page}`);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let statistics;
             switch (body.page) {
                 case 'dashboard':
@@ -391,6 +415,185 @@ export default async function handler({ req, res, log, error }) {
                 page: body.page,
                 statistics,
             });
+        }
+        // Handle get user emails endpoint (also returns last login dates)
+        if (req.path === '/get-user-emails' && req.method === 'POST') {
+            log('Processing get-user-emails request');
+            const body = req.body;
+            if (!body || !body.authIDs || !Array.isArray(body.authIDs)) {
+                return res.json({
+                    success: false,
+                    error: 'authIDs array is required',
+                }, 400);
+            }
+            const users = new Users(client);
+            const emailMap = {};
+            const lastLoginMap = {};
+            // Fetch emails and last login dates for each authID
+            for (const authID of body.authIDs) {
+                try {
+                    const user = await users.get(authID);
+                    if (user) {
+                        if (user.email) {
+                            emailMap[authID] = user.email;
+                        }
+                        // accessedAt is the last time the user accessed the app
+                        if (user.accessedAt) {
+                            lastLoginMap[authID] = user.accessedAt;
+                        }
+                    }
+                }
+                catch (err) {
+                    // User not found or error - skip
+                    log(`Could not fetch user ${authID}: ${err.message}`);
+                }
+            }
+            log(`Successfully fetched ${Object.keys(emailMap).length} emails and ${Object.keys(lastLoginMap).length} last login dates`);
+            return res.json({
+                success: true,
+                emails: emailMap,
+                lastLogins: lastLoginMap,
+            });
+        }
+        // Handle block user endpoint
+        if (req.path === '/block-user' && req.method === 'POST') {
+            log('Processing block-user request');
+            const body = req.body;
+            if (!body || !body.userId) {
+                return res.json({
+                    success: false,
+                    error: 'userId is required',
+                }, 400);
+            }
+            try {
+                const users = new Users(client);
+                // Get user profile to find authID
+                const userProfile = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, body.userId);
+                const authID = userProfile.authID;
+                if (!authID) {
+                    return res.json({
+                        success: false,
+                        error: 'User does not have an associated auth account',
+                    }, 400);
+                }
+                // Update isBlocked in user_profiles
+                await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, body.userId, { isBlocked: true });
+                // Block user in Appwrite Auth (status false = blocked)
+                await users.updateStatus(authID, false);
+                // Delete all sessions to force logout
+                await users.deleteSessions(authID);
+                log(`Successfully blocked user ${body.userId} (authID: ${authID})`);
+                return res.json({
+                    success: true,
+                    message: 'User blocked successfully',
+                    userId: body.userId,
+                });
+            }
+            catch (err) {
+                log(`Error blocking user: ${err.message}`);
+                return res.json({
+                    success: false,
+                    error: err.message,
+                }, 500);
+            }
+        }
+        // Handle unblock user endpoint
+        if (req.path === '/unblock-user' && req.method === 'POST') {
+            log('Processing unblock-user request');
+            const body = req.body;
+            if (!body || !body.userId) {
+                return res.json({
+                    success: false,
+                    error: 'userId is required',
+                }, 400);
+            }
+            try {
+                const users = new Users(client);
+                // Get user profile to find authID
+                const userProfile = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, body.userId);
+                const authID = userProfile.authID;
+                if (!authID) {
+                    return res.json({
+                        success: false,
+                        error: 'User does not have an associated auth account',
+                    }, 400);
+                }
+                // Update isBlocked in user_profiles
+                await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, body.userId, { isBlocked: false });
+                // Unblock user in Appwrite Auth (status true = active)
+                await users.updateStatus(authID, true);
+                log(`Successfully unblocked user ${body.userId} (authID: ${authID})`);
+                return res.json({
+                    success: true,
+                    message: 'User unblocked successfully',
+                    userId: body.userId,
+                });
+            }
+            catch (err) {
+                log(`Error unblocking user: ${err.message}`);
+                return res.json({
+                    success: false,
+                    error: err.message,
+                }, 500);
+            }
+        }
+        // Handle update user tier endpoint
+        if (req.path === '/update-user-tier' && req.method === 'POST') {
+            log('Processing update-user-tier request');
+            const body = req.body;
+            if (body.userId) {
+                // Update single user
+                try {
+                    const user = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, body.userId);
+                    const totalPoints = user.totalPoints || 0;
+                    const tier = getTierFromPoints(totalPoints);
+                    await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, body.userId, { tierLevel: tier.name });
+                    log(`Updated user ${body.userId} to tier ${tier.name} (${totalPoints} points)`);
+                    return res.json({
+                        success: true,
+                        userId: body.userId,
+                        totalPoints,
+                        tierLevel: tier.name,
+                        tierNumber: tier.level,
+                    });
+                }
+                catch (err) {
+                    log(`Error updating user tier: ${err.message}`);
+                    return res.json({
+                        success: false,
+                        error: err.message,
+                    }, 400);
+                }
+            }
+            else {
+                // Update all users
+                let updatedCount = 0;
+                let offset = 0;
+                const limit = 100;
+                while (true) {
+                    const usersResponse = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.limit(limit), Query.offset(offset)]);
+                    if (usersResponse.documents.length === 0)
+                        break;
+                    for (const user of usersResponse.documents) {
+                        const totalPoints = user.totalPoints || 0;
+                        const tier = getTierFromPoints(totalPoints);
+                        const currentTier = user.tierLevel || '';
+                        // Only update if tier changed
+                        if (currentTier !== tier.name) {
+                            await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, { tierLevel: tier.name });
+                            updatedCount++;
+                        }
+                    }
+                    offset += limit;
+                    if (usersResponse.documents.length < limit)
+                        break;
+                }
+                log(`Updated tier for ${updatedCount} users`);
+                return res.json({
+                    success: true,
+                    updatedCount,
+                });
+            }
         }
         // Default response
         return res.json({

@@ -4,6 +4,7 @@ import type { DownloadFormat } from '../../components'
 import { ReportsHeader, SearchAndFilter, ReportsList } from './components'
 import { exportService, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { reportsService } from '../../lib/services'
 
 interface Report {
   id: string
@@ -12,73 +13,104 @@ interface Report {
   lastGenerated: string
 }
 
+interface ReportMetadata {
+  events: Date | null
+  clients: Date | null
+  users: Date | null
+  reviews: Date | null
+}
+
 const Reports = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({
-    start: new Date(2025, 7, 22), // August 22, 2025
-    end: new Date(2025, 8, 25), // September 25, 2025
+    start: null,
+    end: null,
   })
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize] = useState(25)
+  const [reportMetadata, setReportMetadata] = useState<ReportMetadata | null>(null)
   const { addNotification } = useNotificationStore()
 
+  // Fetch report metadata on mount
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false)
-    }, 1000)
+    const fetchReportMetadata = async () => {
+      setIsLoading(true)
+      try {
+        const metadata = await reportsService.getReportMetadata()
+        setReportMetadata(metadata)
+      } catch (error) {
+        console.error('Error fetching report metadata:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
 
-    return () => clearTimeout(timer)
+    fetchReportMetadata()
   }, [])
 
+  // Helper function to format date as DD/MM/YYYY
+  const formatDate = (date: Date | null): string => {
+    if (!date) return 'N/A'
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    return `${day}/${month}/${year}`
+  }
+
+  // Generate reports array with real data from database
   const reports: Report[] = [
     {
       id: '1',
       name: 'Dashboard (All)',
       icon: 'mdi:chart-line',
-      lastGenerated: '20/10/2025',
+      lastGenerated: formatDate(reportMetadata?.events ?? reportMetadata?.clients ?? reportMetadata?.users ?? null),
     },
     {
       id: '2',
       name: 'Dashboard (Date range)',
       icon: 'mdi:calendar',
-      lastGenerated: '20/10/2025',
+      lastGenerated: formatDate(reportMetadata?.events ?? reportMetadata?.clients ?? reportMetadata?.users ?? null),
     },
     {
       id: '3',
       name: 'Event List',
       icon: 'mdi:chart-line',
-      lastGenerated: '20/10/2025',
+      lastGenerated: formatDate(reportMetadata?.events ?? null),
     },
     {
       id: '4',
       name: 'Clients & Brands (All)',
       icon: 'mdi:calendar',
-      lastGenerated: '20/10/2025',
+      lastGenerated: formatDate(reportMetadata?.clients ?? null),
     },
     {
       id: '5',
       name: 'App Users (All)',
       icon: 'mdi:chart-line',
-      lastGenerated: '20/10/2025',
+      lastGenerated: formatDate(reportMetadata?.users ?? null),
     },
     {
       id: '6',
       name: 'Points Earned (All)',
       icon: 'mdi:calendar',
-      lastGenerated: '20/10/2025',
+      lastGenerated: formatDate(reportMetadata?.reviews ?? null),
     },
     {
       id: '7',
       name: 'Points Earned (Date Range)',
       icon: 'mdi:chart-line',
-      lastGenerated: '20/10/2025',
+      lastGenerated: formatDate(reportMetadata?.reviews ?? null),
     },
   ]
 
-  const filteredReports = reports.filter((report) =>
-    report.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // Filter reports by search query only
+  // NOTE: Date range is NOT used to filter visible reports
+  // The date range only controls what data is included when exporting reports
+  const filteredReports = reports.filter((report) => {
+    return report.name.toLowerCase().includes(searchQuery.toLowerCase())
+  })
 
   // Calculate pagination
   const totalReports = filteredReports.length
@@ -126,6 +158,7 @@ const Reports = () => {
 
   // Handle export
   const handleExport = async (reportId: string, format: DownloadFormat) => {
+    setDownloadingReportId(reportId)
     try {
       const reportType = getReportType(reportId)
       const report = reports.find(r => r.id === reportId)
@@ -133,8 +166,8 @@ const Reports = () => {
       const timestamp = new Date().toISOString().split('T')[0]
       const filename = `${reportName}_${timestamp}.${format}`
 
-      // Use date range for date-range reports
-      const useDateRange = reportId === '2' || reportId === '7' ? dateRange : undefined
+      // Use date range if one is set, otherwise undefined (which means "all data")
+      const useDateRange = (dateRange.start && dateRange.end) ? dateRange : undefined
 
       if (format === 'csv') {
         await exportService.exportReport(reportType, filename, useDateRange)
@@ -158,6 +191,8 @@ const Reports = () => {
         title: 'Export Failed',
         message: error instanceof Error ? error.message : 'Failed to export report. Please try again.',
       })
+    } finally {
+      setDownloadingReportId(null)
     }
   }
 
@@ -187,6 +222,7 @@ const Reports = () => {
           pageSize={pageSize}
           onPageChange={handlePageChange}
           onExport={handleExport}
+          downloadingReportId={downloadingReportId}
         />
       </div>
     </DashboardLayout>

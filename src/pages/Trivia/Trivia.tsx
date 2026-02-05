@@ -14,7 +14,8 @@ import {
   EditTriviaModal,
   StatsCards,
 } from './components'
-import { triviaService, triviaResponsesService, clientsService, statisticsService, type TriviaStats, type TriviaDocument as ServiceTriviaDocument, type ClientDocument } from '../../lib/services'
+import { triviaService, triviaResponsesService, clientsService, statisticsService, userProfilesService, type TriviaStats, type TriviaDocument as ServiceTriviaDocument, type ClientDocument, type UserProfile } from '../../lib/services'
+import type { TriviaWinner } from './components/TriviaTable'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { Query } from '../../lib/appwrite'
 
@@ -27,7 +28,7 @@ interface TriviaQuiz {
   question: string
   date: string
   responses: number
-  winners: string[]
+  winners: TriviaWinner[]
   view: number
   skip: number
   incorrect: number
@@ -115,7 +116,41 @@ const Trivia = () => {
     const incorrectResponses = responses.filter(
       (response) => response.answerIndex !== doc.correctOptionIndex
     )
-    const uniqueUsers = new Set(responses.map((r) => r.user).filter(Boolean))
+    
+    // Get unique users who answered correctly (winners)
+    // Handle both string IDs and expanded relationship objects
+    const uniqueWinnerData = Array.from(
+      new Set(correctResponses.map((r) => {
+        const user = r.user
+        // If user is already an expanded object, extract the ID
+        if (typeof user === 'object' && user !== null && '$id' in user) {
+          return (user as { $id: string }).$id
+        }
+        return user as string
+      }).filter(Boolean))
+    ).slice(0, 10) as string[]
+    
+    // Fetch user profiles for winners in parallel for better performance
+    const winnerProfiles: TriviaWinner[] = await Promise.all(
+      uniqueWinnerData.map(async (userId) => {
+        try {
+          const profile = await userProfilesService.getById(userId) as UserProfile | null
+          if (profile) {
+            return {
+              id: profile.$id,
+              username: profile.username || undefined,
+              firstname: profile.firstname || undefined,
+              lastname: profile.lastname || undefined,
+              avatarURL: profile.avatarURL || undefined,
+            }
+          }
+        } catch {
+          // Profile fetch failed, continue with fallback
+        }
+        // Fallback: return with just ID if profile not found or fetch failed
+        return { id: userId }
+      })
+    )
     
     // Get client name
     const clientName = doc.client && clientsMap.has(doc.client) 
@@ -127,9 +162,9 @@ const Trivia = () => {
       question: doc.question || 'No question',
       date,
       responses: responses.length,
-      winners: Array.from(uniqueUsers).slice(0, 10) as string[], // First 10 unique users
-      view: responses.length, // Using responses as proxy for views
-      skip: 0, // Not tracked in current schema
+      winners: winnerProfiles,
+      view: doc.views || 0, // Views from trivia document
+      skip: doc.skips || 0, // Skips from trivia document
       incorrect: incorrectResponses.length,
       winnersCount: correctResponses.length,
       status,
@@ -276,11 +311,20 @@ const Trivia = () => {
         } else {
           await fetchTrivia(currentPage) // Refresh list
         }
+        addNotification({
+          type: 'success',
+          title: 'Trivia Deleted',
+          message: 'The trivia quiz has been successfully deleted.',
+        })
         setTriviaToDelete(null)
         setIsDeleteModalOpen(false)
       } catch (err) {
         console.error('Error deleting trivia:', err)
-        setError('Failed to delete trivia quiz. Please try again.')
+        addNotification({
+          type: 'error',
+          title: 'Delete Failed',
+          message: 'Failed to delete trivia quiz. Please try again.',
+        })
         setIsDeleteModalOpen(false)
       }
     }
@@ -293,6 +337,11 @@ const Trivia = () => {
 
   const handleUpdateTrivia = async () => {
     await fetchTrivia(currentPage) // Refresh list after update
+    addNotification({
+      type: 'success',
+      title: 'Trivia Updated',
+      message: 'The trivia quiz has been successfully updated.',
+    })
   }
 
   const handleCreateTrivia = async (triviaData: {
@@ -320,9 +369,18 @@ const Trivia = () => {
       setIsCreateModalOpen(false)
       setCurrentPage(1)
       await fetchTrivia(1) // Refresh list - reset to page 1
+      addNotification({
+        type: 'success',
+        title: 'Trivia Created',
+        message: 'The trivia quiz has been successfully created.',
+      })
     } catch (err) {
       console.error('Error creating trivia:', err)
-      setError('Failed to create trivia quiz. Please try again.')
+      addNotification({
+        type: 'error',
+        title: 'Create Failed',
+        message: 'Failed to create trivia quiz. Please try again.',
+      })
     }
   }
 

@@ -167,6 +167,13 @@ const DateFilterModal = ({
     onClose()
   }
 
+  const handleClear = () => {
+    setSelectedStartDate(null)
+    setSelectedEndDate(null)
+    onSelect(null, null)
+    onClose()
+  }
+
   const calendarDays = getDaysInMonth(currentMonth)
   const monthYear = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
@@ -212,12 +219,22 @@ const DateFilterModal = ({
           {/* Selected Date Range */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-700">{formatDateRange()}</p>
-            <button
-              onClick={handleToday}
-              className="px-3 py-1.5 text-sm font-medium text-[#1D0A74] hover:bg-[#1D0A74]/10 rounded-lg transition-colors"
-            >
-              Today
-            </button>
+            <div className="flex gap-2">
+              {(selectedStartDate || selectedEndDate) && (
+                <button
+                  onClick={handleClear}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+              <button
+                onClick={handleToday}
+                className="px-3 py-1.5 text-sm font-medium text-[#1D0A74] hover:bg-[#1D0A74]/10 rounded-lg transition-colors"
+              >
+                Today
+              </button>
+            </div>
           </div>
         </div>
 

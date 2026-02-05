@@ -51,6 +51,7 @@
             "runtime": "node-22",
             "scopes": [
                 "users.read",
+                "users.write",
                 "databases.read",
                 "databases.write",
                 "policies.read",
@@ -713,6 +714,24 @@
                     "min": 0,
                     "max": 1000,
                     "default": null
+                },
+                {
+                    "key": "views",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 10000000,
+                    "default": 0
+                },
+                {
+                    "key": "skips",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 10000000,
+                    "default": 0
                 }
             ],
             "indexes": []

@@ -1,4 +1,4 @@
-import { Client, Databases, Query } from 'node-appwrite';
+import { Client, Databases, Query, Users } from 'node-appwrite';
 
 // Type definitions
 interface StatisticsRequest {
@@ -55,6 +55,27 @@ const REVIEWS_TABLE_ID = 'reviews';
 const TRIVIA_TABLE_ID = 'trivia';
 const CHECKINS_TABLE_ID = 'checkins';
 const NOTIFICATIONS_TABLE_ID = 'notifications';
+
+// Tier thresholds
+const TIER_THRESHOLDS = [
+  { level: 5, name: 'SampleMaster', minPoints: 100000 },
+  { level: 4, name: 'VIS', minPoints: 25000 },
+  { level: 3, name: 'SuperSampler', minPoints: 5000 },
+  { level: 2, name: 'SampleFan', minPoints: 1000 },
+  { level: 1, name: 'NewbieSampler', minPoints: 0 },
+];
+
+/**
+ * Calculate tier based on points
+ */
+function getTierFromPoints(points: number): { level: number; name: string } {
+  for (const tier of TIER_THRESHOLDS) {
+    if (points >= tier.minPoints) {
+      return { level: tier.level, name: tier.name };
+    }
+  }
+  return { level: 1, name: 'NewbieSampler' };
+}
 
 /**
  * Get date range for this month
@@ -607,6 +628,143 @@ export default async function handler({ req, res, log, error }: any) {
         page: body.page,
         statistics,
       });
+    }
+
+    // Handle get user emails endpoint (also returns last login dates)
+    if (req.path === '/get-user-emails' && req.method === 'POST') {
+      log('Processing get-user-emails request');
+
+      const body = req.body as { authIDs?: string[] };
+
+      if (!body || !body.authIDs || !Array.isArray(body.authIDs)) {
+        return res.json(
+          {
+            success: false,
+            error: 'authIDs array is required',
+          },
+          400
+        );
+      }
+
+      const users = new Users(client);
+      const emailMap: Record<string, string> = {};
+      const lastLoginMap: Record<string, string> = {};
+
+      // Fetch emails and last login dates for each authID
+      for (const authID of body.authIDs) {
+        try {
+          const user = await users.get(authID);
+          if (user) {
+            if (user.email) {
+              emailMap[authID] = user.email;
+            }
+            // accessedAt is the last time the user accessed the app
+            if (user.accessedAt) {
+              lastLoginMap[authID] = user.accessedAt;
+            }
+          }
+        } catch (err) {
+          // User not found or error - skip
+          log(`Could not fetch user ${authID}: ${(err as Error).message}`);
+        }
+      }
+
+      log(`Successfully fetched ${Object.keys(emailMap).length} emails and ${Object.keys(lastLoginMap).length} last login dates`);
+
+      return res.json({
+        success: true,
+        emails: emailMap,
+        lastLogins: lastLoginMap,
+      });
+    }
+
+    // Handle update user tier endpoint
+    if (req.path === '/update-user-tier' && req.method === 'POST') {
+      log('Processing update-user-tier request');
+
+      const body = req.body as { userId?: string };
+
+      if (body.userId) {
+        // Update single user
+        try {
+          const user = await databases.getDocument(
+            DATABASE_ID,
+            USER_PROFILES_TABLE_ID,
+            body.userId
+          );
+
+          const totalPoints = (user.totalPoints as number) || 0;
+          const tier = getTierFromPoints(totalPoints);
+
+          await databases.updateDocument(
+            DATABASE_ID,
+            USER_PROFILES_TABLE_ID,
+            body.userId,
+            { tierLevel: tier.name }
+          );
+
+          log(`Updated user ${body.userId} to tier ${tier.name} (${totalPoints} points)`);
+
+          return res.json({
+            success: true,
+            userId: body.userId,
+            totalPoints,
+            tierLevel: tier.name,
+            tierNumber: tier.level,
+          });
+        } catch (err) {
+          log(`Error updating user tier: ${(err as Error).message}`);
+          return res.json(
+            {
+              success: false,
+              error: (err as Error).message,
+            },
+            400
+          );
+        }
+      } else {
+        // Update all users
+        let updatedCount = 0;
+        let offset = 0;
+        const limit = 100;
+
+        while (true) {
+          const usersResponse = await databases.listDocuments(
+            DATABASE_ID,
+            USER_PROFILES_TABLE_ID,
+            [Query.limit(limit), Query.offset(offset)]
+          );
+
+          if (usersResponse.documents.length === 0) break;
+
+          for (const user of usersResponse.documents) {
+            const totalPoints = (user.totalPoints as number) || 0;
+            const tier = getTierFromPoints(totalPoints);
+            const currentTier = (user.tierLevel as string) || '';
+
+            // Only update if tier changed
+            if (currentTier !== tier.name) {
+              await databases.updateDocument(
+                DATABASE_ID,
+                USER_PROFILES_TABLE_ID,
+                user.$id,
+                { tierLevel: tier.name }
+              );
+              updatedCount++;
+            }
+          }
+
+          offset += limit;
+          if (usersResponse.documents.length < limit) break;
+        }
+
+        log(`Updated tier for ${updatedCount} users`);
+
+        return res.json({
+          success: true,
+          updatedCount,
+        });
+      }
     }
 
     // Default response

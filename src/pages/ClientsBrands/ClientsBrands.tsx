@@ -281,9 +281,20 @@ const ClientsBrands = () => {
         } else {
           await fetchClients(currentPage) // Refresh list
         }
+        
+        // Show success notification
+        addNotification({
+          type: 'success',
+          title: 'Client Deleted',
+          message: 'The client has been successfully deleted.',
+        })
       } catch (err) {
         console.error('Error deleting client:', err)
-        setError('Failed to delete client. Please try again.')
+        addNotification({
+          type: 'error',
+          title: 'Failed to Delete Client',
+          message: extractErrorMessage(err),
+        })
       } finally {
         isDeletingRef.current = false
       }
@@ -397,11 +408,23 @@ const ClientsBrands = () => {
       
       await clientsService.update(selectedClient.id, formData)
       await fetchClients(currentPage) // Refresh list - keep current page
+      
+      // Show success notification
+      addNotification({
+        type: 'success',
+        title: 'Client Updated',
+        message: 'The client has been successfully updated.',
+      })
+      
       setIsEditModalOpen(false)
       setSelectedClient(null)
     } catch (err) {
       console.error('Error updating client:', err)
-      setError('Failed to update client. Please try again.')
+      addNotification({
+        type: 'error',
+        title: 'Failed to Update Client',
+        message: extractErrorMessage(err),
+      })
     }
   }
 

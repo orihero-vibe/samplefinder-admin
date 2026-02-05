@@ -1,12 +1,21 @@
 import { Icon } from '@iconify/react'
 import { Pagination } from '../../../components'
 
+// Winner object with user profile data
+export interface TriviaWinner {
+  id: string
+  username?: string
+  firstname?: string
+  lastname?: string
+  avatarURL?: string
+}
+
 interface TriviaQuiz {
   id: string
   question: string
   date: string
   responses: number
-  winners: string[]
+  winners: TriviaWinner[]
   view: number
   skip: number
   incorrect: number
@@ -50,8 +59,41 @@ const TriviaTable = ({
     }
   }
 
-  const getInitials = (name: string) => {
-    return name.substring(0, 2).toUpperCase()
+  const getInitials = (winner: TriviaWinner) => {
+    // Try firstname + lastname first
+    if (winner.firstname && winner.lastname) {
+      return `${winner.firstname.charAt(0)}${winner.lastname.charAt(0)}`.toUpperCase()
+    }
+    // Try firstname only
+    if (winner.firstname) {
+      return winner.firstname.substring(0, 2).toUpperCase()
+    }
+    // Try lastname only
+    if (winner.lastname) {
+      return winner.lastname.substring(0, 2).toUpperCase()
+    }
+    // Try username
+    if (winner.username) {
+      return winner.username.substring(0, 2).toUpperCase()
+    }
+    // Fallback to ID (first 2 characters)
+    if (winner.id) {
+      return winner.id.substring(0, 2).toUpperCase()
+    }
+    return '??'
+  }
+
+  const getDisplayName = (winner: TriviaWinner) => {
+    if (winner.firstname && winner.lastname) {
+      return `${winner.firstname} ${winner.lastname}`
+    }
+    if (winner.firstname) {
+      return winner.firstname
+    }
+    if (winner.lastname) {
+      return winner.lastname
+    }
+    return winner.username || `User ${winner.id?.substring(0, 6) || 'Unknown'}`
   }
 
   const getAvatarColor = (index: number) => {
@@ -154,15 +196,25 @@ const TriviaTable = ({
                         <>
                           <div className="flex -space-x-2">
                             {trivia.winners.slice(0, 5).map((winner, index) => (
-                              <div
-                                key={index}
-                                className={`w-8 h-8 rounded-full ${getAvatarColor(
-                                  index
-                                )} flex items-center justify-center text-white text-xs font-semibold border-2 border-white`}
-                                title={winner}
-                              >
-                                {getInitials(winner)}
-                              </div>
+                              winner.avatarURL ? (
+                                <img
+                                  key={winner.id}
+                                  src={winner.avatarURL}
+                                  alt={getDisplayName(winner)}
+                                  className="w-8 h-8 rounded-full border-2 border-white object-cover"
+                                  title={getDisplayName(winner)}
+                                />
+                              ) : (
+                                <div
+                                  key={winner.id}
+                                  className={`w-8 h-8 rounded-full ${getAvatarColor(
+                                    index
+                                  )} flex items-center justify-center text-white text-xs font-semibold border-2 border-white`}
+                                  title={getDisplayName(winner)}
+                                >
+                                  {getInitials(winner)}
+                                </div>
+                              )
                             ))}
                           </div>
                           {trivia.winners.length > 5 && (

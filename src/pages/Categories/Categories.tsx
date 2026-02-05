@@ -197,6 +197,7 @@ const Categories = () => {
         } else {
           await fetchCategories(currentPage) // Refresh list
         }
+        setIsDeleteModalOpen(false)
         setCategoryToDelete(null)
         addNotification({
           type: 'success',

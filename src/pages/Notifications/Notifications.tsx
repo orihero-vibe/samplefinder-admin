@@ -30,6 +30,8 @@ const Notifications = () => {
   const [typeFilter, setTypeFilter] = useState('All Types')
   const [sortBy, setSortBy] = useState('Date')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [editingNotification, setEditingNotification] = useState<{ id: string; data: NotificationFormData } | null>(null)
+  const [duplicatingData, setDuplicatingData] = useState<NotificationFormData | null>(null)
   const [statistics, setStatistics] = useState<NotificationsStats | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [currentPage, setCurrentPage] = useState(1)
@@ -239,30 +241,117 @@ const Notifications = () => {
         },
       ]
 
-  // Handle save notification
+  // Handle save notification (create or update)
   const handleSaveNotification = async (notificationData: NotificationFormData) => {
     try {
-      await notificationsService.create(notificationData)
+      if (editingNotification) {
+        // Update existing notification
+        await notificationsService.update(editingNotification.id, notificationData)
+        
+        addNotification({
+          type: 'success',
+          title: 'Notification Updated',
+          message: 'Notification has been updated successfully.',
+        })
+        
+        setEditingNotification(null)
+      } else {
+        // Create new notification
+        await notificationsService.create(notificationData)
+        
+        addNotification({
+          type: 'success',
+          title: 'Notification Created',
+          message: notificationData.schedule === 'Send Immediately' 
+            ? 'Notification has been sent successfully.' 
+            : 'Notification has been scheduled successfully.',
+        })
+        
+        // Reset to page 1 after creating
+        setCurrentPage(1)
+      }
       
-      addNotification({
-        type: 'success',
-        title: 'Notification Created',
-        message: notificationData.schedule === 'Send Immediately' 
-          ? 'Notification has been sent successfully.' 
-          : 'Notification has been scheduled successfully.',
-      })
-      
-      // Refresh notifications and statistics - reset to page 1 after creating
-      setCurrentPage(1)
-      await Promise.all([fetchNotifications(1), fetchStatistics()])
+      // Refresh notifications and statistics
+      await Promise.all([fetchNotifications(editingNotification ? currentPage : 1), fetchStatistics()])
       setIsCreateModalOpen(false)
+      setDuplicatingData(null)
     } catch (error: unknown) {
-      console.error('Error creating notification:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create notification. Please try again.'
+      console.error('Error saving notification:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save notification. Please try again.'
       addNotification({
         type: 'error',
-        title: 'Error Creating Notification',
+        title: editingNotification ? 'Error Updating Notification' : 'Error Creating Notification',
         message: errorMessage,
+      })
+    }
+  }
+
+  // Handle edit notification - fetch full data and open modal
+  const handleEditNotification = async (notification: Notification) => {
+    try {
+      // Fetch full notification document to get all fields including message
+      const fullNotification = await notificationsService.getById(notification.id)
+      
+      // Parse scheduledAt to get date and time components
+      let scheduledAt = ''
+      let scheduledTime = ''
+      let schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring' = 'Send Immediately'
+      
+      if (fullNotification.scheduledAt) {
+        const scheduledDate = new Date(fullNotification.scheduledAt)
+        scheduledAt = scheduledDate.toISOString().split('T')[0]
+        scheduledTime = scheduledDate.toTimeString().slice(0, 5)
+        schedule = 'Schedule for Later'
+      } else if (fullNotification.status === 'Sent') {
+        schedule = 'Send Immediately'
+      }
+      
+      setEditingNotification({
+        id: notification.id,
+        data: {
+          title: fullNotification.title,
+          message: fullNotification.message,
+          type: fullNotification.type,
+          targetAudience: fullNotification.targetAudience,
+          schedule,
+          scheduledAt,
+          scheduledTime,
+        }
+      })
+      setIsCreateModalOpen(true)
+    } catch (error: unknown) {
+      console.error('Error fetching notification:', error)
+      addNotification({
+        type: 'error',
+        title: 'Error Loading Notification',
+        message: 'Failed to load notification details. Please try again.',
+      })
+    }
+  }
+
+  // Handle duplicate notification - fetch data and open modal in create mode
+  const handleDuplicateNotification = async (notification: Notification) => {
+    try {
+      // Fetch full notification document to get all fields including message
+      const fullNotification = await notificationsService.getById(notification.id)
+      
+      // Set duplicating data (not edit mode - will create a new notification)
+      setDuplicatingData({
+        title: fullNotification.title,
+        message: fullNotification.message,
+        type: fullNotification.type,
+        targetAudience: fullNotification.targetAudience,
+        schedule: 'Send Immediately', // Default to send immediately for duplicates
+        scheduledAt: '',
+        scheduledTime: '',
+      })
+      setIsCreateModalOpen(true)
+    } catch (error: unknown) {
+      console.error('Error fetching notification:', error)
+      addNotification({
+        type: 'error',
+        title: 'Error Loading Notification',
+        message: 'Failed to load notification details. Please try again.',
       })
     }
   }
@@ -271,6 +360,9 @@ const Notifications = () => {
   const handleDeleteNotification = async (notification: Notification) => {
     try {
       await notificationsService.delete(notification.id)
+      
+      // Close modal first
+      setConfirmationModal(prev => ({ ...prev, isOpen: false }))
       
       addNotification({
         type: 'success',
@@ -285,16 +377,15 @@ const Notifications = () => {
       } else {
         await Promise.all([fetchNotifications(currentPage), fetchStatistics()])
       }
-      setConfirmationModal({ ...confirmationModal, isOpen: false })
     } catch (error: unknown) {
       console.error('Error deleting notification:', error)
+      setConfirmationModal(prev => ({ ...prev, isOpen: false }))
       const errorMessage = error instanceof Error ? error.message : 'Failed to delete notification. Please try again.'
       addNotification({
         type: 'error',
         title: 'Error Deleting Notification',
         message: errorMessage,
       })
-      setConfirmationModal({ ...confirmationModal, isOpen: false })
     }
   }
 
@@ -342,12 +433,10 @@ const Notifications = () => {
           pageSize={pageSize}
           onPageChange={handlePageChange}
           onEditClick={(notification) => {
-            console.log('Edit notification:', notification)
-            // TODO: Implement edit functionality
+            handleEditNotification(notification)
           }}
           onDuplicateClick={(notification) => {
-            console.log('Duplicate notification:', notification)
-            // TODO: Implement duplicate functionality
+            handleDuplicateNotification(notification)
           }}
           onDeleteClick={(notification) => {
             setConfirmationModal({
@@ -360,11 +449,17 @@ const Notifications = () => {
         />
       </div>
 
-      {/* Create Notification Modal */}
+      {/* Create/Edit Notification Modal */}
       <CreateNotificationModal
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={() => {
+          setIsCreateModalOpen(false)
+          setEditingNotification(null)
+          setDuplicatingData(null)
+        }}
         onSave={handleSaveNotification}
+        initialData={editingNotification?.data || duplicatingData}
+        isEditMode={!!editingNotification}
       />
 
       {/* Confirmation Modal */}

@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { Icon } from '@iconify/react'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import type { TriviaWinner } from './TriviaTable'
+import type { TriviaParticipant } from '../TriviaDetails'
 
 interface TriviaQuiz {
   id: string
@@ -8,7 +11,7 @@ interface TriviaQuiz {
   date: string
   scheduledDateTime: string
   responses: number
-  winners: string[]
+  winners: TriviaWinner[]
   view: number
   skip: number
   incorrect: number
@@ -17,6 +20,7 @@ interface TriviaQuiz {
   answers: { option: string; isCorrect: boolean; responseCount: number }[]
   totalParticipants: number
   engagementRate: number
+  participants: TriviaParticipant[]
 }
 
 interface TriviaDetailsContentProps {
@@ -24,6 +28,10 @@ interface TriviaDetailsContentProps {
 }
 
 const TriviaDetailsContent = ({ trivia }: TriviaDetailsContentProps) => {
+  const [participantsFilter, setParticipantsFilter] = useState<'all' | 'correct' | 'incorrect'>('all')
+  const [participantsPage, setParticipantsPage] = useState(1)
+  const participantsPerPage = 10
+
   // Calculate response distribution data for charts
   const totalResponses = trivia.answers.reduce((sum, answer) => sum + answer.responseCount, 0)
   
@@ -225,6 +233,179 @@ const TriviaDetailsContent = ({ trivia }: TriviaDetailsContentProps) => {
             )
           })}
         </div>
+      </div>
+
+      {/* Participants List */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Participants</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              {trivia.participants.length} total participants
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setParticipantsFilter('all'); setParticipantsPage(1) }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                participantsFilter === 'all'
+                  ? 'bg-[#1D0A74] text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => { setParticipantsFilter('correct'); setParticipantsPage(1) }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                participantsFilter === 'correct'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Correct
+            </button>
+            <button
+              onClick={() => { setParticipantsFilter('incorrect'); setParticipantsPage(1) }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                participantsFilter === 'incorrect'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Incorrect
+            </button>
+          </div>
+        </div>
+
+        {/* Participants Table */}
+        {(() => {
+          const filteredParticipants = trivia.participants.filter(p => {
+            if (participantsFilter === 'correct') return p.isCorrect
+            if (participantsFilter === 'incorrect') return !p.isCorrect
+            return true
+          })
+          const totalPages = Math.ceil(filteredParticipants.length / participantsPerPage)
+          const paginatedParticipants = filteredParticipants.slice(
+            (participantsPage - 1) * participantsPerPage,
+            participantsPage * participantsPerPage
+          )
+
+          if (filteredParticipants.length === 0) {
+            return (
+              <div className="text-center py-8 text-gray-500">
+                No participants found
+              </div>
+            )
+          }
+
+          return (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">User</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Answer</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Result</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Answered At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedParticipants.map((participant) => {
+                      const answerLabel = String.fromCharCode(65 + participant.answerIndex)
+                      const answerText = trivia.answers[participant.answerIndex]?.option || 'Unknown'
+                      const displayName = participant.username || 
+                        (participant.firstname && participant.lastname 
+                          ? `${participant.firstname} ${participant.lastname}` 
+                          : participant.firstname || participant.id.slice(0, 8))
+
+                      return (
+                        <tr key={participant.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              {participant.avatarURL ? (
+                                <img
+                                  src={participant.avatarURL}
+                                  alt={displayName}
+                                  className="w-8 h-8 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-[#1D0A74] flex items-center justify-center text-white text-sm font-medium">
+                                  {(participant.firstname?.[0] || participant.username?.[0] || 'U').toUpperCase()}
+                                </div>
+                              )}
+                              <span className="font-medium text-gray-900">{displayName}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="text-gray-700">
+                              <span className="font-semibold">{answerLabel}.</span> {answerText}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {participant.isCorrect ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                                <Icon icon="mdi:check-circle" className="w-3 h-3" />
+                                Correct
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
+                                <Icon icon="mdi:close-circle" className="w-3 h-3" />
+                                Incorrect
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-600">
+                            {participant.answeredAt
+                              ? new Date(participant.answeredAt).toLocaleString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : 'N/A'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                  <span className="text-sm text-gray-600">
+                    Showing {(participantsPage - 1) * participantsPerPage + 1} to{' '}
+                    {Math.min(participantsPage * participantsPerPage, filteredParticipants.length)} of{' '}
+                    {filteredParticipants.length} participants
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setParticipantsPage(p => Math.max(1, p - 1))}
+                      disabled={participantsPage === 1}
+                      className="p-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                    >
+                      <Icon icon="mdi:chevron-left" className="w-5 h-5" />
+                    </button>
+                    <span className="text-sm text-gray-700">
+                      Page {participantsPage} of {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setParticipantsPage(p => Math.min(totalPages, p + 1))}
+                      disabled={participantsPage === totalPages}
+                      className="p-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                    >
+                      <Icon icon="mdi:chevron-right" className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )
+        })()}
       </div>
     </div>
   )

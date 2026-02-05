@@ -159,8 +159,12 @@ const EventsTable = ({
                     <button
                       className="hover:text-gray-900 transition-colors"
                       onClick={() => onHideClick(event)}
+                      title={event.status === 'Hidden' ? 'Unhide event' : 'Hide event'}
                     >
-                      <Icon icon="mdi:eye" className="w-5 h-5" />
+                      <Icon 
+                        icon={event.status === 'Hidden' ? 'mdi:eye-off' : 'mdi:eye'} 
+                        className="w-5 h-5" 
+                      />
                     </button>
                     <button
                       className="hover:text-gray-900 transition-colors"

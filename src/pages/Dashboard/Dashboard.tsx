@@ -68,6 +68,7 @@ const Dashboard = () => {
     longitude?: string
   } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false)
   const [isCSVUploadOpen, setIsCSVUploadOpen] = useState(false)
   const [events, setEvents] = useState<Event[]>([])
@@ -252,13 +253,22 @@ const Dashboard = () => {
         queries.push(orderMethod('date'))
       }
       
-      // Add pagination
-      queries.push(Query.limit(pageSize))
-      queries.push(Query.offset((page - 1) * pageSize))
+      // Determine if we're searching
+      const isSearching = searchTerm.trim().length > 0
       
-      // Fetch events with filters and pagination
-      // Use search service if search term exists, otherwise use list service
-      const result = searchTerm.trim() 
+      // When searching, fetch more records for client-side filtering, then paginate results
+      // When not searching, use server-side pagination
+      if (!isSearching) {
+        queries.push(Query.limit(pageSize))
+        queries.push(Query.offset((page - 1) * pageSize))
+      } else {
+        // Fetch up to 500 records for search filtering
+        queries.push(Query.limit(500))
+      }
+      
+      // Fetch events with filters
+      // Use search service if search term exists (does client-side filtering), otherwise use list service
+      const result = isSearching
         ? await eventsService.search(searchTerm.trim(), queries)
         : await eventsService.list(queries)
       
@@ -281,9 +291,14 @@ const Dashboard = () => {
         setCurrentPage(1)
       }
       
+      // For search results, apply client-side pagination
+      const documentsToProcess = isSearching
+        ? result.documents.slice((page - 1) * pageSize, page * pageSize)
+        : result.documents
+      
       // OPTIMIZATION: Collect all unique client IDs and fetch them in a single batch
       const clientIds = [...new Set(
-        result.documents
+        documentsToProcess
           .map(doc => doc.client as string | undefined)
           .filter((id): id is string => !!id)
       )]
@@ -294,7 +309,7 @@ const Dashboard = () => {
         : new Map<string, ClientDocument>()
       
       // Map events using the pre-fetched client data
-      let mappedEvents = result.documents.map((doc) => {
+      let mappedEvents = documentsToProcess.map((doc) => {
         const event = mapEventDocumentToEvent(doc as unknown as LocalEventDocument)
         
         // Look up client name from the map (instant lookup)
@@ -326,6 +341,7 @@ const Dashboard = () => {
       console.error('Error fetching events:', err)
     } finally {
       setIsLoading(false)
+      setIsInitialLoad(false)
     }
   }
 
@@ -520,6 +536,7 @@ const Dashboard = () => {
     const normalizeHeader = (header: string): string => {
       const lower = header.toLowerCase().trim()
       const headerMap: Record<string, string> = {
+        // Required columns
         'event name': 'Event Name',
         'eventname': 'Event Name',
         'name': 'Event Name',
@@ -537,6 +554,33 @@ const Dashboard = () => {
         'brand': 'Brand Name',
         'points': 'Points',
         'point': 'Points',
+        // Optional columns
+        'start time': 'Start Time',
+        'starttime': 'Start Time',
+        'end time': 'End Time',
+        'endtime': 'End Time',
+        'category': 'Category',
+        'product type': 'Product Type',
+        'producttype': 'Product Type',
+        'discount': 'Discount',
+        'discount link': 'Discount Link',
+        'discountlink': 'Discount Link',
+        'discount image url': 'Discount Image URL',
+        'discountimageurl': 'Discount Image URL',
+        'discount image': 'Discount Image URL',
+        'event info': 'Event Info',
+        'eventinfo': 'Event Info',
+        'radius': 'Radius',
+        'check-in code': 'Check-in Code',
+        'checkincode': 'Check-in Code',
+        'checkin code': 'Check-in Code',
+        'review points': 'Review Points',
+        'reviewpoints': 'Review Points',
+        'latitude': 'Latitude',
+        'lat': 'Latitude',
+        'longitude': 'Longitude',
+        'lng': 'Longitude',
+        'long': 'Longitude',
       }
       return headerMap[lower] || header
     }
@@ -641,17 +685,26 @@ const Dashboard = () => {
             throw new Error(`Invalid date format: ${row['Date']}. Expected formats: DD-MM-YYYY, YYYY-MM-DD, or MM/DD/YYYY`)
           }
 
-          // Default times (can be extended if CSV includes time columns)
-          const startTime = '09:00' // Default start time
-          const endTime = '17:00' // Default end time
+          // Use times from CSV or default values
+          const startTime = row['Start Time']?.trim() || '09:00' // Default start time
+          const endTime = row['End Time']?.trim() || '17:00' // Default end time
 
-          // Parse start time
-          const [startHours, startMinutes] = startTime.split(':').map(Number)
+          // Parse start time (supports HH:MM format)
+          const parseTimeString = (timeStr: string): { hours: number; minutes: number } => {
+            const cleanTime = timeStr.replace(/[APap][Mm]/, '').trim()
+            const [h, m] = cleanTime.split(':').map(Number)
+            let hours = h
+            // Handle AM/PM if present
+            if (timeStr.toLowerCase().includes('pm') && hours < 12) hours += 12
+            if (timeStr.toLowerCase().includes('am') && hours === 12) hours = 0
+            return { hours: hours || 0, minutes: m || 0 }
+          }
+
+          const { hours: startHours, minutes: startMinutes } = parseTimeString(startTime)
           const startDateTime = new Date(eventDate)
           startDateTime.setHours(startHours, startMinutes, 0, 0)
 
-          // Parse end time
-          const [endHours, endMinutes] = endTime.split(':').map(Number)
+          const { hours: endHours, minutes: endMinutes } = parseTimeString(endTime)
           const endDateTime = new Date(eventDate)
           endDateTime.setHours(endHours, endMinutes, 0, 0)
 
@@ -669,6 +722,44 @@ const Dashboard = () => {
             }
           }
 
+          // Find category by name if provided
+          let categoryId: string | null = null
+          if (row['Category']?.trim()) {
+            try {
+              const category = await categoriesService.findByTitle(row['Category'].trim())
+              categoryId = category?.$id || null
+            } catch (catErr) {
+              console.warn(`Category "${row['Category']}" not found, skipping category assignment`)
+            }
+          }
+
+          // Parse product types (comma-separated)
+          const productTypes = row['Product Type']?.trim()
+            ? row['Product Type'].split(',').map((pt: string) => pt.trim()).filter((pt: string) => pt)
+            : []
+
+          // Use check-in code from CSV or generate one
+          const checkInCode = row['Check-in Code']?.trim() || `CHK-${Date.now()}-${i}`
+
+          // Parse review points (use Points value as fallback)
+          const checkInPoints = parseFloat(row['Points']) || 0
+          const reviewPoints = row['Review Points']?.trim() 
+            ? parseFloat(row['Review Points']) || 0
+            : checkInPoints // Use checkInPoints as default for review points
+
+          // Parse event info or generate default
+          const eventInfo = row['Event Info']?.trim() || `Event at ${row['Address'] || row['City'] || 'location'}`
+
+          // Parse radius
+          const radius = row['Radius']?.trim() ? parseInt(row['Radius']) || 0 : 0
+
+          // Parse discount
+          const discount = row['Discount']?.trim() ? parseFloat(row['Discount']) || 0 : 0
+          
+          // Get discount link and image URL if provided
+          const discountLink = row['Discount Link']?.trim() || ''
+          const discountImageURL = row['Discount Image URL']?.trim() || ''
+
           // Prepare event payload
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const eventPayload: any = {
@@ -680,20 +771,49 @@ const Dashboard = () => {
             address: row['Address'] || '',
             state: row['State'] || '',
             zipCode: row['Zip Code'] || '',
-            productType: [],
+            productType: productTypes,
             products: row['Product'] || '',
-            checkInCode: `CHK-${Date.now()}-${i}`, // Generate unique check-in code
-            checkInPoints: parseFloat(row['Points']) || 0,
-            reviewPoints: parseFloat(row['Points']) || 0, // Use same points for review
-            eventInfo: `Event at ${row['Address'] || row['City'] || 'location'}`,
-            radius: parseInt(row['Radius']) || 0, // Default radius value
+            checkInCode: checkInCode,
+            checkInPoints: checkInPoints,
+            reviewPoints: reviewPoints,
+            eventInfo: eventInfo,
+            radius: radius,
             isArchived: false,
             isHidden: false,
+          }
+
+          // Add discount if provided
+          if (discount > 0) {
+            eventPayload.discount = discount
+          }
+          
+          // Add discount link if provided
+          if (discountLink) {
+            eventPayload.discountLink = discountLink
+          }
+          
+          // Add discount image URL if provided
+          if (discountImageURL) {
+            eventPayload.discountImageURL = discountImageURL
+          }
+
+          // Add location if latitude and longitude provided
+          if (row['Latitude']?.trim() && row['Longitude']?.trim()) {
+            const lat = parseFloat(row['Latitude'])
+            const lng = parseFloat(row['Longitude'])
+            if (!isNaN(lat) && !isNaN(lng)) {
+              eventPayload.location = [lng, lat] // Appwrite format: [longitude, latitude]
+            }
           }
 
           // Add client if found
           if (clientId) {
             eventPayload.client = clientId
+          }
+
+          // Add category if found
+          if (categoryId) {
+            eventPayload.categories = categoryId
           }
 
           // Create event
@@ -1211,7 +1331,7 @@ const Dashboard = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  if (isLoading) {
+  if (isLoading && isInitialLoad) {
     return (
       <DashboardLayout>
         <ShimmerPage />
@@ -1277,13 +1397,34 @@ const Dashboard = () => {
             }
           }}
           onHideClick={(event) => {
+            const isCurrentlyHidden = event.status === 'Hidden'
             setSelectedEvent(event)
             setConfirmationModal({
               isOpen: true,
-              type: 'hide',
-              onConfirm: () => {
-                console.log('Hide event:', event)
-                // TODO: Implement hide functionality
+              type: isCurrentlyHidden ? 'unhide' : 'hide',
+              onConfirm: async () => {
+                try {
+                  const eventId = (event as Event & { id?: string }).id
+                  if (!eventId) {
+                    throw new Error('Event ID not found')
+                  }
+                  await eventsService.update(eventId, { isHidden: !isCurrentlyHidden })
+                  addNotification({
+                    type: 'success',
+                    title: isCurrentlyHidden ? 'Event Unhidden' : 'Event Hidden',
+                    message: `Event "${event.venueName}" has been ${isCurrentlyHidden ? 'unhidden' : 'hidden'} successfully.`,
+                  })
+                  setConfirmationModal({ ...confirmationModal, isOpen: false })
+                  await fetchEvents(currentPage)
+                } catch (err) {
+                  const errorMessage = extractErrorMessage(err)
+                  addNotification({
+                    type: 'error',
+                    title: isCurrentlyHidden ? 'Error Unhiding Event' : 'Error Hiding Event',
+                    message: errorMessage,
+                  })
+                  console.error('Error toggling event visibility:', err)
+                }
               },
               itemName: `event "${event.venueName}"`,
             })
@@ -1348,11 +1489,33 @@ const Dashboard = () => {
           setConfirmationModal({
             isOpen: true,
             type: 'archive',
-            onConfirm: () => {
-              console.log('Archive event:', selectedEvent)
-              // TODO: Implement archive functionality
-              setIsEditModalOpen(false)
-              setSelectedEvent(null)
+            onConfirm: async () => {
+              try {
+                const eventId = selectedEventDoc?.$id || (selectedEvent as Event & { id?: string })?.id
+                if (!eventId) {
+                  throw new Error('Event ID not found')
+                }
+                await eventsService.update(eventId, { isArchived: true })
+                addNotification({
+                  type: 'success',
+                  title: 'Event Archived',
+                  message: `Event has been archived successfully.`,
+                })
+                setConfirmationModal({ ...confirmationModal, isOpen: false })
+                setIsEditModalOpen(false)
+                setSelectedEvent(null)
+                setSelectedEventDoc(null)
+                setEditModalInitialData(null)
+                await fetchEvents(currentPage)
+              } catch (err) {
+                const errorMessage = extractErrorMessage(err)
+                addNotification({
+                  type: 'error',
+                  title: 'Error Archiving Event',
+                  message: errorMessage,
+                })
+                console.error('Error archiving event:', err)
+              }
             },
             itemName: 'this event',
           })
@@ -1361,11 +1524,33 @@ const Dashboard = () => {
           setConfirmationModal({
             isOpen: true,
             type: 'hide',
-            onConfirm: () => {
-              console.log('Hide event:', selectedEvent)
-              // TODO: Implement hide functionality
-              setIsEditModalOpen(false)
-              setSelectedEvent(null)
+            onConfirm: async () => {
+              try {
+                const eventId = selectedEventDoc?.$id || (selectedEvent as Event & { id?: string })?.id
+                if (!eventId) {
+                  throw new Error('Event ID not found')
+                }
+                await eventsService.update(eventId, { isHidden: true })
+                addNotification({
+                  type: 'success',
+                  title: 'Event Hidden',
+                  message: `Event has been hidden successfully.`,
+                })
+                setConfirmationModal({ ...confirmationModal, isOpen: false })
+                setIsEditModalOpen(false)
+                setSelectedEvent(null)
+                setSelectedEventDoc(null)
+                setEditModalInitialData(null)
+                await fetchEvents(currentPage)
+              } catch (err) {
+                const errorMessage = extractErrorMessage(err)
+                addNotification({
+                  type: 'error',
+                  title: 'Error Hiding Event',
+                  message: errorMessage,
+                })
+                console.error('Error hiding event:', err)
+              }
             },
             itemName: 'this event',
           })

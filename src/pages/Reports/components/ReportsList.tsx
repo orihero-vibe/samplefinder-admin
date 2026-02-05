@@ -18,6 +18,7 @@ interface ReportsListProps {
   pageSize?: number
   onPageChange?: (page: number) => void
   onExport: (reportId: string, format: DownloadFormat) => void
+  downloadingReportId?: string | null
 }
 
 const ReportsList = ({
@@ -28,6 +29,7 @@ const ReportsList = ({
   pageSize = 25,
   onPageChange,
   onExport,
+  downloadingReportId,
 }: ReportsListProps) => {
   const navigate = useNavigate()
 
@@ -51,6 +53,7 @@ const ReportsList = ({
               lastGenerated={report.lastGenerated}
               onPreview={() => handlePreview(report.id)}
               onExport={(format) => onExport(report.id, format)}
+              isDownloading={downloadingReportId === report.id}
             />
           ))
         )}

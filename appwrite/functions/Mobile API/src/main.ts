@@ -84,6 +84,12 @@ interface DeleteAccountRequest {
   userId: string;
 }
 
+// User status management types
+interface UpdateUserStatusRequest {
+  userId: string;
+  block: boolean;
+}
+
 interface TriviaClientDocument {
   $id: string;
   name: string;
@@ -571,6 +577,93 @@ async function submitTriviaAnswer(
 }
 
 // ============================================================================
+// USER STATUS MANAGEMENT FUNCTION
+// ============================================================================
+
+/**
+ * Update user status (block/unblock) in both Appwrite Auth and user profile.
+ * This is a server-side-only operation because updating user status in Appwrite Auth
+ * requires an API key with appropriate permissions.
+ *
+ * It will:
+ * 1. Update the user status in Appwrite Auth (enable/disable the account)
+ * 2. Update the isBlocked field in the user_profiles collection
+ */
+async function updateUserStatus(
+  users: Users,
+  databases: Databases,
+  userId: string,
+  block: boolean,
+  log: (message: string) => void
+): Promise<{ success: boolean; message: string }> {
+  log(`Starting user status update for user: ${userId}, block: ${block}`);
+
+  try {
+    // 1. Verify the user exists in Auth
+    try {
+      await users.get(userId);
+      log(`User ${userId} found in Auth`);
+    } catch {
+      throw { code: 404, message: 'User not found in authentication system' };
+    }
+
+    // 2. Update user status in Appwrite Auth
+    // When block=true, set status to false (disabled)
+    // When block=false, set status to true (enabled)
+    log(`Updating user auth status to: ${!block ? 'enabled' : 'disabled'}`);
+    await users.updateStatus(userId, !block);
+    log(`User auth status updated successfully`);
+
+    // 3. Update user profile isBlocked field
+    try {
+      log(`Attempting to find user profile by authID: ${userId}`);
+      
+      const profileQuery = await databases.listDocuments(
+        DATABASE_ID,
+        USER_PROFILES_TABLE_ID,
+        [Query.equal('authID', userId)]
+      );
+      
+      log(`Profile query completed. Total found: ${profileQuery.total}`);
+      
+      if (profileQuery.total === 0) {
+        throw { code: 404, message: 'User profile not found' };
+      }
+      
+      // Update the profile document
+      const profile = profileQuery.documents[0];
+      log(`Updating user profile document: ${profile.$id}`);
+      await databases.updateDocument(
+        DATABASE_ID,
+        USER_PROFILES_TABLE_ID,
+        profile.$id,
+        { isBlocked: block }
+      );
+      log(`User profile updated successfully`);
+      
+    } catch (profileError: unknown) {
+      const typedProfileError = profileError as { message?: string };
+      log(`Error updating profile: ${typedProfileError.message || 'Unknown error'}`);
+      // If profile update fails, revert the auth status
+      await users.updateStatus(userId, block);
+      throw {
+        code: 500,
+        message: `Failed to update user profile: ${typedProfileError.message || 'Unknown error'}`,
+      };
+    }
+
+    return {
+      success: true,
+      message: block ? 'User successfully blocked' : 'User successfully unblocked',
+    };
+  } catch (err: unknown) {
+    const typedErr = err as { code?: number; message?: string };
+    log(`Error during user status update: ${typedErr.message || 'Unknown error'}`);
+    throw typedErr;
+  }
+}
+
+// ============================================================================
 // ACCOUNT DELETION FUNCTION
 // ============================================================================
 
@@ -629,24 +722,31 @@ async function deleteUserAccount(
       }
     } catch (profileError: unknown) {
       // Log the full error for debugging
+      const typedProfileError = profileError as { 
+        constructor?: { name?: string };
+        message?: string;
+        code?: number;
+        type?: string;
+        response?: unknown;
+      };
       log(`Error during profile deletion process`);
-      log(`Error type: ${profileError?.constructor?.name || 'Unknown'}`);
-      log(`Error message: ${profileError?.message || 'N/A'}`);
-      log(`Error code: ${profileError?.code || 'N/A'}`);
-      log(`Error type field: ${profileError?.type || 'N/A'}`);
+      log(`Error type: ${typedProfileError.constructor?.name || 'Unknown'}`);
+      log(`Error message: ${typedProfileError.message || 'N/A'}`);
+      log(`Error code: ${typedProfileError.code || 'N/A'}`);
+      log(`Error type field: ${typedProfileError.type || 'N/A'}`);
       log(
         `Full error details: ${JSON.stringify({
-          message: profileError?.message,
-          code: profileError?.code,
-          type: profileError?.type,
-          response: profileError?.response,
+          message: typedProfileError.message,
+          code: typedProfileError.code,
+          type: typedProfileError.type,
+          response: typedProfileError.response,
         })}`
       );
       
       // For any error, throw it to prevent partial deletion
       throw {
         code: 500,
-        message: `Failed to delete user profile: ${profileError?.message || 'Unknown error'}`,
+        message: `Failed to delete user profile: ${typedProfileError.message || 'Unknown error'}`,
       };
     }
 
@@ -908,12 +1008,60 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     }
 
     // ========================================================================
+    // USER STATUS MANAGEMENT
+    // ========================================================================
+    
+    // UPDATE user status (block/unblock)
+    if (req.path === '/update-user-status' && req.method === 'POST') {
+      log('Processing update-user-status request');
+
+      const body = req.body as UpdateUserStatusRequest;
+
+      if (!body || !body.userId || typeof body.block !== 'boolean') {
+        return res.json(
+          {
+            success: false,
+            error: 'userId and block (boolean) are required',
+          },
+          400
+        );
+      }
+
+      try {
+        const result = await updateUserStatus(
+          users,
+          databases,
+          body.userId,
+          body.block,
+          log
+        );
+
+        return res.json({
+          success: true,
+          ...result,
+        });
+      } catch (err: unknown) {
+        const typedErr = err as { code?: number; message?: string };
+        if (typedErr.code && typedErr.message) {
+          return res.json(
+            {
+              success: false,
+              error: typedErr.message,
+            },
+            typedErr.code
+          );
+        }
+        throw err;
+      }
+    }
+
+    // ========================================================================
     // DEFAULT RESPONSE
     // ========================================================================
     return res.json({
       success: false,
       error:
-        'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /delete-account, GET /ping',
+        'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /delete-account, POST /update-user-status, GET /ping',
     });
   } catch (err: unknown) {
     const errorMessage =

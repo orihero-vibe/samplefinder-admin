@@ -1,6 +1,6 @@
 import { Icon } from '@iconify/react'
 
-export type ConfirmationType = 'delete' | 'archive' | 'hide' | 'block' | 'unblock'
+export type ConfirmationType = 'delete' | 'archive' | 'hide' | 'unhide' | 'block' | 'unblock'
 
 interface ConfirmationModalProps {
   isOpen: boolean
@@ -60,6 +60,17 @@ const ConfirmationModal = ({
       confirmText: 'Yes, hide',
       loadingText: 'Hiding...',
     },
+    unhide: {
+      icon: 'mdi:eye',
+      iconColor: 'text-green-500',
+      iconBg: 'bg-green-50',
+      buttonBg: 'bg-green-500 hover:bg-green-600',
+      buttonBgDisabled: 'bg-green-400',
+      defaultTitle: 'Are you sure you want to unhide?',
+      defaultMessage: 'This event will be visible to users again.',
+      confirmText: 'Yes, unhide',
+      loadingText: 'Unhiding...',
+    },
     block: {
       icon: 'mdi:lock',
       iconColor: 'text-gray-900',
@@ -84,7 +95,8 @@ const ConfirmationModal = ({
     },
   }
 
-  const config = configs[type]
+  // Fallback to 'delete' config if type is invalid
+  const config = configs[type] || configs.delete
 
   const handleConfirm = (e: React.MouseEvent) => {
     e.stopPropagation()

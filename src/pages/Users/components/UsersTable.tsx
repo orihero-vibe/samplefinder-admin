@@ -10,8 +10,19 @@ interface User {
   phoneNumber?: string
   email?: string
   role?: string
+  tierLevel?: string
+  totalPoints?: number
   $createdAt?: string
   isBlocked?: boolean
+}
+
+// Calculate tier based on points
+const getTierFromPoints = (points: number = 0): { name: string; level: number; color: string } => {
+  if (points >= 100000) return { name: 'SampleMaster', level: 5, color: 'bg-amber-100 text-amber-800' }
+  if (points >= 25000) return { name: 'VIS', level: 4, color: 'bg-gray-200 text-gray-800' }
+  if (points >= 5000) return { name: 'SuperSampler', level: 3, color: 'bg-yellow-100 text-yellow-800' }
+  if (points >= 1000) return { name: 'SampleFan', level: 2, color: 'bg-purple-100 text-purple-800' }
+  return { name: 'NewbieSampler', level: 1, color: 'bg-blue-100 text-blue-800' }
 }
 
 interface UsersTableProps {
@@ -74,6 +85,12 @@ const UsersTable = ({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
+                  Tier
+                </div>
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <div className="flex items-center gap-2">
+                  <Icon icon="mdi:filter" className="w-4 h-4" />
                   Role
                 </div>
               </th>
@@ -97,7 +114,7 @@ const UsersTable = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {users.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-6 py-8 text-center text-sm text-gray-500">
+                <td colSpan={10} className="px-6 py-8 text-center text-sm text-gray-500">
                   No users found
                 </td>
               </tr>
@@ -118,6 +135,16 @@ const UsersTable = ({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {user.phoneNumber || '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {(() => {
+                      const tier = getTierFromPoints(user.totalPoints)
+                      return (
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${tier.color}`}>
+                          {tier.name}
+                        </span>
+                      )
+                    })()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
