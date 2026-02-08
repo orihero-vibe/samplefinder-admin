@@ -64,9 +64,22 @@ const ImageCropper = ({
       throw new Error('No 2d context')
     }
 
+    // Detect if the image is PNG by checking the data URL or image format
+    const isPng = imageSrc.startsWith('data:image/png') || 
+                  imageSrc.toLowerCase().includes('.png')
+
     // Set canvas size to the cropped area
     canvas.width = pixelCrop.width
     canvas.height = pixelCrop.height
+
+    // Clear canvas to ensure transparency is preserved
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    // For PNG images, preserve transparency. For other formats, fill with white background
+    if (!isPng) {
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+    }
 
     // Draw the cropped image
     ctx.drawImage(
@@ -81,15 +94,18 @@ const ImageCropper = ({
       pixelCrop.height
     )
 
-    // Return as blob
+    // Return as blob - use PNG format for PNG images to preserve transparency
     return new Promise((resolve, reject) => {
+      const outputFormat = isPng ? 'image/png' : 'image/jpeg'
+      const quality = isPng ? undefined : 0.95
+      
       canvas.toBlob((blob) => {
         if (blob) {
           resolve(blob)
         } else {
           reject(new Error('Canvas is empty'))
         }
-      }, 'image/jpeg', 0.95)
+      }, outputFormat, quality)
     })
   }
 
@@ -132,7 +148,11 @@ const ImageCropper = ({
         </div>
 
         {/* Cropper Area */}
-        <div className="relative h-[500px] bg-gray-900">
+        <div className="relative h-[500px] bg-white" style={{
+          backgroundImage: 'linear-gradient(45deg, #f0f0f0 25%, transparent 25%), linear-gradient(-45deg, #f0f0f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f0f0f0 75%), linear-gradient(-45deg, transparent 75%, #f0f0f0 75%)',
+          backgroundSize: '20px 20px',
+          backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
+        }}>
           <Cropper
             image={image}
             crop={crop}

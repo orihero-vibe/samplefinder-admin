@@ -9,6 +9,7 @@ interface AddClientModalProps {
     logo: File | null
     clientName: string
     productTypes: string[]
+    description: string
   }) => Promise<void>
 }
 
@@ -17,6 +18,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
     logo: null as File | null,
     clientName: '',
     productTypes: [] as string[],
+    description: '',
   })
 
   const [newProductType, setNewProductType] = useState('')
@@ -35,6 +37,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
           logo: null,
           clientName: '',
           productTypes: [],
+          description: '',
         })
         setNewProductType('')
         setLogoPreview(null)
@@ -90,7 +93,9 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
 
   const handleCropComplete = (croppedBlob: Blob) => {
     // Convert blob to file
-    const croppedFile = new File([croppedBlob], 'logo.jpg', { type: 'image/jpeg' })
+    const isPng = croppedBlob.type === 'image/png'
+    const extension = isPng ? 'png' : 'jpg'
+    const croppedFile = new File([croppedBlob], `logo.${extension}`, { type: croppedBlob.type })
     setFormData((prev) => ({ ...prev, logo: croppedFile }))
     
     // Create preview from blob
@@ -143,6 +148,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
         logo: formData.logo,
         clientName: formData.clientName,
         productTypes: formData.productTypes,
+        description: formData.description,
       })
       
       // Success - close modal and reset form
@@ -263,10 +269,24 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
             />
           </div>
 
+          {/* Description Input */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Brand Description
+            </label>
+            <textarea
+              placeholder="Enter brand description"
+              value={formData.description}
+              onChange={(e) => handleInputChange('description', e.target.value)}
+              rows={4}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent resize-none"
+            />
+          </div>
+
           {/* Product Type Multi-select */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Product Type <span className="text-red-500">*</span> (Please press enter to add more products)
+              Products <span className="text-red-500">*</span> (Please press enter to add more products)
             </label>
             <div className="flex flex-wrap gap-2 min-h-[42px] p-2 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-[#1D0A74] focus-within:border-transparent">
               {formData.productTypes.map((type, index) => (
@@ -286,7 +306,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
               ))}
               <input
                 type="text"
-                placeholder={formData.productTypes.length === 0 ? 'Add product types...' : ''}
+                placeholder={formData.productTypes.length === 0 ? 'Add products...' : ''}
                 value={newProductType}
                 onChange={(e) => setNewProductType(e.target.value)}
                 onKeyPress={(e) => {

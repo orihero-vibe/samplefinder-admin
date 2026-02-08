@@ -69,7 +69,7 @@ function MapUpdater({ position, defaultCenter }: { position: [number, number] | 
     }
   }, [position, map])
 
-  // Update map when default center changes (from geolocation)
+  // Update map when default center changes
   useEffect(() => {
     if (!position && defaultCenter) {
       map.setView(defaultCenter, 13)
@@ -94,31 +94,20 @@ const LocationPicker = ({
   onAddressChange,
 }: LocationPickerProps) => {
   const [position, setPosition] = useState<[number, number] | null>(null)
-  const [searchError, setSearchError] = useState('')
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false)
   const mapRef = useRef<L.Map | null>(null)
 
-  // Default center - try to use browser geolocation, fallback to world center
-  const [defaultCenter, setDefaultCenter] = useState<[number, number]>([0, 20])
-
-  // Try to get user's location for initial map center (only runs once on mount)
-  useEffect(() => {
-    if (!latitude && !longitude && 'geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setDefaultCenter([pos.coords.latitude, pos.coords.longitude])
-        },
-        () => {
-          // Silently fail - keep default center
-        },
-        { timeout: 5000 }
-      )
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Default center - use world center (no geolocation)
+  const [defaultCenter] = useState<[number, number]>([40.7128, -74.0060]) // Default to New York City
 
   // Reverse geocode coordinates to get address using Google Geocoding API
   const reverseGeocode = async (lat: number, lng: number): Promise<AddressComponents | null> => {
+    // Validate coordinates before making API call
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      console.error('Invalid coordinates:', { lat, lng })
+      return null
+    }
+    
     try {
       setIsReverseGeocoding(true)
       const response = await fetch(
@@ -234,6 +223,11 @@ const LocationPicker = ({
 
         // If still no zip code, try a separate API call specifically for postal code
         if (!components.zipCode) {
+          // Validate coordinates again before second API call
+          if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            return components
+          }
+          
           try {
             const postalResponse = await fetch(
               `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&result_type=postal_code&key=${GOOGLE_MAPS_API_KEY}`
@@ -273,9 +267,15 @@ const LocationPicker = ({
     if (latitude && longitude) {
       const lat = parseFloat(latitude)
       const lng = parseFloat(longitude)
-      if (!isNaN(lat) && !isNaN(lng)) {
+      // Validate coordinates are within valid ranges before setting position
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
         setPosition([lat, lng])
+      } else {
+        console.warn('Invalid coordinates provided to LocationPicker:', { lat, lng })
+        setPosition(null)
       }
+    } else {
+      setPosition(null)
     }
   }, [latitude, longitude])
 
@@ -305,46 +305,11 @@ const LocationPicker = ({
     }
   }
 
-  // Use current location
-  const handleUseCurrentLocation = () => {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const newPosition: [number, number] = [
-            position.coords.latitude,
-            position.coords.longitude
-          ]
-          handlePositionChange(newPosition)
-        },
-        (error) => {
-          console.error('Geolocation error:', error)
-          setSearchError('Unable to get current location. Please enable location services.')
-        }
-      )
-    } else {
-      setSearchError('Geolocation is not supported by your browser.')
-    }
-  }
 
   return (
     <div className="space-y-3">
       {/* Address Fields - Above Map */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* City */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            City <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            placeholder="Enter City"
-            value={city || ''}
-            onChange={(e) => onCityChange?.(e.target.value)}
-            required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-          />
-        </div>
-
         {/* Address */}
         <div className="relative z-[1000]">
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -379,6 +344,21 @@ const LocationPicker = ({
           />
         </div>
 
+        {/* City */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            City <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            placeholder="Enter City"
+            value={city || ''}
+            onChange={(e) => onCityChange?.(e.target.value)}
+            required
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+          />
+        </div>
+
         {/* State */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -410,26 +390,6 @@ const LocationPicker = ({
         </div>
       </div>
 
-      {/* My Location Button */}
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={handleUseCurrentLocation}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-          title="Use my current location"
-        >
-          <Icon icon="mdi:crosshairs-gps" className="w-5 h-5" />
-          My Location
-        </button>
-      </div>
-
-      {/* Error Message */}
-      {searchError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
-          <Icon icon="mdi:alert-circle" className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-800">{searchError}</p>
-        </div>
-      )}
 
       {/* Map - lower z-index for controls */}
       <style>{`

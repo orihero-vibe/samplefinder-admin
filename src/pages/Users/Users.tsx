@@ -341,6 +341,7 @@ const Users = () => {
             username: userData.username,
             phoneNumber: userData.phoneNumber,
             role: userData.role as 'admin' | 'user',
+            tierLevel: userData.tierLevel,
           })
         }}
       />
@@ -387,7 +388,14 @@ const Users = () => {
                 password: '**********',
                 // Use correct database field name: totalEvents
                 checkIns: String(selectedUser.totalEvents ?? selectedUser.checkIns ?? '0'),
-                tierLevel: String(selectedUser.tierLevel ?? ''),
+                tierLevel: String(
+                  selectedUser.tierLevel ?? 
+                  (selectedUser.totalPoints !== undefined && selectedUser.totalPoints >= 100000 ? 'SampleMaster' :
+                   selectedUser.totalPoints !== undefined && selectedUser.totalPoints >= 25000 ? 'VIS' :
+                   selectedUser.totalPoints !== undefined && selectedUser.totalPoints >= 5000 ? 'SuperSampler' :
+                   selectedUser.totalPoints !== undefined && selectedUser.totalPoints >= 1000 ? 'SampleFan' :
+                   'NewbieSampler')
+                ),
                 username: String(selectedUser.username ?? ''),
                 email: selectedUser.email,
                 checkInReviewPoints: String(selectedUser.checkInReviewPoints ?? '0'),

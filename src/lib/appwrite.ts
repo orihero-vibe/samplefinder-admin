@@ -17,6 +17,9 @@ export const appwriteConfig = {
     reports: import.meta.env.VITE_APPWRITE_COLLECTION_REPORTS || '',
     notifications: import.meta.env.VITE_APPWRITE_COLLECTION_NOTIFICATIONS || 'notifications', // Table ID
     categories: import.meta.env.VITE_APPWRITE_COLLECTION_CATEGORIES || 'categories', // Table ID
+    settings: import.meta.env.VITE_APPWRITE_COLLECTION_SETTINGS || 'settings', // Table ID
+    tiers: import.meta.env.VITE_APPWRITE_COLLECTION_TIERS || 'tiers', // Table ID
+    locations: import.meta.env.VITE_APPWRITE_COLLECTION_LOCATIONS || 'locations', // Table ID
   },
   storage: {
     bucketId: import.meta.env.VITE_APPWRITE_STORAGE_BUCKET_ID || '',

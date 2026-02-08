@@ -11,7 +11,6 @@ interface Event {
   status: string
   statusColor: string
   id?: string // Add optional id for database reference
-  radius?: number // Radius field from database
 }
 
 interface EventsTableProps {

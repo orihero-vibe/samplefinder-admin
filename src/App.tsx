@@ -14,6 +14,7 @@ import PreviewReports from './pages/Reports/PreviewReports'
 import Notifications from './pages/Notifications/Notifications'
 import Trivia from './pages/Trivia/Trivia'
 import TriviaDetails from './pages/Trivia/TriviaDetails'
+import Locations from './pages/Locations/Locations'
 import { ProtectedRoute } from './components'
 
 function App() {
@@ -63,6 +64,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Categories />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/locations"
+          element={
+            <ProtectedRoute>
+              <Locations />
             </ProtectedRoute>
           }
         />

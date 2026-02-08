@@ -27,6 +27,7 @@ interface UIClient {
   joinDate: string
   productTypes?: string[]
   logoUrl?: string
+  description?: string
 }
 
 // Helper function to extract error message from Appwrite error
@@ -83,6 +84,7 @@ const ClientsBrands = () => {
       joinDate: doc.$createdAt ? new Date(doc.$createdAt).toLocaleDateString() : '',
       productTypes: doc.productType || [],
       logoUrl: doc.logoURL,
+      description: (doc as Record<string, unknown>).description as string | undefined,
     }
   }
 
@@ -328,6 +330,7 @@ const ClientsBrands = () => {
     logo: File | null
     clientName: string
     productTypes: string[]
+    description: string
   }) => {
     try {
       // Upload logo if provided
@@ -341,10 +344,12 @@ const ClientsBrands = () => {
         name: string
         productType: string[]
         logoURL?: string
+        description?: string
       } = {
         name: clientData.clientName,
         productType: clientData.productTypes,
         logoURL,
+        description: clientData.description || undefined,
       }
       
       await clientsService.create(formData)
@@ -381,6 +386,7 @@ const ClientsBrands = () => {
     logo: File | null
     clientName: string
     productTypes: string[]
+    description: string
   }) => {
     if (!selectedClient?.id) return
 
@@ -396,9 +402,11 @@ const ClientsBrands = () => {
         name: string
         productType: string[]
         logoURL?: string
+        description?: string
       }> = {
         name: clientData.clientName,
         productType: clientData.productTypes,
+        description: clientData.description || undefined,
       }
 
       // Only include logoURL if a new logo was uploaded
@@ -493,6 +501,7 @@ const ClientsBrands = () => {
                 clientName: selectedClient.clientName,
                 productTypes: selectedClient.productTypes || [],
                 logoUrl: selectedClient.logoUrl,
+                description: selectedClient.description,
               }
             : undefined
         }

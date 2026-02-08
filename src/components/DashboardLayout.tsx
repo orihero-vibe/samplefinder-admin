@@ -55,6 +55,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: 'mdi:poll' },
     { path: '/clients-brands', label: 'Clients & Brands', icon: 'mdi:layers-outline' },
+    { path: '/locations', label: 'Locations', icon: 'mdi:map-marker-outline' },
     { path: '/app-users', label: 'App Users', icon: 'mdi:account-multiple-outline' },
     { path: '/categories', label: 'Categories', icon: 'mdi:tag-multiple-outline' },
     { path: '/reports', label: 'Reports', icon: 'mdi:clipboard-check-outline' },

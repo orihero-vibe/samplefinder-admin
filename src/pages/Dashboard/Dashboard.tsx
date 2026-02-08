@@ -31,7 +31,6 @@ interface Event {
   status: string
   statusColor: string
   id?: string // Add optional id for database reference
-  radius?: number // Radius field from database
 }
 
 // Use EventDocument from services instead of creating a duplicate
@@ -53,17 +52,14 @@ const Dashboard = () => {
     state?: string
     zipCode?: string
     category?: string
-    productTypes?: string[]
     products?: string[]
     discount?: string
     discountImage?: File | string | null
-    discountLink?: string
     checkInCode?: string
     brandName?: string
     checkInPoints?: string
     reviewPoints?: string
     eventInfo?: string
-    radius?: string
     latitude?: string
     longitude?: string
   } | null>(null)
@@ -84,8 +80,7 @@ const Dashboard = () => {
   })
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all') // 'all', 'active', 'hidden', 'archived'
-  const [sortBy, setSortBy] = useState<string>('date') // 'date', 'name', 'brand'
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [sortBy, setSortBy] = useState<string>('date-desc') // 'date-asc', 'date-desc', 'name-asc', 'name-desc', 'brand-asc', 'brand-desc'
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
     type: ConfirmationType
@@ -206,7 +201,6 @@ const Dashboard = () => {
       discount: formatDiscount(doc.discount),
       status: status,
       statusColor: getStatusColor(status),
-      radius: typeof doc.radius === 'number' ? doc.radius : undefined,
     }
   }
 
@@ -241,13 +235,14 @@ const Dashboard = () => {
         queries.push(Query.lessThanEqual('date', endDate.toISOString()))
       }
       
-      // Apply sorting
+      // Apply sorting - parse sortBy value (format: "field-order")
+      const [sortField, sortOrder] = sortBy.split('-')
       const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
-      if (sortBy === 'date') {
+      if (sortField === 'date') {
         queries.push(orderMethod('date'))
-      } else if (sortBy === 'name') {
+      } else if (sortField === 'name') {
         queries.push(orderMethod('name'))
-      } else if (sortBy === 'brand') {
+      } else if (sortField === 'brand') {
         // For brand sorting, we'll sort by date first, then handle brand sorting client-side
         // since brand is a relationship field
         queries.push(orderMethod('date'))
@@ -322,7 +317,7 @@ const Dashboard = () => {
       })
       
       // Apply client-side brand sorting if needed (since brand is a relationship)
-      if (sortBy === 'brand') {
+      if (sortField === 'brand') {
         mappedEvents = mappedEvents.sort((a, b) => {
           const comparison = a.brand.localeCompare(b.brand)
           return sortOrder === 'asc' ? comparison : -comparison
@@ -372,10 +367,6 @@ const Dashboard = () => {
 
   // Format event document for edit modal initialData
   const formatEventForEditModal = async (eventDoc: EventDocument) => {
-    // Debug: Log the raw event document to see what productType looks like
-    console.log('Event document for edit:', eventDoc)
-    console.log('productType field:', eventDoc.productType)
-    
     // Fetch category title if category relationship exists
     let categoryTitle = ''
     if (eventDoc.categories) {
@@ -417,25 +408,18 @@ const Dashboard = () => {
       return `${hours}:${minutes}`
     }
 
-    // Parse products string to array
-    const productsArray = eventDoc.products
-      ? eventDoc.products.split(',').map(p => p.trim()).filter(p => p)
-      : ['']
-
     // Format discount number for the input field
     const formatDiscount = (discount?: number): string => {
       if (discount === undefined || discount === null) return ''
       return discount.toString()
     }
 
-    // Handle productType - ensure it's always an array
-    const productTypesArray = Array.isArray(eventDoc.productType) 
-      ? eventDoc.productType 
-      : eventDoc.productType 
-        ? [eventDoc.productType as unknown as string]
+    // Handle products - ensure it's always an array
+    const productsArray = Array.isArray(eventDoc.products) 
+      ? eventDoc.products 
+      : eventDoc.products 
+        ? [eventDoc.products as unknown as string]
         : []
-
-    console.log('Formatted productTypes:', productTypesArray)
 
     // Extract latitude and longitude from location array if it exists
     let latitude = ''
@@ -455,17 +439,14 @@ const Dashboard = () => {
       state: eventDoc.state || '',
       zipCode: eventDoc.zipCode || '',
       category: categoryTitle,
-      productTypes: productTypesArray,
-      products: productsArray.length > 0 ? productsArray : [''],
+      products: productsArray,
       discount: formatDiscount(eventDoc.discount),
       discountImage: eventDoc.discountImageURL || null,
-      discountLink: '', // Not in database schema
       checkInCode: eventDoc.checkInCode || '',
       brandName: brandName,
       checkInPoints: eventDoc.checkInPoints?.toString() || '',
       reviewPoints: eventDoc.reviewPoints?.toString() || '',
       eventInfo: eventDoc.eventInfo || '',
-      radius: eventDoc.radius?.toString() || '',
       latitude: latitude,
       longitude: longitude,
     }
@@ -547,8 +528,6 @@ const Dashboard = () => {
         'zip code': 'Zip Code',
         'zipcode': 'Zip Code',
         'zip': 'Zip Code',
-        'product': 'Product',
-        'products': 'Product',
         'brand name': 'Brand Name',
         'brandname': 'Brand Name',
         'brand': 'Brand Name',
@@ -560,17 +539,15 @@ const Dashboard = () => {
         'end time': 'End Time',
         'endtime': 'End Time',
         'category': 'Category',
-        'product type': 'Product Type',
-        'producttype': 'Product Type',
+        'product type': 'Products',
+        'producttype': 'Products',
+        'products': 'Products',
         'discount': 'Discount',
-        'discount link': 'Discount Link',
-        'discountlink': 'Discount Link',
         'discount image url': 'Discount Image URL',
         'discountimageurl': 'Discount Image URL',
         'discount image': 'Discount Image URL',
         'event info': 'Event Info',
         'eventinfo': 'Event Info',
-        'radius': 'Radius',
         'check-in code': 'Check-in Code',
         'checkincode': 'Check-in Code',
         'checkin code': 'Check-in Code',
@@ -588,7 +565,7 @@ const Dashboard = () => {
     const normalizedHeaders = headers.map(normalizeHeader)
     
     // Required columns
-    const requiredColumns = ['Event Name', 'Date', 'Address', 'City', 'State', 'Zip Code', 'Product', 'Brand Name', 'Points']
+    const requiredColumns = ['Event Name', 'Date', 'Address', 'City', 'State', 'Zip Code', 'Brand Name', 'Points']
     const missingColumns = requiredColumns.filter(col => !normalizedHeaders.includes(col))
     
     if (missingColumns.length > 0) {
@@ -733,10 +710,9 @@ const Dashboard = () => {
             }
           }
 
-          // Parse product types (comma-separated)
-          const productTypes = row['Product Type']?.trim()
-            ? row['Product Type'].split(',').map((pt: string) => pt.trim()).filter((pt: string) => pt)
-            : []
+          // Parse products (comma-separated) and convert to string format for database
+          // Database expects products as a string (max 1000 chars), not an array
+          const productsString = row['Products']?.trim() || ''
 
           // Use check-in code from CSV or generate one
           const checkInCode = row['Check-in Code']?.trim() || `CHK-${Date.now()}-${i}`
@@ -750,14 +726,10 @@ const Dashboard = () => {
           // Parse event info or generate default
           const eventInfo = row['Event Info']?.trim() || `Event at ${row['Address'] || row['City'] || 'location'}`
 
-          // Parse radius
-          const radius = row['Radius']?.trim() ? parseInt(row['Radius']) || 0 : 0
-
-          // Parse discount
-          const discount = row['Discount']?.trim() ? parseFloat(row['Discount']) || 0 : 0
+          // Parse discount (now text field)
+          const discount = row['Discount']?.trim() || ''
           
-          // Get discount link and image URL if provided
-          const discountLink = row['Discount Link']?.trim() || ''
+          // Get discount image URL if provided
           const discountImageURL = row['Discount Image URL']?.trim() || ''
 
           // Prepare event payload
@@ -771,25 +743,18 @@ const Dashboard = () => {
             address: row['Address'] || '',
             state: row['State'] || '',
             zipCode: row['Zip Code'] || '',
-            productType: productTypes,
-            products: row['Product'] || '',
+            products: productsString,
             checkInCode: checkInCode,
             checkInPoints: checkInPoints,
             reviewPoints: reviewPoints,
             eventInfo: eventInfo,
-            radius: radius,
             isArchived: false,
             isHidden: false,
           }
 
           // Add discount if provided
-          if (discount > 0) {
+          if (discount) {
             eventPayload.discount = discount
-          }
-          
-          // Add discount link if provided
-          if (discountLink) {
-            eventPayload.discountLink = discountLink
           }
           
           // Add discount image URL if provided
@@ -868,9 +833,6 @@ const Dashboard = () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleCreateEvent = async (eventData: any) => {
     try {
-      console.log('handleCreateEvent - Received eventData:', eventData)
-      console.log('handleCreateEvent - productTypes:', eventData.productTypes)
-      
       // 1. Upload discount image if provided
       let discountImageURL: string | null = null
       if (eventData.discountImage && eventData.discountImage instanceof File) {
@@ -920,20 +882,16 @@ const Dashboard = () => {
         address: eventData.address,
         state: eventData.state,
         zipCode: eventData.zipCode,
-        productType: eventData.productTypes || [],
-        products: Array.isArray(eventData.products)
-          ? eventData.products.filter((p: string) => p.trim()).join(', ')
-          : eventData.products || '',
+        products: Array.isArray(eventData.products) 
+          ? eventData.products.join(', ') 
+          : (eventData.products || ''),
         checkInCode: eventData.checkInCode,
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
-        radius: parseInt(eventData.radius) || 0,
         isArchived: false,
         isHidden: false,
       }
-      
-      console.log('handleCreateEvent - eventPayload.productType:', eventPayload.productType)
 
       // Add location as [longitude, latitude] array if both are provided
       if (eventData.longitude && eventData.latitude) {
@@ -1052,8 +1010,6 @@ const Dashboard = () => {
       endDateTime.setHours(endHours, endMinutes, 0, 0)
 
       // 5. Prepare event data according to database schema
-      console.log('Update event - incoming productTypes:', eventData.productTypes)
-      
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const eventPayload: any = {
         name: eventData.eventName,
@@ -1064,18 +1020,14 @@ const Dashboard = () => {
         address: eventData.address,
         state: eventData.state,
         zipCode: eventData.zipCode,
-        productType: eventData.productTypes || [],
-        products: Array.isArray(eventData.products)
-          ? eventData.products.filter((p: string) => p.trim()).join(', ')
-          : eventData.products || '',
+        products: Array.isArray(eventData.products) 
+          ? eventData.products.join(', ') 
+          : (eventData.products || ''),
         checkInCode: eventData.checkInCode,
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
-        radius: parseInt(eventData.radius) || 0,
       }
-      
-      console.log('Update event - payload productType:', eventPayload.productType)
 
       // Add location as [longitude, latitude] array if both are provided
       if (eventData.longitude && eventData.latitude) {
@@ -1316,7 +1268,7 @@ const Dashboard = () => {
     setCurrentPage(1) // Reset to first page when filters change
     fetchEvents(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, statusFilter, sortBy, sortOrder, dateRange.start, dateRange.end])
+  }, [searchTerm, statusFilter, sortBy, dateRange.start, dateRange.end])
 
   // Fetch categories, brands, and statistics on component mount
   // OPTIMIZATION: Fetch all initial data in parallel
@@ -1354,14 +1306,7 @@ const Dashboard = () => {
           sortBy={sortBy}
           onSortByChange={(value: string) => {
             setSortBy(value)
-            // Toggle sort order when clicking same sort option, or default to desc for date, asc for others
-            if (value === sortBy) {
-              setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-            } else {
-              setSortOrder(value === 'date' ? 'desc' : 'asc')
-            }
           }}
-          sortOrder={sortOrder}
         />
         <EventsTable
           events={events}
@@ -1485,6 +1430,7 @@ const Dashboard = () => {
           setEditModalInitialData(null)
         }}
         onSave={handleUpdateEvent}
+        eventId={selectedEventDoc?.$id}
         onShowArchiveConfirm={() => {
           setConfirmationModal({
             isOpen: true,

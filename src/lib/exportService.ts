@@ -26,35 +26,35 @@ const dashboardColumns: ReportColumn[] = [
   { header: 'Brand', key: 'brand' },
   { header: 'Start Time', key: 'startTime' },
   { header: 'End Time', key: 'endTime' },
-  { header: 'Product Type', key: 'productType' },
+  { header: 'Products', key: 'products' },
   { header: 'Discount?', key: 'discount' },
 ]
 
-// Event List columns - ordered to match CSV upload requirements and AddEventModal field sequence
+// Event List columns - ordered alphabetically: non-location fields first, then location fields alphabetically
 // These column names must exactly match what CSVUploadModal expects for re-import compatibility
 const eventListColumns: ReportColumn[] = [
-  { header: 'Event Name', key: 'name' },
-  { header: 'Date', key: 'date' },
-  { header: 'Start Time', key: 'startTime' },
-  { header: 'End Time', key: 'endTime' },
-  { header: 'Category', key: 'category' },
+  // Non-location fields (alphabetical)
   { header: 'Brand Name', key: 'brandName' },
-  { header: 'Product Type', key: 'productType' },
-  { header: 'Product', key: 'products' },
-  { header: 'Discount', key: 'discount' },
-  { header: 'Discount Link', key: 'discountLink' },
-  { header: 'Discount Image URL', key: 'discountImageURL' },
+  { header: 'Category', key: 'category' },
   { header: 'Check-in Code', key: 'checkInCode' },
-  { header: 'Points', key: 'checkInPoints' },
-  { header: 'Review Points', key: 'reviewPoints' },
-  { header: 'Radius', key: 'radius' },
+  { header: 'Date', key: 'date' },
+  { header: 'Discount', key: 'discount' },
+  { header: 'Discount Image URL', key: 'discountImageURL' },
+  { header: 'Discount Link', key: 'discountLink' },
+  { header: 'End Time', key: 'endTime' },
   { header: 'Event Info', key: 'eventInfo' },
+  { header: 'Event Name', key: 'name' },
+  { header: 'Products', key: 'products' },
+  { header: 'Review Points', key: 'reviewPoints' },
+  { header: 'Start Time', key: 'startTime' },
+  { header: 'Points', key: 'checkInPoints' },
+  // Location fields (alphabetical)
   { header: 'Address', key: 'address' },
   { header: 'City', key: 'city' },
-  { header: 'State', key: 'state' },
-  { header: 'Zip Code', key: 'zipCode' },
   { header: 'Latitude', key: 'latitude' },
   { header: 'Longitude', key: 'longitude' },
+  { header: 'State', key: 'state' },
+  { header: 'Zip Code', key: 'zipCode' },
 ]
 
 // Clients & Brands columns
@@ -139,10 +139,10 @@ const formatTimeForUpload = (timeStr?: string): string => {
   return `${hours}:${minutes}`
 }
 
-// Helper function to convert product types array to string
-const formatProductTypes = (productTypes?: string[]): string => {
-  if (!productTypes || !Array.isArray(productTypes)) return ''
-  return productTypes.join(', ')
+// Helper function to convert products array to string
+const formatProducts = (products?: string[]): string => {
+  if (!products || !Array.isArray(products)) return ''
+  return products.join(', ')
 }
 
 // Export Service
@@ -218,7 +218,7 @@ export const exportService = {
           brand: brandName,
           startTime: formatTime(event.startTime),
           endTime: formatTime(event.endTime),
-          productType: formatProductTypes(event.productType),
+          products: formatProducts(event.products),
           discount: event.discount && event.discount > 0 ? 'YES' : 'NO',
         }
       })
@@ -273,15 +273,13 @@ export const exportService = {
           endTime: formatTimeForUpload(event.endTime),
           category: event.categories || '',
           brandName: brandName,
-          productType: formatProductTypes(event.productType),
-          products: event.products || '',
+          products: formatProducts(event.products),
           discount: event.discount?.toString() || '',
           discountLink: discountLink,
           discountImageURL: event.discountImageURL || '',
           checkInCode: event.checkInCode || '',
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
-          radius: event.radius?.toString() || '',
           eventInfo: event.eventInfo || '',
           address: event.address || '',
           city: event.city || '',
@@ -310,7 +308,7 @@ export const exportService = {
         name: client.name || '',
         logoFile: client.logoURL ? 'Yes' : 'No',
         signupDate: formatDate(client.$createdAt),
-        productType: formatProductTypes(client.productType),
+        productType: formatProducts(client.productType),
         favorites: '0', // TODO: Implement favorites count from events/user favorites
       }
     })

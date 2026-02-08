@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import type { Models } from 'appwrite'
-import LocationPicker from '../../../components/LocationPicker'
+import LocationAutocomplete from '../../../components/LocationAutocomplete'
 import { ImageCropper } from '../../../components'
+import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
+import { settingsService, type LocationDocument } from '../../../lib/services'
 
 interface EventData {
   eventName?: string
@@ -14,17 +16,14 @@ interface EventData {
   state?: string
   zipCode?: string
   category?: string
-  productTypes?: string[]
   products?: string[]
   discount?: string
   discountImage?: File | string | null
-  discountLink?: string
   checkInCode?: string
   brandName?: string
   checkInPoints?: string
   reviewPoints?: string
   eventInfo?: string
-  radius?: string
   latitude?: string
   longitude?: string
 }
@@ -49,6 +48,7 @@ interface EditEventModalProps {
   onShowHideConfirm?: () => void
   onShowDeleteConfirm?: () => void
   initialData?: EventData
+  eventId?: string // Event ID for uniqueness checking
   categories?: Category[]
   brands?: Brand[]
 }
@@ -61,6 +61,7 @@ const EditEventModal = ({
   onShowHideConfirm,
   onShowDeleteConfirm,
   initialData,
+  eventId,
   categories = [],
   brands = [],
 }: EditEventModalProps) => {
@@ -74,27 +75,25 @@ const EditEventModal = ({
     state: '',
     zipCode: '',
     category: '',
-    productTypes: [] as string[],
-    products: [''] as string[],
+    products: [] as string[],
     discount: '',
     discountImage: null as File | string | null,
-    discountLink: '',
     checkInCode: '',
     brandName: '',
     checkInPoints: '',
     reviewPoints: '',
     eventInfo: '',
-    radius: '',
     latitude: '',
     longitude: '',
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [availableProductTypes, setAvailableProductTypes] = useState<string[]>([])
+  const [availableProducts, setAvailableProducts] = useState<string[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [discountImagePreview, setDiscountImagePreview] = useState<string | null>(null)
   const [showCropper, setShowCropper] = useState(false)
   const [tempImageForCrop, setTempImageForCrop] = useState<string | null>(null)
+  const [locationDisplayValue, setLocationDisplayValue] = useState('')
 
   useEffect(() => {
     if (initialData) {
@@ -106,44 +105,126 @@ const EditEventModal = ({
       }
       setShowCropper(false)
       setTempImageForCrop(null)
-      setFormData({
-        eventName: initialData.eventName || '',
-        eventDate: initialData.eventDate || '',
-        startTime: initialData.startTime || '',
-        endTime: initialData.endTime || '',
-        city: initialData.city || '',
-        address: initialData.address || '',
-        state: initialData.state || '',
-        zipCode: initialData.zipCode || '',
-        category: initialData.category || '',
-        productTypes: initialData.productTypes || [],
-        products: initialData.products && initialData.products.length > 0 ? initialData.products : [''],
-        discount: initialData.discount || '',
-        discountImage: initialData.discountImage || null,
-        discountLink: initialData.discountLink || '',
-        checkInCode: initialData.checkInCode || '',
-        brandName: initialData.brandName || '',
-        checkInPoints: initialData.checkInPoints || '',
-        reviewPoints: initialData.reviewPoints || '',
-        eventInfo: initialData.eventInfo || '',
-        radius: initialData.radius || '',
-        latitude: initialData.latitude || '',
-        longitude: initialData.longitude || '',
-      })
+      
+      // Set location display value from initial data
+      if (initialData.address && initialData.city && initialData.state) {
+        const displayValue = `${initialData.address}, ${initialData.city}, ${initialData.state} ${initialData.zipCode || ''}`.trim()
+        setLocationDisplayValue(displayValue)
+      } else {
+        setLocationDisplayValue('')
+      }
+      
+      // If check-in code doesn't exist, generate a unique one
+      if (!initialData.checkInCode) {
+        generateUniqueCheckInCode(eventId).then((code) => {
+          setFormData((prev) => ({
+            ...prev,
+            checkInCode: code,
+          }))
+        })
+      }
+      
+      // Fetch default points from global settings if fields are empty
+      const fetchDefaultsIfNeeded = async () => {
+        const needsDefaults = !initialData.checkInPoints || !initialData.reviewPoints
+        
+        if (needsDefaults) {
+          try {
+            const [defaultCheckInPoints, defaultReviewPoints] = await Promise.all([
+              settingsService.getDefaultCheckInPoints(),
+              settingsService.getDefaultReviewPoints(),
+            ])
+            
+            setFormData({
+              eventName: initialData.eventName || '',
+              eventDate: initialData.eventDate || '',
+              startTime: initialData.startTime || '',
+              endTime: initialData.endTime || '',
+              city: initialData.city || '',
+              address: initialData.address || '',
+              state: initialData.state || '',
+              zipCode: initialData.zipCode || '',
+              category: initialData.category || '',
+              products: initialData.products || [],
+              discount: initialData.discount || '',
+              discountImage: initialData.discountImage || null,
+              checkInCode: initialData.checkInCode || '',
+              brandName: initialData.brandName || '',
+              checkInPoints: initialData.checkInPoints || defaultCheckInPoints?.toString() || '',
+              reviewPoints: initialData.reviewPoints || defaultReviewPoints?.toString() || '',
+              eventInfo: initialData.eventInfo || '',
+              latitude: initialData.latitude || '',
+              longitude: initialData.longitude || '',
+            })
+          } catch (error) {
+            console.error('Error fetching default points:', error)
+            // Fallback to initial data without defaults
+            setFormData({
+              eventName: initialData.eventName || '',
+              eventDate: initialData.eventDate || '',
+              startTime: initialData.startTime || '',
+              endTime: initialData.endTime || '',
+              city: initialData.city || '',
+              address: initialData.address || '',
+              state: initialData.state || '',
+              zipCode: initialData.zipCode || '',
+              category: initialData.category || '',
+              products: initialData.products || [],
+              discount: initialData.discount || '',
+              discountImage: initialData.discountImage || null,
+              checkInCode: initialData.checkInCode || '',
+              brandName: initialData.brandName || '',
+              checkInPoints: initialData.checkInPoints || '',
+              reviewPoints: initialData.reviewPoints || '',
+              eventInfo: initialData.eventInfo || '',
+              latitude: initialData.latitude || '',
+              longitude: initialData.longitude || '',
+            })
+          }
+        } else {
+          // Use initial data as-is
+          setFormData({
+            eventName: initialData.eventName || '',
+            eventDate: initialData.eventDate || '',
+            startTime: initialData.startTime || '',
+            endTime: initialData.endTime || '',
+            city: initialData.city || '',
+            address: initialData.address || '',
+            state: initialData.state || '',
+            zipCode: initialData.zipCode || '',
+            category: initialData.category || '',
+            products: initialData.products || [],
+            discount: initialData.discount || '',
+            discountImage: initialData.discountImage || null,
+            checkInCode: initialData.checkInCode || '',
+            brandName: initialData.brandName || '',
+            checkInPoints: initialData.checkInPoints || '',
+            reviewPoints: initialData.reviewPoints || '',
+            eventInfo: initialData.eventInfo || '',
+            latitude: initialData.latitude || '',
+            longitude: initialData.longitude || '',
+          })
+        }
+      }
+      
+      fetchDefaultsIfNeeded()
+    } else {
+      // Reset location display value when modal closes or no initial data
+      setLocationDisplayValue('')
     }
-  }, [initialData, isOpen])
+  }, [initialData, isOpen, eventId])
 
-  // Update available product types when brand changes
+  // Update available products when brand changes
   useEffect(() => {
     if (formData.brandName) {
       const selectedBrand = brands.find((brand) => brand.name === formData.brandName)
       if (selectedBrand && selectedBrand.productType) {
-        setAvailableProductTypes(selectedBrand.productType)
+        setAvailableProducts(selectedBrand.productType)
       } else {
-        setAvailableProductTypes([])
+        setAvailableProducts([])
       }
     } else {
-      setAvailableProductTypes([])
+      setAvailableProducts([])
     }
   }, [formData.brandName, brands])
 
@@ -153,24 +234,10 @@ const EditEventModal = ({
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleRemoveProductType = (type: string) => {
+  const handleRemoveProduct = (type: string) => {
     setFormData((prev) => ({
       ...prev,
-      productTypes: prev.productTypes.filter((t) => t !== type),
-    }))
-  }
-
-  const handleAddProduct = () => {
-    setFormData((prev) => ({
-      ...prev,
-      products: [...prev.products, ''],
-    }))
-  }
-
-  const handleRemoveProduct = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      products: prev.products.filter((_, i) => i !== index),
+      products: prev.products.filter((t) => t !== type),
     }))
   }
 
@@ -210,7 +277,9 @@ const EditEventModal = ({
   }
 
   const handleCropComplete = (croppedBlob: Blob) => {
-    const croppedFile = new File([croppedBlob], 'discount-image.jpg', { type: 'image/jpeg' })
+    const isPng = croppedBlob.type === 'image/png'
+    const extension = isPng ? 'png' : 'jpg'
+    const croppedFile = new File([croppedBlob], `discount-image.${extension}`, { type: croppedBlob.type })
     setFormData((prev) => ({ ...prev, discountImage: croppedFile }))
     setDiscountImagePreview(URL.createObjectURL(croppedBlob))
     setShowCropper(false)
@@ -229,9 +298,6 @@ const EditEventModal = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    console.log('EditEventModal - Submitting form data:', formData)
-    console.log('EditEventModal - productTypes being submitted:', formData.productTypes)
     
     // Prevent double submission
     if (isSubmitting) {
@@ -274,9 +340,9 @@ const EditEventModal = ({
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Edit event</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Edit Event</h2>
             <p className="text-sm text-gray-600 mt-1">
-              Add a new event to your organization. Fill in the details below.
+              Update event details. Make changes to the fields below.
             </p>
           </div>
           <button
@@ -291,61 +357,24 @@ const EditEventModal = ({
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            {/* Event Name */}
+            {/* Brand Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Event Name <span className="text-red-500">*</span>
+                Brand Name <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
-                placeholder="Enter Event Name"
-                value={formData.eventName}
-                onChange={(e) => handleInputChange('eventName', e.target.value)}
+              <select
+                value={formData.brandName}
+                onChange={(e) => handleInputChange('brandName', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            {/* Event Date */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Event Date <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                value={formData.eventDate}
-                onChange={(e) => handleInputChange('eventDate', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            {/* Start Time */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Time <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="time"
-                value={formData.startTime}
-                onChange={(e) => handleInputChange('startTime', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            {/* End Time */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Time <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="time"
-                value={formData.endTime}
-                onChange={(e) => handleInputChange('endTime', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
+              >
+                <option value="">Choose Brand Name</option>
+                {brands.map((brand) => (
+                  <option key={brand.$id} value={brand.name}>
+                    {brand.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Category */}
@@ -368,223 +397,23 @@ const EditEventModal = ({
               </select>
             </div>
 
-            {/* Brand Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Brand Name <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.brandName}
-                onChange={(e) => handleInputChange('brandName', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              >
-                <option value="">Choose Brand Name</option>
-                {brands.map((brand) => (
-                  <option key={brand.$id} value={brand.name}>
-                    {brand.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Product Type */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Product Type <span className="text-red-500">*</span>
-              </label>
-              <select
-                value=""
-                onChange={(e) => {
-                  const selectedType = e.target.value
-                  if (selectedType && !formData.productTypes.includes(selectedType)) {
-                    setFormData((prev) => ({
-                      ...prev,
-                      productTypes: [...prev.productTypes, selectedType],
-                    }))
-                  }
-                }}
-                disabled={!formData.brandName || availableProductTypes.length === 0}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-              >
-                <option value="">
-                  {!formData.brandName 
-                    ? 'Select a brand first' 
-                    : availableProductTypes.length === 0 
-                    ? 'No product types available' 
-                    : 'Choose Product Type'}
-                </option>
-                {availableProductTypes.map((type, index) => (
-                  <option 
-                    key={index} 
-                    value={type}
-                    disabled={formData.productTypes.includes(type)}
-                  >
-                    {type}
-                  </option>
-                ))}
-              </select>
-              {/* Selected Product Types */}
-              {formData.productTypes.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {formData.productTypes.map((type, index) => (
-                    <span
-                      key={index}
-                      className="inline-flex items-center gap-1 px-3 py-1 bg-[#1D0A74]/10 text-[#1D0A74] rounded-full text-sm"
-                    >
-                      {type}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveProductType(type)}
-                        className="hover:text-[#1D0A74]/70"
-                      >
-                        <Icon icon="mdi:close" className="w-4 h-4" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Products Section */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Products
-            </label>
-            {formData.products.map((product, index) => (
-              <div key={index} className="flex gap-2 mb-2">
-                <input
-                  type="text"
-                  placeholder="Enter Product"
-                  value={product}
-                  onChange={(e) => {
-                    const newProducts = [...formData.products]
-                    newProducts[index] = e.target.value
-                    setFormData((prev) => ({ ...prev, products: newProducts }))
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-                />
-                {formData.products.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveProduct(index)}
-                    className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <Icon icon="mdi:close" className="w-5 h-5" />
-                  </button>
-                )}
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={handleAddProduct}
-              className="text-[#1D0A74] hover:text-[#15065c] font-medium flex items-center gap-2"
-            >
-              <Icon icon="mdi:plus" className="w-5 h-5" />
-              Add Product
-            </button>
-          </div>
-
-          {/* Discount Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Discount
-              </label>
-              <input
-                type="number"
-                placeholder="Enter discount percentage"
-                value={formData.discount}
-                onChange={(e) => handleInputChange('discount', e.target.value)}
-                min="0"
-                max="100"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Discount Link
-              </label>
-              <input
-                type="text"
-                placeholder="Enter Discount Link"
-                value={formData.discountLink}
-                onChange={(e) => handleInputChange('discountLink', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          {/* Discount Image Upload */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Discount Image Upload
-            </label>
-            <label 
-              className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                isDragging 
-                  ? 'border-[#1D0A74] bg-[#1D0A74]/5' 
-                  : 'border-gray-300 hover:bg-gray-50'
-              }`}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-            >
-              {discountImagePreview ? (
-                <div className="flex flex-col items-center justify-center py-4">
-                  <img
-                    src={discountImagePreview}
-                    alt="Discount"
-                    className="max-h-28 max-w-full object-contain rounded-lg"
-                  />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      handleRemoveDiscountImage()
-                    }}
-                    className="mt-3 text-[#1D0A74] hover:text-[#15065c] font-medium text-sm"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Icon icon="mdi:cloud-upload" className="w-10 h-10 text-gray-400 mb-2" />
-                  <p className="mb-2 text-sm text-gray-500">
-                    <span className="font-semibold">Click to upload</span> or drag and drop
-                  </p>
-                  <p className="text-xs text-gray-500">Image will be cropped to 3:1 ratio</p>
-                </div>
-              )}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-            </label>
-          </div>
-
-          {/* Additional Fields */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {/* Check in Code */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Check in Code <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
-                placeholder="Enter Check in Code"
+                placeholder="Auto-generated"
                 value={formData.checkInCode}
-                onChange={(e) => handleInputChange('checkInCode', e.target.value)}
+                disabled
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                maxLength={6}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
             </div>
 
+            {/* Check In Points */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Check In Points <span className="text-red-500">*</span>
@@ -598,7 +427,176 @@ const EditEventModal = ({
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
             </div>
+            </div>
+            {/* Discount */}
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Discount
+              </label>
+              <input
+                type="text"
+                placeholder="Enter discount"
+                value={formData.discount}
+                onChange={(e) => handleInputChange('discount', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
+            </div>
+
+            {/* Discount Image Upload */}
+            <div className='mt-6 mb-6'>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Discount Image Upload
+              </label>
+              <label 
+                className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                  isDragging 
+                    ? 'border-[#1D0A74] bg-[#1D0A74]/5' 
+                    : 'border-gray-300 hover:bg-gray-50'
+                }`}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+              >
+                {discountImagePreview ? (
+                  <div className="flex flex-col items-center justify-center py-4">
+                    <img
+                      src={discountImagePreview}
+                      alt="Discount"
+                      className="max-h-28 max-w-full object-contain rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        handleRemoveDiscountImage()
+                      }}
+                      className="mt-3 text-[#1D0A74] hover:text-[#15065c] font-medium text-sm"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <Icon icon="mdi:cloud-upload" className="w-10 h-10 text-gray-400 mb-2" />
+                    <p className="mb-2 text-sm text-gray-500">
+                      <span className="font-semibold">Click to upload</span> or drag and drop
+                    </p>
+                    <p className="text-xs text-gray-500">Image will be cropped to 3:1 ratio</p>
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </label>
+            </div>
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-4 mb-6'>
+            {/* End Time */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                End Time <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="time"
+                value={formData.endTime}
+                onChange={(e) => handleInputChange('endTime', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
+            </div>
+
+            {/* Event Date */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Event Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={formData.eventDate}
+                onChange={(e) => handleInputChange('eventDate', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
+            </div>
+
+            {/* Event Name */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Event Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Enter Event Name"
+                value={formData.eventName}
+                onChange={(e) => handleInputChange('eventName', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
+            </div>
+
+            {/* Products */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Products <span className="text-red-500">*</span>
+              </label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const selectedProduct = e.target.value
+                  if (selectedProduct && !formData.products.includes(selectedProduct)) {
+                    setFormData((prev) => ({
+                      ...prev,
+                      products: [...prev.products, selectedProduct],
+                    }))
+                  }
+                }}
+                disabled={!formData.brandName || availableProducts.length === 0}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              >
+                <option value="">
+                  {!formData.brandName 
+                    ? 'Select a brand first' 
+                    : availableProducts.length === 0 
+                    ? 'No products available' 
+                    : 'Choose Product'}
+                </option>
+                {availableProducts.map((product, index) => (
+                  <option 
+                    key={index} 
+                    value={product}
+                    disabled={formData.products.includes(product)}
+                  >
+                    {product}
+                  </option>
+                ))}
+              </select>
+              {/* Selected Products */}
+              {formData.products.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {formData.products.map((product, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-[#1D0A74]/10 text-[#1D0A74] rounded-full text-sm"
+                    >
+                      {product}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveProduct(product)}
+                        className="hover:text-[#1D0A74]/70"
+                      >
+                        <Icon icon="mdi:close" className="w-4 h-4" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Review Points */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Review Points <span className="text-red-500">*</span>
@@ -613,17 +611,16 @@ const EditEventModal = ({
               />
             </div>
 
+            {/* Start Time */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Radius <span className="text-red-500">*</span>
+                Start Time <span className="text-red-500">*</span>
               </label>
               <input
-                type="number"
-                placeholder="Enter radius"
-                value={formData.radius}
-                onChange={(e) => handleInputChange('radius', e.target.value)}
+                type="time"
+                value={formData.startTime}
+                onChange={(e) => handleInputChange('startTime', e.target.value)}
                 required
-                min="0"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
             </div>
@@ -644,34 +641,63 @@ const EditEventModal = ({
             />
           </div>
 
-          {/* Location Picker Section */}
+          {/* Location Autocomplete Section */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Event Location <span className="text-red-500">*</span>
             </label>
-            <LocationPicker
-              latitude={formData.latitude}
-              longitude={formData.longitude}
-              onLocationChange={(lat, lng) => {
-                setFormData((prev) => ({ ...prev, latitude: lat, longitude: lng }))
-              }}
-              onAddressFromCoords={(components) => {
+            <LocationAutocomplete
+              value={locationDisplayValue}
+              onChange={setLocationDisplayValue}
+              onLocationSelect={(location: LocationDocument) => {
+                // Extract coordinates - handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
+                let latitude = ''
+                let longitude = ''
+                
+                if (location.location) {
+                  let lat: number | undefined
+                  let lng: number | undefined
+                  
+                  if (Array.isArray(location.location) && location.location.length >= 2) {
+                    // Direct array format: [longitude, latitude]
+                    lng = location.location[0]
+                    lat = location.location[1]
+                  } else if (
+                    typeof location.location === 'object' &&
+                    location.location !== null &&
+                    'coordinates' in location.location &&
+                    Array.isArray((location.location as { coordinates: number[] }).coordinates) &&
+                    (location.location as { coordinates: number[] }).coordinates.length >= 2
+                  ) {
+                    // GeoJSON format: {coordinates: [longitude, latitude]}
+                    const coords = (location.location as { coordinates: number[] }).coordinates
+                    lng = coords[0]
+                    lat = coords[1]
+                  }
+                  
+                  // Validate coordinates are within valid ranges before using them
+                  if (lat !== undefined && lng !== undefined && !isNaN(lat) && !isNaN(lng)) {
+                    // Latitude: -90 to 90, Longitude: -180 to 180
+                    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                      latitude = lat.toString()
+                      longitude = lng.toString()
+                    }
+                  }
+                }
+                
+                // Populate all form fields from selected location
                 setFormData((prev) => ({
                   ...prev,
-                  address: components.address || prev.address,
-                  city: components.city || prev.city,
-                  state: components.state || prev.state,
-                  zipCode: components.zipCode, // Always update, even if empty
+                  address: location.address || '',
+                  city: location.city || '',
+                  state: location.state || '',
+                  zipCode: location.zipCode || '',
+                  latitude,
+                  longitude,
                 }))
               }}
-              address={formData.address}
-              city={formData.city}
-              state={formData.state}
-              zipCode={formData.zipCode}
-              onCityChange={(value) => handleInputChange('city', value)}
-              onStateChange={(value) => handleInputChange('state', value)}
-              onZipCodeChange={(value) => handleInputChange('zipCode', value)}
-              onAddressChange={(value) => handleInputChange('address', value)}
+              placeholder="Search for a location..."
+              required
             />
           </div>
 

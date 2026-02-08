@@ -14,31 +14,32 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
 
   if (!isOpen) return null
 
+  // Required columns in alphabetical order: non-location fields first, then location fields
   const requiredColumns = [
-    'Event Name',
-    'Date',
-    'Start Time',
-    'End Time',
-    'Category',
+    // Non-location fields (alphabetical)
     'Brand Name',
-    'Product Type',
+    'Category',
+    'Check-in Code',
+    'Date',
+    'End Time',
+    'Event Info',
+    'Event Name',
+    'Points',
+    'Products',
+    'Review Points',
+    'Start Time',
+    // Location fields (alphabetical)
     'Address',
     'City',
-    'State',
-    'Zip Code',
-    'Check In Code',
-    'Check In Points',
-    'Review Points',
-    'Radius',
-    'Event Info',
     'Latitude',
     'Longitude',
+    'State',
+    'Zip Code',
   ]
   
+  // Optional columns (alphabetical)
   const optionalColumns = [
-    'Product',
     'Discount',
-    'Discount Link',
     'Discount Image URL',
   ]
 
@@ -96,29 +97,27 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
     const allColumns = [...requiredColumns, ...optionalColumns]
     const headers = allColumns.join(',')
     const sampleValues = [
-      // Required columns (in order)
-      'My Event Name',                    // Event Name - Replace with your event name
-      '2026-01-25',                       // Date (YYYY-MM-DD format)
-      '09:00',                            // Start Time (HH:MM)
-      '17:00',                            // End Time (HH:MM)
-      '[REPLACE WITH EXISTING CATEGORY]', // Category - Must exist in your database
+      // Required columns (in alphabetical order: non-location first, then location)
       '[REPLACE WITH EXISTING BRAND]',    // Brand Name - Must exist in your database
-      'Beer',                             // Product Type
+      '[REPLACE WITH EXISTING CATEGORY]', // Category - Must exist in your database
+      'CHK001',                           // Check-in Code
+      '2026-01-25',                       // Date (YYYY-MM-DD format)
+      '17:00',                            // End Time (HH:MM)
+      'Event description goes here',      // Event Info
+      'My Event Name',                    // Event Name - Replace with your event name
+      '100',                              // Points (Check In Points)
+      'Beer, Wine',                       // Products (comma-separated)
+      '50',                               // Review Points
+      '09:00',                            // Start Time (HH:MM)
+      // Location fields (alphabetical)
       '123 Main Street',                  // Address
       'New York',                         // City
-      'NY',                               // State
-      '10001',                            // Zip Code
-      'CHK001',                           // Check In Code
-      '100',                              // Check In Points
-      '50',                               // Review Points
-      '100',                              // Radius (in meters)
-      'Event description goes here',      // Event Info
       '40.7128',                          // Latitude
       '-74.0060',                         // Longitude
-      // Optional columns
-      'Product Name',                     // Product (optional)
-      '10',                               // Discount percentage (optional)
-      'https://example.com/discount',     // Discount Link (optional)
+      'NY',                               // State
+      '10001',                            // Zip Code
+      // Optional columns (alphabetical)
+      '10%',                              // Discount (optional, text field)
       'https://example.com/image.jpg',    // Discount Image URL (optional)
     ]
     // Properly escape CSV values (wrap in quotes if contains comma, quote, or newline)

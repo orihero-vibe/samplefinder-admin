@@ -35,8 +35,7 @@ interface EventData {
   address: string;
   state: string;
   zipCode: string;
-  productType?: string[];
-  products: string;
+  products?: string[];
   discount?: number;
   discountImageURL?: string;
   checkInCode: string;

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
+import { tiersService, type TierDocument } from '../../../lib/services'
 
 interface UserData {
   image?: string | File | null
@@ -66,12 +67,17 @@ const EditUserModal = ({
 
   const [showPassword, setShowPassword] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [tiers, setTiers] = useState<TierDocument[]>([])
+  const [isLoadingTiers, setIsLoadingTiers] = useState(false)
   const wasOpenRef = useRef(false)
 
-  // Initialize form data only when modal opens (transition from closed to open)
+  // Initialize form data when modal opens or initialData changes
   useEffect(() => {
-    if (isOpen && !wasOpenRef.current && initialData) {
-      setFormData({
+    if (isOpen && initialData) {
+      // Check if this is a new modal open (transition from closed to open)
+      const isNewOpen = !wasOpenRef.current
+      
+      const newFormData = {
         image: initialData.image || null,
         firstName: initialData.firstName || '',
         lastName: initialData.lastName || '',
@@ -82,7 +88,7 @@ const EditUserModal = ({
         signUpDate: initialData.signUpDate || '',
         password: initialData.password || '',
         checkIns: initialData.checkIns || '',
-        tierLevel: initialData.tierLevel || '',
+        tierLevel: initialData.tierLevel || '', // Keep tierLevel from initialData
         username: initialData.username || '',
         email: initialData.email || '',
         checkInReviewPoints: initialData.checkInReviewPoints || '',
@@ -92,19 +98,27 @@ const EditUserModal = ({
         reviews: initialData.reviews || '',
         triviasWon: initialData.triviasWon || '',
         isBlocked: initialData.isBlocked || false,
-      })
+      }
+      
+      if (isNewOpen) {
+        setFormData(newFormData)
 
-      // Set image preview if initial data has image
-      if (initialData.image) {
-        if (typeof initialData.image === 'string') {
-          setImagePreview(initialData.image)
-        } else if (initialData.image instanceof File) {
-          const reader = new FileReader()
-          reader.onloadend = () => {
-            setImagePreview(reader.result as string)
+        // Set image preview if initial data has image
+        if (initialData.image) {
+          if (typeof initialData.image === 'string') {
+            setImagePreview(initialData.image)
+          } else if (initialData.image instanceof File) {
+            const reader = new FileReader()
+            reader.onloadend = () => {
+              setImagePreview(reader.result as string)
+            }
+            reader.readAsDataURL(initialData.image)
           }
-          reader.readAsDataURL(initialData.image)
         }
+      } else {
+        // Modal is already open, but initialData changed (e.g., different user selected)
+        // Update form data, especially tierLevel
+        setFormData(newFormData)
       }
     }
     
@@ -122,6 +136,47 @@ const EditUserModal = ({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData?.isBlocked, isOpen])
+
+  // Fetch tiers when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const fetchTiers = async () => {
+        setIsLoadingTiers(true)
+        try {
+          const tiersList = await tiersService.list()
+          setTiers(tiersList)
+          
+          // After tiers are loaded, ensure tierLevel is set correctly from initialData
+          if (initialData?.tierLevel && tiersList.length > 0) {
+            // Verify the tierLevel exists in the tiers list (case-insensitive match)
+            const tierExists = tiersList.some(tier => 
+              tier.name.toLowerCase() === initialData.tierLevel?.toLowerCase()
+            )
+            if (tierExists) {
+              // Find the exact tier name (to handle case differences)
+              const matchingTier = tiersList.find(tier => 
+                tier.name.toLowerCase() === initialData.tierLevel?.toLowerCase()
+              )
+              if (matchingTier) {
+                setFormData(prev => ({
+                  ...prev,
+                  tierLevel: matchingTier.name // Use the exact tier name from database
+                }))
+              }
+            } else if (initialData.tierLevel) {
+              // If tierLevel doesn't match any tier, log a warning but keep the value
+              console.warn(`Tier level "${initialData.tierLevel}" not found in tiers list`)
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching tiers:', error)
+        } finally {
+          setIsLoadingTiers(false)
+        }
+      }
+      fetchTiers()
+    }
+  }, [isOpen, initialData])
 
   if (!isOpen) return null
 
@@ -396,14 +451,26 @@ const EditUserModal = ({
                 </label>
                 <div className="relative">
                   <select
-                    value={formData.tierLevel}
+                    value={formData.tierLevel || ''}
                     onChange={(e) => handleInputChange('tierLevel', e.target.value)}
                     required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
+                    disabled={isLoadingTiers}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   >
-                    <option value="SuperSampler">SuperSampler</option>
-                    <option value="Sampler">Sampler</option>
-                    <option value="Basic">Basic</option>
+                    {isLoadingTiers ? (
+                      <option value="">Loading tiers...</option>
+                    ) : tiers.length === 0 ? (
+                      <option value="">No tiers available</option>
+                    ) : (
+                      <>
+                        {!formData.tierLevel && <option value="">Select a tier</option>}
+                        {tiers.map((tier) => (
+                          <option key={tier.$id} value={tier.name}>
+                            {tier.name}
+                          </option>
+                        ))}
+                      </>
+                    )}
                   </select>
                   <Icon
                     icon="mdi:chevron-down"

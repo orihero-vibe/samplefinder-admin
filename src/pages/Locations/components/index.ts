@@ -1,0 +1,5 @@
+export { default as LocationsHeader } from './LocationsHeader'
+export { default as LocationsTable } from './LocationsTable'
+export { default as SearchAndFilter } from './SearchAndFilter'
+export { default as AddLocationModal } from './AddLocationModal'
+export { default as EditLocationModal } from './EditLocationModal'

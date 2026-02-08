@@ -12,6 +12,9 @@ export const COLLECTION_IDS = {
   TRIVIA: 'trivia',
   TRIVIA_RESPONSES: 'trivia_responses',
   REVIEWS: 'reviews',
+  SETTINGS: 'settings',
+  TIERS: 'tiers',
+  LOCATIONS: 'locations',
 } as const
 
 // Generic database service functions
@@ -250,6 +253,7 @@ export interface ClientFormData {
   name: string
   logoURL?: string
   productType?: string[]
+  description?: string
 }
 
 // Clients service
@@ -259,6 +263,7 @@ export const clientsService = {
       name: data.name,
       logoURL: data.logoURL || null,
       productType: data.productType || [],
+      description: data.description || null,
     }
 
     return DatabaseService.create<ClientDocument>(appwriteConfig.collections.clients, dbData)
@@ -500,8 +505,7 @@ export interface EventDocument extends Models.Document {
   address: string
   state: string
   zipCode: string
-  productType?: string[]
-  products: string
+  products?: string[]
   discount?: number
   discountImageURL?: string
   checkInCode: string
@@ -699,6 +703,7 @@ export interface UserFormData {
   dob?: string
   zipCode?: string
   role?: 'admin' | 'user'
+  tierLevel?: string
 }
 
 // App User interface (combines Auth user and user_profiles)
@@ -749,6 +754,7 @@ export const appUsersService = {
         dob: userData.dob || null,
         zipCode: userData.zipCode || '',
         role: userData.role || 'user',
+        tierLevel: userData.tierLevel || '',
         isBlocked: false,
         idAdult, // Required field - indicates if user is an adult (18+)
       }
@@ -1472,4 +1478,160 @@ export const reviewsService = {
       { isHidden: false }
     )
   },
+}
+
+// Settings Document interface
+export interface SettingsDocument extends Models.Document {
+  key: string
+  value: string
+  description?: string
+  [key: string]: unknown
+}
+
+// Settings service
+export const settingsService = {
+  // Get a setting by key
+  getByKey: async (key: string): Promise<SettingsDocument | null> => {
+    try {
+      const result = await DatabaseService.list<SettingsDocument>(
+        appwriteConfig.collections.settings,
+        [Query.equal('key', [key])]
+      )
+      return result.documents[0] || null
+    } catch (error) {
+      console.error(`Error fetching setting with key "${key}":`, error)
+      return null
+    }
+  },
+  
+  // Get multiple settings by keys
+  getByKeys: async (keys: string[]): Promise<Map<string, string>> => {
+    const settingsMap = new Map<string, string>()
+    if (keys.length === 0) return settingsMap
+    
+    try {
+      const result = await DatabaseService.list<SettingsDocument>(
+        appwriteConfig.collections.settings,
+        [Query.equal('key', keys)]
+      )
+      
+      result.documents.forEach((doc) => {
+        settingsMap.set(doc.key, doc.value)
+      })
+    } catch (error) {
+      console.error('Error fetching settings:', error)
+    }
+    
+    return settingsMap
+  },
+  
+  // Get default check-in points from settings
+  getDefaultCheckInPoints: async (): Promise<number | null> => {
+    const setting = await settingsService.getByKey('checkInPoints')
+    if (setting && setting.value) {
+      const value = parseFloat(setting.value)
+      return isNaN(value) ? null : value
+    }
+    return null
+  },
+  
+  // Get default review points from settings
+  getDefaultReviewPoints: async (): Promise<number | null> => {
+    const setting = await settingsService.getByKey('reviewPoints')
+    if (setting && setting.value) {
+      const value = parseFloat(setting.value)
+      return isNaN(value) ? null : value
+    }
+    return null
+  },
+}
+
+// Tier Document interface
+export interface TierDocument extends Models.Document {
+  name: string
+  requiredPoints: number
+  order: number
+  description?: string
+  imageURL?: string
+  [key: string]: unknown
+}
+
+// Tiers service
+export const tiersService = {
+  // List all tiers ordered by order field
+  list: async (): Promise<TierDocument[]> => {
+    try {
+      const result = await DatabaseService.list<TierDocument>(
+        appwriteConfig.collections.tiers,
+        [Query.orderAsc('order')]
+      )
+      return result.documents
+    } catch (error) {
+      console.error('Error fetching tiers:', error)
+      throw error
+    }
+  },
+  
+  // Get tier by ID
+  getById: (id: string) =>
+    DatabaseService.getById<TierDocument>(appwriteConfig.collections.tiers, id),
+}
+
+// Location Document interface
+export interface LocationDocument extends Models.Document {
+  name: string
+  address: string
+  city: string
+  state: string
+  zipCode: string
+  location?: [number, number] // [longitude, latitude] - Must be type "point" in Appwrite collection
+  [key: string]: unknown
+}
+
+// Location Form Data interface
+export interface LocationFormData {
+  name: string
+  address: string
+  city: string
+  state: string
+  zipCode: string
+  location?: [number, number] // [longitude, latitude] - Must be type "point" in Appwrite collection
+}
+
+// Locations service
+// Note: The 'location' field must be configured as type "point" in Appwrite collection
+// Format: [longitude, latitude] - same as events collection
+export const locationsService = {
+  create: (data: LocationFormData) => {
+    const dbData: Record<string, unknown> = {
+      name: data.name,
+      address: data.address,
+      city: data.city,
+      state: data.state,
+      zipCode: data.zipCode,
+      location: data.location || null,
+    }
+
+    return DatabaseService.create<LocationDocument>(appwriteConfig.collections.locations, dbData)
+  },
+  getById: (id: string) =>
+    DatabaseService.getById<LocationDocument>(appwriteConfig.collections.locations, id),
+  list: (queries?: string[]) =>
+    DatabaseService.list<LocationDocument>(appwriteConfig.collections.locations, queries),
+  update: (id: string, data: Partial<LocationFormData>) => {
+    const dbData: Record<string, unknown> = {
+      ...data,
+    }
+
+    return DatabaseService.update<LocationDocument>(appwriteConfig.collections.locations, id, dbData)
+  },
+  delete: (id: string) =>
+    DatabaseService.delete(appwriteConfig.collections.locations, id),
+  search: (searchTerm: string, queries?: string[]) =>
+    DatabaseService.search<LocationDocument>(
+      appwriteConfig.collections.locations,
+      searchTerm,
+      ['name', 'address', 'city', 'state', 'zipCode'],
+      queries
+    ),
 }

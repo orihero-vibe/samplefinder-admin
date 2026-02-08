@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
+import { tiersService, type TierDocument } from '../../../lib/services'
 
 interface AddUserModalProps {
   isOpen: boolean
@@ -12,6 +13,7 @@ interface AddUserModalProps {
     username: string
     phoneNumber: string
     role: string
+    tierLevel?: string
   }) => void
 }
 
@@ -24,9 +26,40 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     username: '',
     phoneNumber: '',
     role: 'user', // Default role
+    tierLevel: '',
   })
 
   const [showPassword, setShowPassword] = useState(false)
+  const [tiers, setTiers] = useState<TierDocument[]>([])
+  const [isLoadingTiers, setIsLoadingTiers] = useState(false)
+
+  // Fetch tiers when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const fetchTiers = async () => {
+        setIsLoadingTiers(true)
+        try {
+          const tiersList = await tiersService.list()
+          setTiers(tiersList)
+          // Set default tier to the lowest tier (first in sorted list)
+          if (tiersList.length > 0) {
+            setFormData(prev => {
+              // Only set default if tierLevel is empty
+              if (!prev.tierLevel) {
+                return { ...prev, tierLevel: tiersList[0].name }
+              }
+              return prev
+            })
+          }
+        } catch (error) {
+          console.error('Error fetching tiers:', error)
+        } finally {
+          setIsLoadingTiers(false)
+        }
+      }
+      fetchTiers()
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 
@@ -46,6 +79,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       username: '',
       phoneNumber: '',
       role: 'user',
+      tierLevel: '',
     })
     setShowPassword(false)
     onClose()
@@ -61,6 +95,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       username: '',
       phoneNumber: '',
       role: 'user',
+      tierLevel: '',
     })
     setShowPassword(false)
     onClose()
@@ -203,12 +238,46 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                 value={formData.role}
                 onChange={(e) => handleInputChange('role', e.target.value)}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
               >
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
-                <option value="moderator">Moderator</option>
               </select>
+            </div>
+
+            {/* Tier Level */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Tier Level <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={formData.tierLevel}
+                  onChange={(e) => handleInputChange('tierLevel', e.target.value)}
+                  required
+                  disabled={isLoadingTiers}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >
+                  {isLoadingTiers ? (
+                    <option value="">Loading tiers...</option>
+                  ) : tiers.length === 0 ? (
+                    <option value="">No tiers available</option>
+                  ) : (
+                    <>
+                      <option value="">Select a tier</option>
+                      {tiers.map((tier) => (
+                        <option key={tier.$id} value={tier.name}>
+                          {tier.name}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                <Icon
+                  icon="mdi:chevron-down"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+                />
+              </div>
             </div>
           </div>
 
