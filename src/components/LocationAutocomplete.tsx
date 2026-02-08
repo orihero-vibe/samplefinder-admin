@@ -19,6 +19,7 @@ interface LocationAutocompleteProps {
   placeholder?: string
   required?: boolean
   className?: string
+  onAddLocationClick?: () => void // Optional callback for "Add Location" button
 }
 
 const LocationAutocomplete = ({
@@ -28,6 +29,7 @@ const LocationAutocomplete = ({
   placeholder = 'Search for a location...',
   required = false,
   className = '',
+  onAddLocationClick,
 }: LocationAutocompleteProps) => {
   const [locations, setLocations] = useState<LocationDocument[]>([])
   const [isOpen, setIsOpen] = useState(false)
@@ -241,7 +243,11 @@ const LocationAutocomplete = ({
                   type="button"
                   onClick={() => {
                     setIsOpen(false)
-                    setIsAddLocationModalOpen(true)
+                    if (onAddLocationClick) {
+                      onAddLocationClick()
+                    } else {
+                      setIsAddLocationModalOpen(true)
+                    }
                   }}
                   className="w-full px-4 py-3 text-left hover:bg-[#1D0A74]/5 focus:bg-[#1D0A74]/5 focus:outline-none flex items-center gap-3 border-t-2 border-gray-200 bg-gray-50"
                 >
@@ -257,7 +263,11 @@ const LocationAutocomplete = ({
                   type="button"
                   onClick={() => {
                     setIsOpen(false)
-                    setIsAddLocationModalOpen(true)
+                    if (onAddLocationClick) {
+                      onAddLocationClick()
+                    } else {
+                      setIsAddLocationModalOpen(true)
+                    }
                   }}
                   className="w-full px-4 py-3 text-left hover:bg-[#1D0A74]/5 focus:bg-[#1D0A74]/5 focus:outline-none flex items-center gap-3 border border-[#1D0A74] rounded-lg bg-white"
                 >

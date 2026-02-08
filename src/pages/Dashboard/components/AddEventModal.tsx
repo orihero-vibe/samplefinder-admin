@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import type { Models } from 'appwrite'
 import LocationAutocomplete from '../../../components/LocationAutocomplete'
+import LocationPicker from '../../../components/LocationPicker'
 import { ImageCropper } from '../../../components'
 import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
-import { settingsService, type LocationDocument } from '../../../lib/services'
+import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
 
 interface Category extends Models.Document {
   title: string
@@ -56,6 +57,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
   const [showCropper, setShowCropper] = useState(false)
   const [tempImageForCrop, setTempImageForCrop] = useState<string | null>(null)
   const [locationDisplayValue, setLocationDisplayValue] = useState('')
+  const [showAddLocationFields, setShowAddLocationFields] = useState(false)
+  const [locationName, setLocationName] = useState('')
 
   // Reset form when modal opens and fetch default points from settings
   useEffect(() => {
@@ -130,6 +133,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
       setShowCropper(false)
       setTempImageForCrop(null)
       setLocationDisplayValue('')
+      setShowAddLocationFields(false)
+      setLocationName('')
     }
   }, [isOpen])
 
@@ -228,6 +233,18 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
 
     setIsSubmitting(true)
     try {
+      // If location name is filled, create location first
+      if (showAddLocationFields && locationName.trim() && formData.address && formData.city && formData.state && formData.zipCode && formData.latitude && formData.longitude) {
+        await locationsService.create({
+          name: locationName,
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          zipCode: formData.zipCode,
+          location: [parseFloat(formData.longitude), parseFloat(formData.latitude)],
+        })
+      }
+      
       await onSave(formData)
       // Only close on success - parent will handle closing
       onClose()
@@ -568,64 +585,139 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Event Location <span className="text-red-500">*</span>
             </label>
-            <LocationAutocomplete
-              value={locationDisplayValue}
-              onChange={setLocationDisplayValue}
-              onLocationSelect={(location: LocationDocument) => {
-                // Extract coordinates - handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
-                let latitude = ''
-                let longitude = ''
-                
-                if (location.location) {
-                  let lat: number | undefined
-                  let lng: number | undefined
+            {!showAddLocationFields ? (
+              <LocationAutocomplete
+                value={locationDisplayValue}
+                onChange={setLocationDisplayValue}
+                onLocationSelect={(location: LocationDocument) => {
+                  // Extract coordinates - handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
+                  let latitude = ''
+                  let longitude = ''
                   
-                  if (Array.isArray(location.location) && location.location.length >= 2) {
-                    // Direct array format: [longitude, latitude]
-                    lng = location.location[0]
-                    lat = location.location[1]
-                  } else if (
-                    typeof location.location === 'object' &&
-                    location.location !== null &&
-                    'coordinates' in location.location &&
-                    Array.isArray((location.location as { coordinates: number[] }).coordinates) &&
-                    (location.location as { coordinates: number[] }).coordinates.length >= 2
-                  ) {
-                    // GeoJSON format: {coordinates: [longitude, latitude]}
-                    const coords = (location.location as { coordinates: number[] }).coordinates
-                    lng = coords[0]
-                    lat = coords[1]
-                  }
-                  
-                  // Validate coordinates are within valid ranges before using them
-                  if (lat !== undefined && lng !== undefined && !isNaN(lat) && !isNaN(lng)) {
-                    // Latitude: -90 to 90, Longitude: -180 to 180
-                    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                      latitude = lat.toString()
-                      longitude = lng.toString()
+                  if (location.location) {
+                    let lat: number | undefined
+                    let lng: number | undefined
+                    
+                    if (Array.isArray(location.location) && location.location.length >= 2) {
+                      // Direct array format: [longitude, latitude]
+                      lng = location.location[0]
+                      lat = location.location[1]
+                    } else if (
+                      typeof location.location === 'object' &&
+                      location.location !== null &&
+                      'coordinates' in location.location &&
+                      Array.isArray((location.location as { coordinates: number[] }).coordinates) &&
+                      (location.location as { coordinates: number[] }).coordinates.length >= 2
+                    ) {
+                      // GeoJSON format: {coordinates: [longitude, latitude]}
+                      const coords = (location.location as { coordinates: number[] }).coordinates
+                      lng = coords[0]
+                      lat = coords[1]
+                    }
+                    
+                    // Validate coordinates are within valid ranges before using them
+                    if (lat !== undefined && lng !== undefined && !isNaN(lat) && !isNaN(lng)) {
+                      // Latitude: -90 to 90, Longitude: -180 to 180
+                      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                        latitude = lat.toString()
+                        longitude = lng.toString()
+                      }
                     }
                   }
-                }
-                
-                // Populate all form fields from selected location
-                setFormData((prev) => ({
-                  ...prev,
-                  address: location.address || '',
-                  city: location.city || '',
-                  state: location.state || '',
-                  zipCode: location.zipCode || '',
-                  latitude,
-                  longitude,
-                }))
-              }}
-              placeholder="Search for a location..."
-              required
-            />
+                  
+                  // Populate all form fields from selected location
+                  setFormData((prev) => ({
+                    ...prev,
+                    address: location.address || '',
+                    city: location.city || '',
+                    state: location.state || '',
+                    zipCode: location.zipCode || '',
+                    latitude,
+                    longitude,
+                  }))
+                }}
+                onAddLocationClick={() => {
+                  setShowAddLocationFields(true)
+                  setLocationDisplayValue('')
+                }}
+                placeholder="Search for a location..."
+                required
+              />
+            ) : (
+              <div className="space-y-4">
+                {/* Location Name Input */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Location Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter Location Name"
+                    value={locationName}
+                    onChange={(e) => setLocationName(e.target.value)}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  />
+                </div>
+
+                {/* Location Picker */}
+                <LocationPicker
+                  latitude={formData.latitude}
+                  longitude={formData.longitude}
+                  onLocationChange={(lat, lng) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      latitude: lat,
+                      longitude: lng,
+                    }))
+                  }}
+                  onAddressFromCoords={(components) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      address: components.address,
+                      city: components.city,
+                      state: components.state,
+                      zipCode: components.zipCode,
+                    }))
+                  }}
+                  address={formData.address}
+                  city={formData.city}
+                  state={formData.state}
+                  zipCode={formData.zipCode}
+                  onAddressChange={(address) => setFormData((prev) => ({ ...prev, address }))}
+                  onCityChange={(city) => setFormData((prev) => ({ ...prev, city }))}
+                  onStateChange={(state) => setFormData((prev) => ({ ...prev, state }))}
+                  onZipCodeChange={(zipCode) => setFormData((prev) => ({ ...prev, zipCode }))}
+                />
+
+                {/* Cancel Add Location Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddLocationFields(false)
+                    setLocationName('')
+                    setFormData((prev) => ({
+                      ...prev,
+                      address: '',
+                      city: '',
+                      state: '',
+                      zipCode: '',
+                      latitude: '',
+                      longitude: '',
+                    }))
+                  }}
+                  className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                >
+                  <Icon icon="mdi:arrow-left" className="w-4 h-4" />
+                  Cancel and search existing location
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Hidden inputs for validation */}
-          <input type="hidden" value={formData.latitude} required />
-          <input type="hidden" value={formData.longitude} required />
+          <input type="hidden" value={formData.latitude} required={showAddLocationFields} />
+          <input type="hidden" value={formData.longitude} required={showAddLocationFields} />
 
           {/* Action Buttons */}
           <div className="flex gap-4 pt-4 border-t border-gray-200">
