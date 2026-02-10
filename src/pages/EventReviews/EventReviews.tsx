@@ -43,6 +43,9 @@ const EventReviews = () => {
   const [totalPages, setTotalPages] = useState(0)
   const [showHiddenReviews, setShowHiddenReviews] = useState(true) // Show all reviews including hidden by default for admin
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [ratingFilter, setRatingFilter] = useState('all')
+  const [sentimentFilter, setSentimentFilter] = useState('all')
 
   // Helper function to get initials from name
   const getInitials = (firstName?: string, lastName?: string, username?: string): string => {
@@ -119,7 +122,7 @@ const EventReviews = () => {
       
       // Filter by event ID if provided
       if (eventId) {
-        queries.push(Query.equal('event', [eventId]))
+        queries.push(Query.equal('event', eventId))
       }
       
       // Fetch reviews with relationships populated
@@ -362,10 +365,46 @@ const EventReviews = () => {
     )
   }
 
-  // Filter reviews based on showHiddenReviews toggle
-  const displayedReviews = showHiddenReviews
-    ? reviews
-    : reviews.filter((review) => !review.isHidden)
+  // Filter reviews based on search term, rating, sentiment, and hidden status
+  const displayedReviews = reviews.filter((review) => {
+    // Filter by hidden status
+    if (!showHiddenReviews && review.isHidden) {
+      return false
+    }
+
+    // Filter by search term (search in review text, event name, brand name, and user name)
+    if (searchTerm && searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim()
+      const matchesSearch =
+        (review.reviewText?.toLowerCase().includes(searchLower) ?? false) ||
+        (review.event?.name?.toLowerCase().includes(searchLower) ?? false) ||
+        (review.event?.brand?.toLowerCase().includes(searchLower) ?? false) ||
+        (review.event?.location?.toLowerCase().includes(searchLower) ?? false) ||
+        (review.reviewer?.name?.toLowerCase().includes(searchLower) ?? false) ||
+        (review.reviewer?.email?.toLowerCase().includes(searchLower) ?? false)
+      
+      if (!matchesSearch) {
+        return false
+      }
+    }
+
+    // Filter by rating
+    if (ratingFilter && ratingFilter !== 'all') {
+      const filterRating = parseInt(ratingFilter, 10)
+      if (!isNaN(filterRating) && review.rating !== filterRating) {
+        return false
+      }
+    }
+
+    // Filter by sentiment
+    if (sentimentFilter && sentimentFilter !== 'all') {
+      if (review.sentiment !== sentimentFilter) {
+        return false
+      }
+    }
+
+    return true
+  })
 
   const hiddenCount = reviews.filter((review) => review.isHidden).length
 
@@ -373,7 +412,14 @@ const EventReviews = () => {
     <DashboardLayout>
       <div className="p-8">
         <EventReviewsHeader />
-        <SearchAndFilter />
+        <SearchAndFilter
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          ratingFilter={ratingFilter}
+          onRatingFilterChange={setRatingFilter}
+          sentimentFilter={sentimentFilter}
+          onSentimentFilterChange={setSentimentFilter}
+        />
         
         {/* Moderation Controls */}
         <div className="flex items-center justify-between mb-4 bg-gray-50 rounded-lg p-4">

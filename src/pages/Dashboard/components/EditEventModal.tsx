@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import type { Models } from 'appwrite'
 import LocationAutocomplete from '../../../components/LocationAutocomplete'
-import { ImageCropper } from '../../../components'
+import { ImageCropper, UnsavedChangesModal } from '../../../components'
 import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
-import { settingsService, type LocationDocument } from '../../../lib/services'
+import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
+import { useNotificationStore } from '../../../stores/notificationStore'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 
 interface EventData {
   eventName?: string
@@ -21,6 +23,7 @@ interface EventData {
   discountImage?: File | string | null
   checkInCode?: string
   brandName?: string
+  brandDescription?: string
   checkInPoints?: string
   reviewPoints?: string
   eventInfo?: string
@@ -35,6 +38,7 @@ interface Category extends Models.Document {
 interface Brand extends Models.Document {
   name: string
   productType?: string[]
+  description?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,6 +51,7 @@ interface EditEventModalProps {
   onShowArchiveConfirm?: () => void
   onShowHideConfirm?: () => void
   onShowDeleteConfirm?: () => void
+  onDuplicate?: () => void
   initialData?: EventData
   eventId?: string // Event ID for uniqueness checking
   categories?: Category[]
@@ -60,11 +65,13 @@ const EditEventModal = ({
   onShowArchiveConfirm,
   onShowHideConfirm,
   onShowDeleteConfirm,
+  onDuplicate,
   initialData,
   eventId,
   categories = [],
   brands = [],
 }: EditEventModalProps) => {
+  const { addNotification } = useNotificationStore()
   const [formData, setFormData] = useState({
     eventName: '',
     eventDate: '',
@@ -80,6 +87,7 @@ const EditEventModal = ({
     discountImage: null as File | string | null,
     checkInCode: '',
     brandName: '',
+    brandDescription: '',
     checkInPoints: '',
     reviewPoints: '',
     eventInfo: '',
@@ -94,9 +102,13 @@ const EditEventModal = ({
   const [showCropper, setShowCropper] = useState(false)
   const [tempImageForCrop, setTempImageForCrop] = useState<string | null>(null)
   const [locationDisplayValue, setLocationDisplayValue] = useState('')
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const initialDataRef = useRef(formData)
+  
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   useEffect(() => {
-    if (initialData) {
+    if (initialData && isOpen) {
       // Set preview for existing image URL
       if (typeof initialData.discountImage === 'string' && initialData.discountImage) {
         setDiscountImagePreview(initialData.discountImage)
@@ -106,13 +118,40 @@ const EditEventModal = ({
       setShowCropper(false)
       setTempImageForCrop(null)
       
-      // Set location display value from initial data
-      if (initialData.address && initialData.city && initialData.state) {
-        const displayValue = `${initialData.address}, ${initialData.city}, ${initialData.state} ${initialData.zipCode || ''}`.trim()
-        setLocationDisplayValue(displayValue)
-      } else {
-        setLocationDisplayValue('')
+      // Try to find location by address to get the location name
+      const findLocationByName = async () => {
+        if (initialData.address && initialData.city) {
+          try {
+            // Search for location using address or city
+            const searchTerm = initialData.address || initialData.city
+            const result = await locationsService.search(searchTerm)
+            
+            // Try to find exact match by address and city
+            const matchingLocation = result.documents.find(
+              (loc) =>
+                loc.address === initialData.address &&
+                loc.city === initialData.city &&
+                loc.state === initialData.state
+            )
+            
+            if (matchingLocation) {
+              // Use location name if found
+              setLocationDisplayValue(matchingLocation.name)
+            } else {
+              // If no exact match, leave empty - user can search/select
+              setLocationDisplayValue('')
+            }
+          } catch (error) {
+            console.error('Error finding location:', error)
+            // On error, leave empty
+            setLocationDisplayValue('')
+          }
+        } else {
+          setLocationDisplayValue('')
+        }
       }
+      
+      findLocationByName()
       
       // If check-in code doesn't exist, generate a unique one
       if (!initialData.checkInCode) {
@@ -135,7 +174,7 @@ const EditEventModal = ({
               settingsService.getDefaultReviewPoints(),
             ])
             
-            setFormData({
+            const formDataToSet = {
               eventName: initialData.eventName || '',
               eventDate: initialData.eventDate || '',
               startTime: initialData.startTime || '',
@@ -150,16 +189,21 @@ const EditEventModal = ({
               discountImage: initialData.discountImage || null,
               checkInCode: initialData.checkInCode || '',
               brandName: initialData.brandName || '',
+              brandDescription: initialData.brandDescription || '',
               checkInPoints: initialData.checkInPoints || defaultCheckInPoints?.toString() || '',
               reviewPoints: initialData.reviewPoints || defaultReviewPoints?.toString() || '',
               eventInfo: initialData.eventInfo || '',
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
-            })
+            }
+            
+            setFormData(formDataToSet)
+            // Store the initial data for comparison
+            initialDataRef.current = formDataToSet
           } catch (error) {
             console.error('Error fetching default points:', error)
             // Fallback to initial data without defaults
-            setFormData({
+            const formDataToSet = {
               eventName: initialData.eventName || '',
               eventDate: initialData.eventDate || '',
               startTime: initialData.startTime || '',
@@ -174,16 +218,21 @@ const EditEventModal = ({
               discountImage: initialData.discountImage || null,
               checkInCode: initialData.checkInCode || '',
               brandName: initialData.brandName || '',
+              brandDescription: initialData.brandDescription || '',
               checkInPoints: initialData.checkInPoints || '',
               reviewPoints: initialData.reviewPoints || '',
               eventInfo: initialData.eventInfo || '',
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
-            })
+            }
+            
+            setFormData(formDataToSet)
+            // Store the initial data for comparison
+            initialDataRef.current = formDataToSet
           }
         } else {
           // Use initial data as-is
-          setFormData({
+          const formDataToSet = {
             eventName: initialData.eventName || '',
             eventDate: initialData.eventDate || '',
             startTime: initialData.startTime || '',
@@ -198,33 +247,74 @@ const EditEventModal = ({
             discountImage: initialData.discountImage || null,
             checkInCode: initialData.checkInCode || '',
             brandName: initialData.brandName || '',
+            brandDescription: initialData.brandDescription || '',
             checkInPoints: initialData.checkInPoints || '',
             reviewPoints: initialData.reviewPoints || '',
             eventInfo: initialData.eventInfo || '',
             latitude: initialData.latitude || '',
             longitude: initialData.longitude || '',
-          })
+          }
+          
+          setFormData(formDataToSet)
+          // Store the initial data for comparison
+          initialDataRef.current = formDataToSet
         }
       }
       
       fetchDefaultsIfNeeded()
+      
+      // Set available products immediately when initialData has a brand
+      if (initialData.brandName) {
+        const selectedBrand = brands.find((brand) => brand.name === initialData.brandName)
+        if (selectedBrand && selectedBrand.productType) {
+          setAvailableProducts(selectedBrand.productType)
+        }
+      }
     } else {
       // Reset location display value when modal closes or no initial data
       setLocationDisplayValue('')
     }
-  }, [initialData, isOpen, eventId])
+  }, [initialData, isOpen, eventId, brands])
 
-  // Update available products when brand changes
+  // Track previous brand name to detect actual changes
+  const prevBrandNameRef = useRef<string>('')
+
+  // Update available products and brand description when brand changes
   useEffect(() => {
+    // Only clear products and update description if brand actually changed (not on initial load)
+    const brandChanged = prevBrandNameRef.current !== '' && prevBrandNameRef.current !== formData.brandName
+    
     if (formData.brandName) {
       const selectedBrand = brands.find((brand) => brand.name === formData.brandName)
-      if (selectedBrand && selectedBrand.productType) {
-        setAvailableProducts(selectedBrand.productType)
+      if (selectedBrand) {
+        // Set available products
+        if (selectedBrand.productType) {
+          setAvailableProducts(selectedBrand.productType)
+        } else {
+          setAvailableProducts([])
+        }
+        // Clear selected products and prefill brand description only when brand actually changes (not on initial load)
+        if (brandChanged) {
+          setFormData((prev) => ({ 
+            ...prev, 
+            products: [], 
+            brandDescription: selectedBrand.description || '' 
+          }))
+        }
       } else {
         setAvailableProducts([])
+        if (brandChanged) {
+          setFormData((prev) => ({ ...prev, products: [], brandDescription: '' }))
+        }
       }
+      prevBrandNameRef.current = formData.brandName
     } else {
       setAvailableProducts([])
+      // Only clear if brand was removed (not on initial load)
+      if (prevBrandNameRef.current !== '') {
+        setFormData((prev) => ({ ...prev, products: [], brandDescription: '' }))
+      }
+      prevBrandNameRef.current = ''
     }
   }, [formData.brandName, brands])
 
@@ -296,6 +386,36 @@ const EditEventModal = ({
     setDiscountImagePreview(null)
   }
 
+  // Get today's date in YYYY-MM-DD format for date input min attribute
+  const getTodayDateString = () => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
+    onClose()
+  }
+
+  const handleSaveFromUnsavedModal = async () => {
+    // Trigger form submission via ref
+    const form = document.querySelector('form[data-event-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -304,9 +424,71 @@ const EditEventModal = ({
       return
     }
 
+    // Validate that event date is not in the past
+    if (formData.eventDate) {
+      const eventDate = new Date(formData.eventDate)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0) // Reset time to start of day for comparison
+      eventDate.setHours(0, 0, 0, 0)
+
+      if (eventDate < today) {
+        addNotification({
+          type: 'error',
+          title: 'Invalid Event Date',
+          message: 'Event date cannot be in the past. Please select today or a future date.',
+        })
+        return
+      }
+    }
+
+    // Validate that start time is before end time
+    if (formData.startTime && formData.endTime) {
+      const [startHour, startMinute] = formData.startTime.split(':').map(Number)
+      const [endHour, endMinute] = formData.endTime.split(':').map(Number)
+      
+      const startTimeInMinutes = startHour * 60 + startMinute
+      const endTimeInMinutes = endHour * 60 + endMinute
+      
+      if (startTimeInMinutes >= endTimeInMinutes) {
+        addNotification({
+          type: 'error',
+          title: 'Invalid Event Duration',
+          message: 'Start time must be before end time. Please adjust the event times.',
+        })
+        return
+      }
+    }
+
+    // Validate that products are not blank
+    if (!formData.products || formData.products.length === 0) {
+      addNotification({
+        type: 'error',
+        title: 'Products Required',
+        message: 'Products field cannot be blank. Please select at least one product.',
+      })
+      return
+    }
+
+    // Validate that all selected products are valid for the selected brand
+    if (formData.brandName && availableProducts.length > 0) {
+      const invalidProducts = formData.products.filter(
+        (product) => !availableProducts.includes(product)
+      )
+      if (invalidProducts.length > 0) {
+        addNotification({
+          type: 'error',
+          title: 'Invalid Products',
+          message: `Invalid products selected: ${invalidProducts.join(', ')}. Please select only products related to the selected brand.`,
+        })
+        return
+      }
+    }
+
     setIsSubmitting(true)
     try {
       await onSave(formData)
+      // Close unsaved changes modal if it's open
+      setShowUnsavedChangesModal(false)
       // Only close on success - parent will handle closing
       onClose()
     } catch {
@@ -328,11 +510,19 @@ const EditEventModal = ({
         />
       )}
       
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
+      />
+      
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
         <div
           className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-          onClick={isSubmitting ? undefined : onClose}
+          onClick={isSubmitting ? undefined : handleClose}
         />
 
         {/* Modal */}
@@ -346,7 +536,7 @@ const EditEventModal = ({
             </p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
             disabled={isSubmitting}
           >
@@ -355,7 +545,7 @@ const EditEventModal = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} data-event-form className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {/* Brand Name */}
             <div>
@@ -369,7 +559,7 @@ const EditEventModal = ({
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               >
                 <option value="">Choose Brand Name</option>
-                {brands.map((brand) => (
+                {[...brands].sort((a, b) => a.name.localeCompare(b.name)).map((brand) => (
                   <option key={brand.$id} value={brand.name}>
                     {brand.name}
                   </option>
@@ -389,14 +579,31 @@ const EditEventModal = ({
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               >
                 <option value="">Choose Category</option>
-                {categories.map((category) => (
+                {[...categories].sort((a, b) => a.title.localeCompare(b.title)).map((category) => (
                   <option key={category.$id} value={category.title}>
                     {category.title}
                   </option>
                 ))}
               </select>
             </div>
+          </div>
 
+          {/* Brand Description */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Brand Description
+            </label>
+            <textarea
+              placeholder="Enter brand description (products, services, etc.)"
+              value={formData.brandDescription}
+              onChange={(e) => handleInputChange('brandDescription', e.target.value)}
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent resize-none"
+            />
+            <p className="text-xs text-gray-500 mt-1">This description will be shown in the Favorites section.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {/* Check in Code */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -518,6 +725,7 @@ const EditEventModal = ({
                 type="date"
                 value={formData.eventDate}
                 onChange={(e) => handleInputChange('eventDate', e.target.value)}
+                min={getTodayDateString()}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
@@ -737,9 +945,19 @@ const EditEventModal = ({
                 Delete
               </button>
             )}
+            {onDuplicate && (
+              <button
+                type="button"
+                onClick={onDuplicate}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-semibold flex items-center gap-2"
+              >
+                <Icon icon="mdi:content-copy" className="w-5 h-5" />
+                Duplicate
+              </button>
+            )}
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isSubmitting}
             >

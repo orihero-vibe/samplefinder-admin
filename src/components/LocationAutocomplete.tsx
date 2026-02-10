@@ -100,10 +100,8 @@ const LocationAutocomplete = ({
 
   // Handle location selection
   const handleSelect = (location: LocationDocument) => {
-    // Format display value: "Location Name - Address, City, State ZIP"
-    const displayValue = location.name
-      ? `${location.name} - ${location.address}, ${location.city}, ${location.state} ${location.zipCode}`
-      : `${location.address}, ${location.city}, ${location.state} ${location.zipCode}`
+    // Display only the location name
+    const displayValue = location.name || `${location.address}, ${location.city}`
     
     onChange(displayValue)
     onLocationSelect(location)
@@ -125,6 +123,15 @@ const LocationAutocomplete = ({
     setIsOpen(false)
     inputRef.current?.focus()
   }
+
+  // Set custom validation message
+  useEffect(() => {
+    if (inputRef.current && required) {
+      inputRef.current.setCustomValidity(
+        value.trim() === '' ? 'Input required' : ''
+      )
+    }
+  }, [value, required])
 
   // Handle location creation
   const handleCreateLocation = async (locationData: {
@@ -189,6 +196,14 @@ const LocationAutocomplete = ({
               }
             }}
             onKeyDown={handleKeyDown}
+            onInvalid={(e) => {
+              const target = e.target as HTMLInputElement
+              if (target.value.trim() === '') {
+                target.setCustomValidity('Input required')
+              } else {
+                target.setCustomValidity('')
+              }
+            }}
             placeholder={placeholder}
             required={required}
             className={`w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${className}`}

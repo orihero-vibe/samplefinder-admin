@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   DashboardLayout,
   ShimmerPage,
@@ -14,7 +14,7 @@ import {
   StatsCards,
 } from './components'
 import { appUsersService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
-import { Query } from '../../lib/appwrite'
+import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
   const { addNotification } = useNotificationStore()
@@ -39,18 +39,31 @@ const Users = () => {
   const [pageSize] = useState(25)
   const [totalUsers, setTotalUsers] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
+  const [isLoading, setIsLoading] = useState(false)
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Fetch users from Appwrite with pagination and search
   const fetchUsers = async (page: number = currentPage) => {
+    // Prevent multiple simultaneous fetches
+    if (isLoading) return
+    
     try {
+      setIsLoading(true)
       setError(null)
       
       // Build queries
       const queries: string[] = []
+      const trimmedSearch = searchQuery.trim()
       
-      // Apply search using Query.contains (searches firstname, lastname, or username)
-      if (searchQuery.trim()) {
-        const trimmedSearch = searchQuery.trim()
+      // Check if searching by email (contains @) or phone number (all digits)
+      const isEmailSearch = trimmedSearch.length > 0 && trimmedSearch.includes('@')
+      const digitsOnly = trimmedSearch.replace(/\D/g, '')
+      const isPhoneSearch = trimmedSearch.length > 0 && digitsOnly && digitsOnly === trimmedSearch && digitsOnly.length >= 3
+      
+      // Apply search using Query.contains (searches firstname, lastname, username)
+      // Note: email is not in user_profiles collection, it's in Auth system
+      // For email/phone search, we'll fetch a larger set and filter client-side
+      if (trimmedSearch && !isEmailSearch && !isPhoneSearch) {
         // Search across firstname, lastname, and username using OR logic
         queries.push(Query.or([
           Query.contains('firstname', trimmedSearch),
@@ -59,17 +72,86 @@ const Users = () => {
         ]))
       }
       
-      // Add sorting and pagination
-      queries.push(Query.orderDesc('$createdAt')) // Most recent users first
-      queries.push(Query.limit(pageSize))
-      queries.push(Query.offset((page - 1) * pageSize))
+      // Apply tier filter based on totalPoints ranges
+      if (tierFilter !== 'All Tiers') {
+        switch (tierFilter) {
+          case 'NewbieSampler':
+            queries.push(Query.lessThan('totalPoints', 1000))
+            break
+          case 'SampleFan':
+            queries.push(Query.greaterThanEqual('totalPoints', 1000))
+            queries.push(Query.lessThan('totalPoints', 5000))
+            break
+          case 'SuperSampler':
+            queries.push(Query.greaterThanEqual('totalPoints', 5000))
+            queries.push(Query.lessThan('totalPoints', 25000))
+            break
+          case 'VIS':
+            queries.push(Query.greaterThanEqual('totalPoints', 25000))
+            queries.push(Query.lessThan('totalPoints', 100000))
+            break
+          case 'SampleMaster':
+            queries.push(Query.greaterThanEqual('totalPoints', 100000))
+            break
+        }
+      }
+      
+      // Apply sorting based on sortBy value
+      if (sortBy === 'Sort by: Points') {
+        queries.push(Query.orderDesc('totalPoints'))
+      } else if (sortBy === 'Sort by: Name') {
+        queries.push(Query.orderAsc('firstname'))
+      } else if (sortBy === 'Sort by: Events') {
+        queries.push(Query.orderDesc('totalEvents'))
+      } else if (sortBy === 'Sort by: Reviews') {
+        queries.push(Query.orderDesc('totalReviews'))
+      } else {
+        // Default: Sort by: Date
+        queries.push(Query.orderDesc('$createdAt'))
+      }
+      
+      // For email/phone search, fetch more results (up to 500) to enable client-side filtering
+      // Otherwise use normal pagination
+      if (isEmailSearch || isPhoneSearch) {
+        queries.push(Query.limit(500))
+        queries.push(Query.offset(0))
+      } else {
+        queries.push(Query.limit(pageSize))
+        queries.push(Query.offset((page - 1) * pageSize))
+      }
       
       const result = await appUsersService.listWithPagination(queries)
       
+      // Client-side filtering for email or phone search
+      let filteredUsers = result.users
+      let filteredTotal = result.total
+      
+      if (isEmailSearch || isPhoneSearch) {
+        filteredUsers = result.users.filter(user => {
+          // Email search
+          if (isEmailSearch) {
+            return user.email?.toLowerCase().includes(trimmedSearch.toLowerCase())
+          }
+          
+          // Phone number search - strip all non-digits from stored phone and compare
+          if (isPhoneSearch) {
+            const userPhoneDigits = (user.phoneNumber || '').replace(/\D/g, '')
+            return userPhoneDigits.includes(digitsOnly)
+          }
+          
+          return false
+        })
+        filteredTotal = filteredUsers.length
+        
+        // Apply client-side pagination for filtered results
+        const startIndex = (page - 1) * pageSize
+        const endIndex = startIndex + pageSize
+        filteredUsers = filteredUsers.slice(startIndex, endIndex)
+      }
+      
       // Extract pagination metadata
-      const total = result.total
-      const totalPagesCount = Math.ceil(total / pageSize)
-      setTotalUsers(total)
+      const totalPagesCount = Math.ceil(filteredTotal / pageSize)
+      setTotalUsers(filteredTotal)
       setTotalPages(totalPagesCount)
       
       // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
@@ -77,13 +159,14 @@ const Users = () => {
         const lastValidPage = totalPagesCount
         setCurrentPage(lastValidPage)
         if (page !== lastValidPage) {
+          setIsLoading(false)
           return fetchUsers(lastValidPage)
         }
       } else if (totalPagesCount === 0) {
         setCurrentPage(1)
       }
       
-      setUsers(result.users)
+      setUsers(filteredUsers)
       setCurrentPage(page)
     } catch (err) {
       console.error('Error fetching users:', err)
@@ -95,6 +178,7 @@ const Users = () => {
       })
     } finally {
       setIsInitialLoad(false)
+      setIsLoading(false)
     }
   }
 
@@ -121,17 +205,43 @@ const Users = () => {
     }
   }
 
+  // Initial load
   useEffect(() => {
-    fetchUsers()
+    fetchUsers(1)
     fetchStatistics()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Refetch users when search query, tier filter, or sort changes
+  // Refetch users when search query changes with debounce (but not on initial load)
   useEffect(() => {
-    fetchUsers(1)
+    if (!isInitialLoad) {
+      // Clear existing timeout
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+      
+      // Set new timeout for search (debounce)
+      searchTimeoutRef.current = setTimeout(() => {
+        fetchUsers(1)
+      }, 300) // 300ms debounce
+      
+      // Cleanup
+      return () => {
+        if (searchTimeoutRef.current) {
+          clearTimeout(searchTimeoutRef.current)
+        }
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, tierFilter, sortBy])
+  }, [searchQuery])
+
+  // Refetch users immediately when tier filter or sort changes (but not on initial load)
+  useEffect(() => {
+    if (!isInitialLoad) {
+      fetchUsers(1)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tierFilter, sortBy])
 
   // Handle search change
   const handleSearchChange = (value: string) => {
@@ -145,6 +255,29 @@ const Users = () => {
         <ShimmerPage />
       </DashboardLayout>
     )
+  }
+
+  // Upload file to Appwrite Storage
+  const uploadFile = async (file: File): Promise<string | null> => {
+    try {
+      if (!appwriteConfig.storage.bucketId) {
+        throw new Error('Storage bucket ID is not configured')
+      }
+
+      const fileId = ID.unique()
+      const result = await storage.createFile(
+        appwriteConfig.storage.bucketId,
+        fileId,
+        file
+      )
+
+      // Get file preview URL
+      const fileUrl = `${appwriteConfig.endpoint}/storage/buckets/${appwriteConfig.storage.bucketId}/files/${result.$id}/view?project=${appwriteConfig.projectId}`
+      return fileUrl
+    } catch (error) {
+      console.error('Error uploading file:', error)
+      throw error
+    }
   }
 
   const handleCreateUser = async (userData: UserFormData) => {
@@ -349,20 +482,82 @@ const Users = () => {
       {/* Edit User Modal */}
       <EditUserModal
         isOpen={isEditUserModalOpen}
+        userId={selectedUser?.$id}
         onClose={() => {
           setIsEditUserModalOpen(false)
           setSelectedUser(null)
         }}
-        onSave={(userData) => {
-          console.log('Updated user data:', userData)
-          // TODO: Implement update functionality
-          setIsEditUserModalOpen(false)
-          setSelectedUser(null)
-          addNotification({
-            type: 'success',
-            title: 'User updated successfully',
-            message: 'User information has been updated',
-          })
+        onSave={async (userData) => {
+          if (!selectedUser?.$id) return
+          
+          try {
+            // Handle profile picture upload if a new file was selected
+            let avatarURL: string | undefined = undefined
+            if (userData.image && userData.image instanceof File) {
+              try {
+                avatarURL = await uploadFile(userData.image) || undefined
+              } catch (uploadError) {
+                console.error('Error uploading profile picture:', uploadError)
+                addNotification({
+                  type: 'error',
+                  title: 'Upload Failed',
+                  message: 'Failed to upload profile picture. Other changes will still be saved.',
+                })
+              }
+            } else if (userData.image === null) {
+              // User deleted the image
+              avatarURL = undefined
+            } else if (typeof userData.image === 'string') {
+              // Existing image URL - don't change it
+              avatarURL = userData.image
+            }
+            
+            // Map the UI field names to actual database field names
+            // Only include fields that exist in the database schema
+            const updateData: Record<string, unknown> = {
+              firstname: userData.firstName,
+              lastname: userData.lastName,
+              zipCode: userData.zipCode,
+              phoneNumber: userData.phoneNumber,
+              totalPoints: Number(userData.userPoints) || 0,
+              isAmbassador: userData.baBadge === 'Yes',
+              totalEvents: Number(userData.checkIns) || 0,
+              username: userData.username,
+              isInfluencer: userData.influencerBadge === 'Yes',
+              referralCode: userData.referralCode,
+              totalReviews: Number(userData.reviews) || 0,
+            }
+            
+            // Add avatarURL only if it was changed
+            if (avatarURL !== undefined) {
+              updateData.avatarURL = avatarURL
+            }
+            
+            // Note: Fields like tierLevel, triviasWon, checkInReviewPoints, signUpDate, lastLogin, password
+            // are not stored in the database and are either calculated, read-only, or legacy fields
+            
+            // Update user profile in database
+            await appUsersService.update(selectedUser.$id, updateData)
+            
+            // Refresh the users list
+            await fetchUsers(currentPage)
+            
+            setIsEditUserModalOpen(false)
+            setSelectedUser(null)
+            
+            addNotification({
+              type: 'success',
+              title: 'User updated successfully',
+              message: 'User information has been updated',
+            })
+          } catch (err) {
+            console.error('Error updating user:', err)
+            addNotification({
+              type: 'error',
+              title: 'Error',
+              message: 'Failed to update user. Please try again.',
+            })
+          }
         }}
         onAddToBlacklist={() => {
           setBlockModalState({ isOpen: true, user: selectedUser, isLoading: false })
@@ -374,6 +569,7 @@ const Users = () => {
         initialData={
           selectedUser
             ? {
+                image: selectedUser.avatarURL || null,
                 firstName: String(selectedUser.firstname ?? selectedUser.firstName ?? ''),
                 lastName: String(selectedUser.lastname ?? selectedUser.lastName ?? ''),
                 zipCode: String(selectedUser.zipCode ?? ''),

@@ -17,6 +17,7 @@ interface EventsTableProps {
   events: Event[]
   onEventClick: (event: Event) => void
   onEditClick: (event: Event) => void
+  onReviewClick: (event: Event) => void
   onHideClick: (event: Event) => void
   onDeleteClick: (event: Event) => void
   onCSVUpload: () => void
@@ -32,6 +33,7 @@ const EventsTable = ({
   events,
   onEventClick,
   onEditClick,
+  onReviewClick,
   onHideClick,
   onDeleteClick,
   onCSVUpload,
@@ -77,7 +79,7 @@ const EventsTable = ({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:pin" className="w-4 h-4" />
-                  Venue Name
+                  Event Name
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -156,7 +158,14 @@ const EventsTable = ({
                 >
                   <div className="flex items-center gap-3">
                     <button
-                      className="hover:text-gray-900 transition-colors"
+                      className="hover:text-blue-600 transition-colors cursor-pointer"
+                      onClick={() => onReviewClick(event)}
+                      title="View event reviews"
+                    >
+                      <Icon icon="mdi:star" className="w-5 h-5" />
+                    </button>
+                    <button
+                      className="hover:text-gray-900 transition-colors cursor-pointer"
                       onClick={() => onHideClick(event)}
                       title={event.status === 'Hidden' ? 'Unhide event' : 'Hide event'}
                     >
@@ -166,13 +175,13 @@ const EventsTable = ({
                       />
                     </button>
                     <button
-                      className="hover:text-gray-900 transition-colors"
+                      className="hover:text-gray-900 transition-colors cursor-pointer"
                       onClick={() => onEditClick(event)}
                     >
                       <Icon icon="mdi:pencil" className="w-5 h-5" />
                     </button>
                     <button
-                      className="hover:text-red-600 transition-colors"
+                      className="hover:text-red-600 transition-colors cursor-pointer"
                       onClick={() => onDeleteClick(event)}
                     >
                       <Icon icon="mdi:trash-can" className="w-5 h-5" />

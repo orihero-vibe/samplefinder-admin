@@ -14,15 +14,9 @@ interface User {
   totalPoints?: number
   $createdAt?: string
   isBlocked?: boolean
-}
-
-// Calculate tier based on points
-const getTierFromPoints = (points: number = 0): { name: string; level: number; color: string } => {
-  if (points >= 100000) return { name: 'SampleMaster', level: 5, color: 'bg-amber-100 text-amber-800' }
-  if (points >= 25000) return { name: 'VIS', level: 4, color: 'bg-gray-200 text-gray-800' }
-  if (points >= 5000) return { name: 'SuperSampler', level: 3, color: 'bg-yellow-100 text-yellow-800' }
-  if (points >= 1000) return { name: 'SampleFan', level: 2, color: 'bg-purple-100 text-purple-800' }
-  return { name: 'NewbieSampler', level: 1, color: 'bg-blue-100 text-blue-800' }
+  dob?: string
+  totalEvents?: number
+  totalReviews?: number
 }
 
 interface UsersTableProps {
@@ -46,6 +40,22 @@ const UsersTable = ({
   pageSize = 25,
   onPageChange,
 }: UsersTableProps) => {
+  // Format phone number to (XXX) XXX-XXXX
+  const formatPhoneNumber = (phoneNumber: string | undefined) => {
+    if (!phoneNumber) return '-'
+    
+    // Remove all non-digits
+    const cleaned = phoneNumber.replace(/\D/g, '')
+    
+    // Format based on length
+    if (cleaned.length === 10) {
+      return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`
+    }
+    
+    // Return as-is if not 10 digits
+    return phoneNumber
+  }
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
@@ -73,37 +83,37 @@ const UsersTable = ({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
-                  Email
-                </div>
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <div className="flex items-center gap-2">
-                  <Icon icon="mdi:filter" className="w-4 h-4" />
                   Phone Number
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
-                  Tier
+                  Email
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
-                  Role
+                  Total Points
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
-                  Status
+                  Date of Birth
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
-                  Created At
+                  Check Ins
+                </div>
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <div className="flex items-center gap-2">
+                  <Icon icon="mdi:filter" className="w-4 h-4" />
+                  Reviews
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -120,7 +130,11 @@ const UsersTable = ({
               </tr>
             ) : (
               users.map((user) => (
-                <tr key={user.$id || user.authID} className="hover:bg-gray-50">
+                <tr 
+                  key={user.$id || user.authID} 
+                  className="hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => onEditClick(user)}
+                >
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {user.firstName || '-'}
                   </td>
@@ -131,55 +145,48 @@ const UsersTable = ({
                     {user.username || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {formatPhoneNumber(user.phoneNumber)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {user.email || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.phoneNumber || '-'}
+                    {user.totalPoints?.toLocaleString() || '0'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {(() => {
-                      const tier = getTierFromPoints(user.totalPoints)
-                      return (
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${tier.color}`}>
-                          {tier.name}
-                        </span>
-                      )
-                    })()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-                      {user.role || 'user'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.isBlocked ? (
-                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center gap-1 w-fit">
-                        <Icon icon="mdi:lock" className="w-3 h-3" />
-                        Blocked
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 flex items-center gap-1 w-fit">
-                        <Icon icon="mdi:check-circle" className="w-3 h-3" />
-                        Active
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.$createdAt
-                      ? new Date(user.$createdAt).toLocaleDateString()
+                    {user.dob
+                      ? new Date(user.dob).toLocaleDateString('en-US', { 
+                          month: '2-digit', 
+                          day: '2-digit', 
+                          year: 'numeric' 
+                        })
                       : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {user.totalEvents?.toLocaleString() || '0'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {user.totalReviews?.toLocaleString() || '0'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => onEditClick(user)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onEditClick(user)
+                        }}
                         className="hover:text-blue-600 transition-colors"
+                        title="Edit user"
                       >
                         <Icon icon="mdi:pencil" className="w-5 h-5" />
                       </button>
                       <button
-                        onClick={() => onDeleteClick(user)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDeleteClick(user)
+                        }}
                         className="hover:text-red-600 transition-colors"
+                        title="Delete user"
                       >
                         <Icon icon="mdi:trash-can" className="w-5 h-5" />
                       </button>

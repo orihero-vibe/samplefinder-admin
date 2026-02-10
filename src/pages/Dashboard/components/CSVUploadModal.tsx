@@ -39,6 +39,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
   
   // Optional columns (alphabetical)
   const optionalColumns = [
+    'Brand Description',
     'Discount',
     'Discount Image URL',
   ]
@@ -117,6 +118,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
       'NY',                               // State
       '10001',                            // Zip Code
       // Optional columns (alphabetical)
+      'Premium craft beer brand',         // Brand Description (optional)
       '10%',                              // Discount (optional, text field)
       'https://example.com/image.jpg',    // Discount Image URL (optional)
     ]

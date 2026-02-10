@@ -16,7 +16,7 @@ interface TriviaQuiz {
   skip: number
   incorrect: number
   winnersCount: number
-  status: 'Scheduled' | 'Completed' | 'Draft'
+  status: 'Scheduled' | 'Active' | 'Completed' | 'Draft'
   answers: { option: string; isCorrect: boolean; responseCount: number }[]
   totalParticipants: number
   engagementRate: number

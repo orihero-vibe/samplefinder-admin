@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
-import { tiersService, type TierDocument } from '../../../lib/services'
+import { tiersService, type TierDocument, appUsersService } from '../../../lib/services'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '../../../components'
+import { Query } from '../../../lib/appwrite'
 
 interface UserData {
   image?: string | File | null
@@ -32,6 +35,7 @@ interface EditUserModalProps {
   onAddToBlacklist?: () => void
   onDelete?: () => void
   initialData?: UserData
+  userId?: string
 }
 
 const EditUserModal = ({
@@ -41,6 +45,7 @@ const EditUserModal = ({
   onAddToBlacklist,
   onDelete,
   initialData,
+  userId,
 }: EditUserModalProps) => {
   const [formData, setFormData] = useState<UserData>({
     image: null,
@@ -69,7 +74,22 @@ const EditUserModal = ({
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [tiers, setTiers] = useState<TierDocument[]>([])
   const [isLoadingTiers, setIsLoadingTiers] = useState(false)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [usernameValidation, setUsernameValidation] = useState<{
+    isChecking: boolean
+    isAvailable: boolean | null
+    message: string
+  }>({
+    isChecking: false,
+    isAvailable: null,
+    message: ''
+  })
+  const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wasOpenRef = useRef(false)
+  const initialDataRef = useRef(formData)
+  
+  const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
@@ -102,6 +122,7 @@ const EditUserModal = ({
       
       if (isNewOpen) {
         setFormData(newFormData)
+        initialDataRef.current = newFormData
 
         // Set image preview if initial data has image
         if (initialData.image) {
@@ -119,6 +140,7 @@ const EditUserModal = ({
         // Modal is already open, but initialData changed (e.g., different user selected)
         // Update form data, especially tierLevel
         setFormData(newFormData)
+        initialDataRef.current = newFormData
       }
     }
     
@@ -178,10 +200,129 @@ const EditUserModal = ({
     }
   }, [isOpen, initialData])
 
+  // Check username availability with debounce (exclude current user)
+  const checkUsernameAvailability = async (username: string) => {
+    if (!username.trim()) {
+      setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+      return
+    }
+
+    // If username hasn't changed from initial, don't check
+    if (username === initialData?.username) {
+      setUsernameValidation({
+        isChecking: false,
+        isAvailable: true,
+        message: ''
+      })
+      return
+    }
+
+    setUsernameValidation({
+      isChecking: true,
+      isAvailable: null,
+      message: 'Checking availability...'
+    })
+
+    try {
+      const result = await appUsersService.listWithPagination([
+        Query.equal('username', username.trim())
+      ])
+
+      // Check if username exists for a different user (exclude current user)
+      const duplicateUser = result.users.find(user => user.$id !== userId)
+      
+      if (duplicateUser) {
+        setUsernameValidation({
+          isChecking: false,
+          isAvailable: false,
+          message: 'Username already exists'
+        })
+      } else {
+        setUsernameValidation({
+          isChecking: false,
+          isAvailable: true,
+          message: 'Username is available'
+        })
+      }
+    } catch (error) {
+      console.error('Error checking username:', error)
+      setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+    }
+  }
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (usernameCheckTimeoutRef.current) {
+        clearTimeout(usernameCheckTimeoutRef.current)
+      }
+    }
+  }, [])
+
   if (!isOpen) return null
 
+  // Format phone number to (XXX) XXX-XXXX
+  const formatPhoneNumber = (value: string) => {
+    // Remove all non-digits
+    const phoneNumber = value.replace(/\D/g, '')
+    
+    // Limit to 10 digits
+    const limitedNumber = phoneNumber.slice(0, 10)
+    
+    // Format based on length
+    if (limitedNumber.length <= 3) {
+      return limitedNumber
+    } else if (limitedNumber.length <= 6) {
+      return `(${limitedNumber.slice(0, 3)}) ${limitedNumber.slice(3)}`
+    } else {
+      return `(${limitedNumber.slice(0, 3)}) ${limitedNumber.slice(3, 6)}-${limitedNumber.slice(6)}`
+    }
+  }
+
   const handleInputChange = (field: keyof UserData, value: string) => {
+    // Format phone number automatically
+    if (field === 'phoneNumber') {
+      const formatted = formatPhoneNumber(value)
+      setFormData((prev) => ({ ...prev, [field]: formatted }))
+      return
+    }
+    
+    // Only allow numbers for specific fields
+    if (['userPoints', 'checkIns', 'reviews', 'triviasWon', 'checkInReviewPoints'].includes(field)) {
+      const numericValue = value.replace(/\D/g, '')
+      setFormData((prev) => ({ ...prev, [field]: numericValue }))
+      return
+    }
+    
+    // Zip code - only numbers, max 6 characters
+    if (field === 'zipCode') {
+      const numericValue = value.replace(/\D/g, '').slice(0, 6)
+      setFormData((prev) => ({ ...prev, [field]: numericValue }))
+      return
+    }
+    
     setFormData((prev) => ({ ...prev, [field]: value }))
+    
+    // Real-time username validation with debounce
+    if (field === 'username') {
+      // Clear existing timeout
+      if (usernameCheckTimeoutRef.current) {
+        clearTimeout(usernameCheckTimeoutRef.current)
+      }
+      
+      // Set new timeout
+      usernameCheckTimeoutRef.current = setTimeout(() => {
+        checkUsernameAvailability(value)
+      }, 500) // 500ms debounce
+    }
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -204,44 +345,99 @@ const EditUserModal = ({
     if (input) input.value = ''
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData)
-    onClose()
+    
+    // Prevent submission if username is not available
+    if (formData.username && usernameValidation.isAvailable === false) {
+      return
+    }
+    
+    setIsSubmitting(true)
+    try {
+      await onSave(formData)
+      setShowUnsavedChangesModal(false)
+      setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+      onClose()
+    } catch (error) {
+      console.error('Error saving user:', error)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
+    setUsernameValidation({
+      isChecking: false,
+      isAvailable: null,
+      message: ''
+    })
     onClose()
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
-      />
+  const handleSaveFromUnsavedModal = async () => {
+    const form = document.querySelector('form[data-user-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
+  }
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto m-4">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Edit and View User</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              User detail information.
-            </p>
-          </div>
-          <button
-            onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+  return (
+    <>
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
+      />
+      
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={isSubmitting ? undefined : handleClose}
+        />
+
+        {/* Modal */}
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto m-4">
+          {/* Header */}
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Edit and View User</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                User detail information.
+              </p>
+            </div>
+            <button
+              onClick={handleClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+              disabled={isSubmitting}
           >
             <Icon icon="mdi:close" className="w-6 h-6" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} data-user-form className="p-6">
           {/* Blocked Status Banner */}
           {formData.isBlocked && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
@@ -502,14 +698,53 @@ const EditUserModal = ({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Username <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  placeholder="Enter Username"
-                  value={formData.username}
-                  onChange={(e) => handleInputChange('username', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Enter Username"
+                    value={formData.username}
+                    onChange={(e) => handleInputChange('username', e.target.value)}
+                    required
+                    className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                      usernameValidation.isAvailable === false
+                        ? 'border-red-500'
+                        : usernameValidation.isAvailable === true && formData.username !== initialData?.username
+                        ? 'border-green-500'
+                        : 'border-gray-300'
+                    }`}
+                  />
+                  {usernameValidation.isChecking && (
+                    <Icon
+                      icon="mdi:loading"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 animate-spin"
+                    />
+                  )}
+                  {!usernameValidation.isChecking && usernameValidation.isAvailable === true && formData.username !== initialData?.username && (
+                    <Icon
+                      icon="mdi:check-circle"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-500"
+                    />
+                  )}
+                  {!usernameValidation.isChecking && usernameValidation.isAvailable === false && (
+                    <Icon
+                      icon="mdi:close-circle"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500"
+                    />
+                  )}
+                </div>
+                {usernameValidation.message && formData.username !== initialData?.username && (
+                  <p
+                    className={`mt-1 text-xs ${
+                      usernameValidation.isAvailable === false
+                        ? 'text-red-500'
+                        : usernameValidation.isAvailable === true
+                        ? 'text-green-500'
+                        : 'text-gray-500'
+                    }`}
+                  >
+                    {usernameValidation.message}
+                  </p>
+                )}
               </div>
 
               {/* Email */}
@@ -595,7 +830,8 @@ const EditUserModal = ({
                   value={formData.referralCode}
                   onChange={(e) => handleInputChange('referralCode', e.target.value)}
                   required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  disabled
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent bg-gray-100 cursor-not-allowed"
                 />
               </div>
 
@@ -639,11 +875,12 @@ const EditUserModal = ({
                 onClick={() => {
                   onAddToBlacklist()
                 }}
-                className={`px-4 py-2 rounded-lg transition-colors font-semibold flex items-center gap-2 ${
+                className={`px-4 py-2 rounded-lg transition-colors font-semibold flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                   formData.isBlocked
                     ? 'bg-green-600 text-white hover:bg-green-700'
                     : 'bg-black text-white hover:bg-gray-800'
                 }`}
+                disabled={isSubmitting}
               >
                 <Icon icon={formData.isBlocked ? 'mdi:lock-open' : 'mdi:lock'} className="w-5 h-5" />
                 {formData.isBlocked ? 'Remove from Blacklist' : 'Add to Blacklist'}
@@ -655,7 +892,8 @@ const EditUserModal = ({
                 onClick={() => {
                   onDelete()
                 }}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold flex items-center gap-2"
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmitting}
               >
                 <Icon icon="mdi:trash-can" className="w-5 h-5" />
                 Delete
@@ -664,20 +902,26 @@ const EditUserModal = ({
             <button
               type="button"
               onClick={handleClose}
-              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold"
+              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              disabled={isSubmitting || (!!formData.username && usernameValidation.isAvailable === false)}
             >
-              Save
+              {isSubmitting && (
+                <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />
+              )}
+              {isSubmitting ? 'Saving...' : 'Save'}
             </button>
           </div>
         </form>
       </div>
     </div>
+    </>
   )
 }
 

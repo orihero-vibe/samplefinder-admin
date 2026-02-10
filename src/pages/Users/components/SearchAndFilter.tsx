@@ -31,7 +31,7 @@ const SearchAndFilter = ({
           />
           <input
             type="text"
-            placeholder="Search by name or e-mail"
+            placeholder="Search by name, username, email, or phone"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
@@ -43,9 +43,11 @@ const SearchAndFilter = ({
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
         >
           <option>All Tiers</option>
-          <option>Tier 1</option>
-          <option>Tier 2</option>
-          <option>Tier 3</option>
+          <option>NewbieSampler</option>
+          <option>SampleFan</option>
+          <option>SuperSampler</option>
+          <option>VIS</option>
+          <option>SampleMaster</option>
         </select>
         <select
           value={sortBy}
@@ -55,6 +57,8 @@ const SearchAndFilter = ({
           <option>Sort by: Date</option>
           <option>Sort by: Name</option>
           <option>Sort by: Points</option>
+          <option>Sort by: Events</option>
+          <option>Sort by: Reviews</option>
         </select>
       </div>
     </div>

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
-import { ImageCropper } from '../../../components'
+import { ImageCropper, UnsavedChangesModal } from '../../../components'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 
 interface AddClientModalProps {
   isOpen: boolean
@@ -14,12 +15,15 @@ interface AddClientModalProps {
 }
 
 const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     logo: null as File | null,
     clientName: '',
     productTypes: [] as string[],
     description: '',
-  })
+  }
+  
+  const [formData, setFormData] = useState(initialFormData)
+  const initialDataRef = useRef(initialFormData)
 
   const [newProductType, setNewProductType] = useState('')
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
@@ -27,18 +31,18 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
   const [showCropper, setShowCropper] = useState(false)
   const [tempImageForCrop, setTempImageForCrop] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Reset form when modal closes
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      initialDataRef.current = initialFormData
+    } else {
       // Reset state when modal closes using requestAnimationFrame to avoid cascading renders
       requestAnimationFrame(() => {
-        setFormData({
-          logo: null,
-          clientName: '',
-          productTypes: [],
-          description: '',
-        })
+        setFormData(initialFormData)
         setNewProductType('')
         setLogoPreview(null)
         setIsSubmitting(false)
@@ -132,6 +136,26 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
     }))
   }
 
+  const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
+    onClose()
+  }
+
+  const handleSaveFromUnsavedModal = async () => {
+    const form = document.querySelector('form[data-client-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -151,17 +175,13 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
         description: formData.description,
       })
       
-      // Success - close modal and reset form
+      // Success - close modals and reset form
+      setShowUnsavedChangesModal(false)
       onClose()
     } catch {
       // Error - keep modal open, error notification is handled by parent
       setIsSubmitting(false)
     }
-  }
-
-  const handleClose = () => {
-    // Reset is handled by useEffect
-    onClose()
   }
 
   return (
@@ -175,11 +195,19 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
         />
       )}
       
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
+      />
+      
       <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+        onClick={isSubmitting ? undefined : handleClose}
       />
 
       {/* Modal */}
@@ -201,7 +229,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} data-client-form className="p-6">
           {/* Logo Upload Section */}
           <div className="mb-6">
             <label 

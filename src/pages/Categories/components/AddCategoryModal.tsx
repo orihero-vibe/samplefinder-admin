@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '../../../components'
 
 interface AddCategoryModalProps {
   isOpen: boolean
@@ -8,15 +10,22 @@ interface AddCategoryModalProps {
 }
 
 const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) => {
+  const initialFormData = { title: '', isAdult: false }
+  const initialDataRef = useRef(initialFormData)
   const [title, setTitle] = useState('')
   const [isAdult, setIsAdult] = useState(false)
   const [showTooltip, setShowTooltip] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  
+  const hasUnsavedChanges = useUnsavedChanges({ title, isAdult }, initialDataRef.current, isOpen)
 
-  // Reset form when modal closes
+  // Reset form when modal opens/closes
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      initialDataRef.current = initialFormData
+    } else {
       setTitle('')
       setIsAdult(false)
       setShowTooltip(false)
@@ -39,6 +48,8 @@ const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) =>
     setIsSubmitting(true)
     try {
       await onSave({ title: title.trim(), isAdult })
+      setShowUnsavedChangesModal(false)
+      onClose()
     } catch {
       // Error is handled by parent component via notification
       setError('Failed to create category. Please try again.')
@@ -48,33 +59,58 @@ const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) =>
   }
 
   const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
     onClose()
   }
 
+  const handleSaveFromUnsavedModal = () => {
+    const form = document.querySelector('form[data-category-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+    <>
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
       />
+      
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={isSubmitting ? undefined : handleClose}
+        />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md m-4">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-gray-900">Add Category</h2>
-          <button
-            onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            disabled={isSubmitting}
-          >
-            <Icon icon="mdi:close" className="w-6 h-6" />
-          </button>
-        </div>
+        {/* Modal */}
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md m-4">
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-gray-900">Add Category</h2>
+            <button
+              onClick={handleClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+              disabled={isSubmitting}
+            >
+              <Icon icon="mdi:close" className="w-6 h-6" />
+            </button>
+          </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+          {/* Form */}
+          <form onSubmit={handleSubmit} data-category-form className="p-6">
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
               {error}
@@ -168,6 +204,7 @@ const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) =>
         </form>
       </div>
     </div>
+    </>
   )
 }
 

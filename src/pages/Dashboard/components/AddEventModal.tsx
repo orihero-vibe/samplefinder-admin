@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import type { Models } from 'appwrite'
 import LocationAutocomplete from '../../../components/LocationAutocomplete'
 import LocationPicker from '../../../components/LocationPicker'
-import { ImageCropper } from '../../../components'
+import { ImageCropper, UnsavedChangesModal } from '../../../components'
 import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
 import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
+import { useNotificationStore } from '../../../stores/notificationStore'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 
 interface Category extends Models.Document {
   title: string
@@ -14,10 +16,34 @@ interface Category extends Models.Document {
 interface Brand extends Models.Document {
   name: string
   productType?: string[]
+  description?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EventFormData = any
+
+interface EventData {
+  eventName?: string
+  eventDate?: string
+  startTime?: string
+  endTime?: string
+  city?: string
+  address?: string
+  state?: string
+  zipCode?: string
+  category?: string
+  products?: string[]
+  discount?: string
+  discountImage?: File | string | null
+  checkInCode?: string
+  brandName?: string
+  brandDescription?: string
+  checkInPoints?: string
+  reviewPoints?: string
+  eventInfo?: string
+  latitude?: string
+  longitude?: string
+}
 
 interface AddEventModalProps {
   isOpen: boolean
@@ -25,10 +51,12 @@ interface AddEventModalProps {
   onSave: (eventData: EventFormData) => Promise<void>
   categories?: Category[]
   brands?: Brand[]
+  initialData?: EventData
 }
 
-const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }: AddEventModalProps) => {
-  const [formData, setFormData] = useState({
+const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], initialData }: AddEventModalProps) => {
+  const { addNotification } = useNotificationStore()
+  const initialFormData = {
     eventName: '',
     eventDate: '',
     startTime: '',
@@ -43,12 +71,16 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
     discountImage: null as File | null,
     checkInCode: '',
     brandName: '',
+    brandDescription: '',
     checkInPoints: '',
     reviewPoints: '',
     eventInfo: '',
     latitude: '',
     longitude: '',
-  })
+  }
+  
+  const [formData, setFormData] = useState(initialFormData)
+  const initialDataRef = useRef(initialFormData)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [availableProducts, setAvailableProducts] = useState<string[]>([])
@@ -59,27 +91,45 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
   const [locationDisplayValue, setLocationDisplayValue] = useState('')
   const [showAddLocationFields, setShowAddLocationFields] = useState(false)
   const [locationName, setLocationName] = useState('')
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Reset form when modal opens and fetch default points from settings
   useEffect(() => {
     if (isOpen) {
-      // Generate unique check-in code asynchronously
-      generateUniqueCheckInCode().then((code) => {
-        setFormData((prev) => ({
-          ...prev,
-          checkInCode: code,
-        }))
-      })
-      
       // Fetch default points from global settings
       const fetchDefaults = async () => {
         try {
-          const [defaultCheckInPoints, defaultReviewPoints] = await Promise.all([
+          const [defaultCheckInPoints, defaultReviewPoints, checkInCode] = await Promise.all([
             settingsService.getDefaultCheckInPoints(),
             settingsService.getDefaultReviewPoints(),
+            generateUniqueCheckInCode(),
           ])
           
-          setFormData({
+          // If initialData is provided (for duplicate), use it; otherwise use empty defaults
+          const newInitialData = initialData ? {
+            eventName: initialData.eventName || '',
+            eventDate: initialData.eventDate || '',
+            startTime: initialData.startTime || '',
+            endTime: initialData.endTime || '',
+            city: initialData.city || '',
+            address: initialData.address || '',
+            state: initialData.state || '',
+            zipCode: initialData.zipCode || '',
+            category: initialData.category || '',
+            products: initialData.products || [],
+            discount: initialData.discount || '',
+            discountImage: null, // Don't copy the image for duplicates
+            checkInCode: checkInCode, // Always generate new check-in code
+            brandName: initialData.brandName || '',
+            brandDescription: initialData.brandDescription || '',
+            checkInPoints: initialData.checkInPoints || defaultCheckInPoints?.toString() || '',
+            reviewPoints: initialData.reviewPoints || defaultReviewPoints?.toString() || '',
+            eventInfo: initialData.eventInfo || '',
+            latitude: initialData.latitude || '',
+            longitude: initialData.longitude || '',
+          } : {
             eventName: '',
             eventDate: '',
             startTime: '',
@@ -92,18 +142,36 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
             products: [],
             discount: '',
             discountImage: null,
-            checkInCode: '',
+            checkInCode: checkInCode,
             brandName: '',
+            brandDescription: '',
             checkInPoints: defaultCheckInPoints?.toString() || '',
             reviewPoints: defaultReviewPoints?.toString() || '',
             eventInfo: '',
             latitude: '',
             longitude: '',
-          })
+          }
+          
+          setFormData(newInitialData)
+          initialDataRef.current = newInitialData
+          
+          // Set discount image preview if initialData has an image URL
+          if (initialData?.discountImage && typeof initialData.discountImage === 'string') {
+            setDiscountImagePreview(initialData.discountImage)
+          } else {
+            setDiscountImagePreview(null)
+          }
+          
+          // Set location display value if address is provided
+          if (initialData?.address) {
+            setLocationDisplayValue(initialData.address)
+          } else {
+            setLocationDisplayValue('')
+          }
         } catch (error) {
           console.error('Error fetching default points:', error)
           // Set form with empty defaults if fetch fails
-          setFormData({
+          const newInitialData = {
             eventName: '',
             eventDate: '',
             startTime: '',
@@ -118,40 +186,77 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
             discountImage: null,
             checkInCode: '',
             brandName: '',
+            brandDescription: '',
             checkInPoints: '',
             reviewPoints: '',
             eventInfo: '',
             latitude: '',
             longitude: '',
-          })
+          }
+          
+          setFormData(newInitialData)
+          initialDataRef.current = newInitialData
+          setDiscountImagePreview(null)
+          setLocationDisplayValue('')
         }
       }
       
       fetchDefaults()
       setAvailableProducts([])
-      setDiscountImagePreview(null)
       setShowCropper(false)
       setTempImageForCrop(null)
-      setLocationDisplayValue('')
       setShowAddLocationFields(false)
       setLocationName('')
+      
+      // Set available products immediately when initialData has a brand
+      if (initialData?.brandName) {
+        const selectedBrand = brands.find((brand) => brand.name === initialData.brandName)
+        if (selectedBrand && selectedBrand.productType) {
+          setAvailableProducts(selectedBrand.productType)
+        }
+      }
     }
-  }, [isOpen])
+  }, [isOpen, initialData, brands])
 
-  // Update available products when brand changes
+  // Track previous brand name to detect actual changes
+  const prevBrandNameRef = useRef<string>('')
+
+  // Update available products and brand description when brand changes
   useEffect(() => {
+    // Only clear products and update description if brand actually changed (not on initial load)
+    const brandChanged = prevBrandNameRef.current !== '' && prevBrandNameRef.current !== formData.brandName
+    
     if (formData.brandName) {
       const selectedBrand = brands.find((brand) => brand.name === formData.brandName)
-      if (selectedBrand && selectedBrand.productType) {
-        setAvailableProducts(selectedBrand.productType)
+      if (selectedBrand) {
+        // Set available products
+        if (selectedBrand.productType) {
+          setAvailableProducts(selectedBrand.productType)
+        } else {
+          setAvailableProducts([])
+        }
+        // Clear selected products and prefill brand description only when brand actually changes (not on initial load)
+        if (brandChanged) {
+          setFormData((prev) => ({ 
+            ...prev, 
+            products: [], 
+            brandDescription: selectedBrand.description || '' 
+          }))
+        }
       } else {
         setAvailableProducts([])
+        if (brandChanged) {
+          setFormData((prev) => ({ ...prev, products: [], brandDescription: '' }))
+        }
       }
-      // Clear selected products when brand changes
-      setFormData((prev) => ({ ...prev, products: [] }))
+      prevBrandNameRef.current = formData.brandName
     } else {
       setAvailableProducts([])
-      setFormData((prev) => ({ ...prev, products: [] }))
+      // Only clear if brand was removed (not on initial load)
+      if (prevBrandNameRef.current !== '') {
+        setFormData((prev) => ({ ...prev, products: [], brandDescription: '' }))
+      }
+      prevBrandNameRef.current = ''
     }
   }, [formData.brandName, brands])
 
@@ -223,12 +328,102 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
     setDiscountImagePreview(null)
   }
 
+  // Get today's date in YYYY-MM-DD format for date input min attribute
+  const getTodayDateString = () => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
+    onClose()
+  }
+
+  const handleSaveFromUnsavedModal = async () => {
+    // Trigger form submission via ref
+    const form = document.querySelector('form[data-event-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Prevent double submission
     if (isSubmitting) {
       return
+    }
+
+    // Validate that event date is not in the past
+    if (formData.eventDate) {
+      const eventDate = new Date(formData.eventDate)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0) // Reset time to start of day for comparison
+      eventDate.setHours(0, 0, 0, 0)
+
+      if (eventDate < today) {
+        addNotification({
+          type: 'error',
+          title: 'Invalid Event Date',
+          message: 'Event date cannot be in the past. Please select today or a future date.',
+        })
+        return
+      }
+    }
+
+    // Validate that start time is before end time
+    if (formData.startTime && formData.endTime) {
+      const [startHour, startMinute] = formData.startTime.split(':').map(Number)
+      const [endHour, endMinute] = formData.endTime.split(':').map(Number)
+      
+      const startTimeInMinutes = startHour * 60 + startMinute
+      const endTimeInMinutes = endHour * 60 + endMinute
+      
+      if (startTimeInMinutes >= endTimeInMinutes) {
+        addNotification({
+          type: 'error',
+          title: 'Invalid Event Duration',
+          message: 'Start time must be before end time. Please adjust the event times.',
+        })
+        return
+      }
+    }
+
+    // Validate that products are not blank
+    if (!formData.products || formData.products.length === 0) {
+      addNotification({
+        type: 'error',
+        title: 'Products Required',
+        message: 'Products field cannot be blank. Please select at least one product.',
+      })
+      return
+    }
+
+    // Validate that all selected products are valid for the selected brand
+    if (formData.brandName && availableProducts.length > 0) {
+      const invalidProducts = formData.products.filter(
+        (product) => !availableProducts.includes(product)
+      )
+      if (invalidProducts.length > 0) {
+        addNotification({
+          type: 'error',
+          title: 'Invalid Products',
+          message: `Invalid products selected: ${invalidProducts.join(', ')}. Please select only products related to the selected brand.`,
+        })
+        return
+      }
     }
 
     setIsSubmitting(true)
@@ -246,6 +441,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
       }
       
       await onSave(formData)
+      // Close unsaved changes modal if it's open
+      setShowUnsavedChangesModal(false)
       // Only close on success - parent will handle closing
       onClose()
     } catch {
@@ -267,11 +464,18 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
         />
       )}
       
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
+      />
+      
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
         <div
           className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-          onClick={isSubmitting ? undefined : onClose}
         />
 
         {/* Modal */}
@@ -285,7 +489,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
             </p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
             disabled={isSubmitting}
           >
@@ -294,7 +498,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} data-event-form className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {/* Brand Name */}
             <div>
@@ -308,7 +512,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               >
                 <option value="">Choose Brand Name</option>
-                {brands.map((brand) => (
+                {[...brands].sort((a, b) => a.name.localeCompare(b.name)).map((brand) => (
                   <option key={brand.$id} value={brand.name}>
                     {brand.name}
                   </option>
@@ -328,14 +532,31 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               >
                 <option value="">Choose Category</option>
-                {categories.map((category) => (
+                {[...categories].sort((a, b) => a.title.localeCompare(b.title)).map((category) => (
                   <option key={category.$id} value={category.title}>
                     {category.title}
                   </option>
                 ))}
               </select>
             </div>
+          </div>
 
+          {/* Brand Description */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Brand Description
+            </label>
+            <textarea
+              placeholder="Enter brand description (products, services, etc.)"
+              value={formData.brandDescription}
+              onChange={(e) => handleInputChange('brandDescription', e.target.value)}
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent resize-none"
+            />
+            <p className="text-xs text-gray-500 mt-1">This description will be shown in the Favorites section.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {/* Check in Code */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -457,6 +678,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
                 type="date"
                 value={formData.eventDate}
                 onChange={(e) => handleInputChange('eventDate', e.target.value)}
+                min={getTodayDateString()}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
@@ -722,16 +944,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [] }
           {/* Action Buttons */}
           <div className="flex gap-4 pt-4 border-t border-gray-200">
             <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={isSubmitting}
-            >
-              Cancel
-            </button>
-            <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               disabled={isSubmitting}
             >
               {isSubmitting ? (

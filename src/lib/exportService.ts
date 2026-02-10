@@ -22,7 +22,7 @@ export interface ReportColumn {
 // Dashboard (All) columns
 const dashboardColumns: ReportColumn[] = [
   { header: 'Date', key: 'date' },
-  { header: 'Venue Name', key: 'venueName' },
+  { header: 'Event Name', key: 'venueName' },
   { header: 'Brand', key: 'brand' },
   { header: 'Start Time', key: 'startTime' },
   { header: 'End Time', key: 'endTime' },
@@ -34,6 +34,7 @@ const dashboardColumns: ReportColumn[] = [
 // These column names must exactly match what CSVUploadModal expects for re-import compatibility
 const eventListColumns: ReportColumn[] = [
   // Non-location fields (alphabetical)
+  { header: 'Brand Description', key: 'brandDescription' },
   { header: 'Brand Name', key: 'brandName' },
   { header: 'Category', key: 'category' },
   { header: 'Check-in Code', key: 'checkInCode' },
@@ -273,10 +274,11 @@ export const exportService = {
           endTime: formatTimeForUpload(event.endTime),
           category: event.categories || '',
           brandName: brandName,
+          brandDescription: event.brandDescription || '',
           products: formatProducts(event.products),
           discount: event.discount?.toString() || '',
-          discountLink: discountLink,
           discountImageURL: event.discountImageURL || '',
+          discountLink: discountLink,
           checkInCode: event.checkInCode || '',
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',

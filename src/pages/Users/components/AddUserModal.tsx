@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
-import { tiersService, type TierDocument } from '../../../lib/services'
+import { tiersService, type TierDocument, appUsersService } from '../../../lib/services'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '../../../components'
+import { Query } from '../../../lib/appwrite'
 
 interface AddUserModalProps {
   isOpen: boolean
@@ -18,7 +21,7 @@ interface AddUserModalProps {
 }
 
 const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     email: '',
     password: '',
     firstName: '',
@@ -27,11 +30,28 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     phoneNumber: '',
     role: 'user', // Default role
     tierLevel: '',
-  })
+  }
+  
+  const [formData, setFormData] = useState(initialFormData)
+  const initialDataRef = useRef(initialFormData)
 
   const [showPassword, setShowPassword] = useState(false)
   const [tiers, setTiers] = useState<TierDocument[]>([])
   const [isLoadingTiers, setIsLoadingTiers] = useState(false)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [usernameValidation, setUsernameValidation] = useState<{
+    isChecking: boolean
+    isAvailable: boolean | null
+    message: string
+  }>({
+    isChecking: false,
+    isAvailable: null,
+    message: ''
+  })
+  const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Fetch tiers when modal opens
   useEffect(() => {
@@ -43,13 +63,9 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
           setTiers(tiersList)
           // Set default tier to the lowest tier (first in sorted list)
           if (tiersList.length > 0) {
-            setFormData(prev => {
-              // Only set default if tierLevel is empty
-              if (!prev.tierLevel) {
-                return { ...prev, tierLevel: tiersList[0].name }
-              }
-              return prev
-            })
+            const newInitialData = { ...initialFormData, tierLevel: tiersList[0].name }
+            setFormData(newInitialData)
+            initialDataRef.current = newInitialData
           }
         } catch (error) {
           console.error('Error fetching tiers:', error)
@@ -61,74 +77,203 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     }
   }, [isOpen])
 
-  if (!isOpen) return null
+  // Check username availability with debounce
+  const checkUsernameAvailability = async (username: string) => {
+    if (!username.trim()) {
+      setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+      return
+    }
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+    setUsernameValidation({
+      isChecking: true,
+      isAvailable: null,
+      message: 'Checking availability...'
+    })
+
+    try {
+      const result = await appUsersService.listWithPagination([
+        Query.equal('username', username.trim())
+      ])
+
+      if (result.users.length > 0) {
+        setUsernameValidation({
+          isChecking: false,
+          isAvailable: false,
+          message: 'Username already exists'
+        })
+      } else {
+        setUsernameValidation({
+          isChecking: false,
+          isAvailable: true,
+          message: 'Username is available'
+        })
+      }
+    } catch (error) {
+      console.error('Error checking username:', error)
+      setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+    }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (usernameCheckTimeoutRef.current) {
+        clearTimeout(usernameCheckTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  if (!isOpen) return null
+
+  // Format phone number to (XXX) XXX-XXXX
+  const formatPhoneNumber = (value: string) => {
+    // Remove all non-digits
+    const phoneNumber = value.replace(/\D/g, '')
+    
+    // Limit to 10 digits
+    const limitedNumber = phoneNumber.slice(0, 10)
+    
+    // Format based on length
+    if (limitedNumber.length <= 3) {
+      return limitedNumber
+    } else if (limitedNumber.length <= 6) {
+      return `(${limitedNumber.slice(0, 3)}) ${limitedNumber.slice(3)}`
+    } else {
+      return `(${limitedNumber.slice(0, 3)}) ${limitedNumber.slice(3, 6)}-${limitedNumber.slice(6)}`
+    }
+  }
+
+  const handleInputChange = (field: string, value: string) => {
+    // Format phone number automatically
+    if (field === 'phoneNumber') {
+      const formatted = formatPhoneNumber(value)
+      setFormData((prev) => ({ ...prev, [field]: formatted }))
+      return
+    }
+    
+    setFormData((prev) => ({ ...prev, [field]: value }))
+    
+    // Real-time username validation with debounce
+    if (field === 'username') {
+      // Clear existing timeout
+      if (usernameCheckTimeoutRef.current) {
+        clearTimeout(usernameCheckTimeoutRef.current)
+      }
+      
+      // Set new timeout
+      usernameCheckTimeoutRef.current = setTimeout(() => {
+        checkUsernameAvailability(value)
+      }, 500) // 500ms debounce
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData)
-    // Reset form
-    setFormData({
-      email: '',
-      password: '',
-      firstName: '',
-      lastName: '',
-      username: '',
-      phoneNumber: '',
-      role: 'user',
-      tierLevel: '',
-    })
-    setShowPassword(false)
-    onClose()
+    
+    // Prevent submission if username is not available
+    if (formData.username && usernameValidation.isAvailable === false) {
+      return
+    }
+    
+    setIsSubmitting(true)
+    try {
+      await onSave(formData)
+      // Close unsaved changes modal if it's open
+      setShowUnsavedChangesModal(false)
+      // Reset form and validation state
+      setFormData(initialFormData)
+      setShowPassword(false)
+      setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+      onClose()
+    } catch (error) {
+      // Error handled by parent
+      console.error('Error saving user:', error)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleClose = () => {
-    // Reset form on close
-    setFormData({
-      email: '',
-      password: '',
-      firstName: '',
-      lastName: '',
-      username: '',
-      phoneNumber: '',
-      role: 'user',
-      tierLevel: '',
-    })
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      // Reset form on close
+      setFormData(initialFormData)
+      setShowPassword(false)
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
+    setFormData(initialFormData)
     setShowPassword(false)
+    setUsernameValidation({
+      isChecking: false,
+      isAvailable: null,
+      message: ''
+    })
     onClose()
   }
 
+  const handleSaveFromUnsavedModal = async () => {
+    // Trigger form submission via ref
+    const form = document.querySelector('form[data-user-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+    <>
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
       />
+      
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={isSubmitting ? undefined : handleClose}
+        />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Add User</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Add a new user to the system.
-            </p>
+        {/* Modal */}
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+          {/* Header */}
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Add User</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Add a new user to the system.
+              </p>
+            </div>
+            <button
+              onClick={handleClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+              disabled={isSubmitting}
+            >
+              <Icon icon="mdi:close" className="w-6 h-6" />
+            </button>
           </div>
-          <button
-            onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <Icon icon="mdi:close" className="w-6 h-6" />
-          </button>
-        </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+          {/* Form */}
+          <form onSubmit={handleSubmit} data-user-form className="p-6">
           {/* Form Fields */}
           <div className="space-y-4 mb-6">
             {/* Email */}
@@ -206,13 +351,52 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Username
               </label>
-              <input
-                type="text"
-                placeholder="Enter Username"
-                value={formData.username}
-                onChange={(e) => handleInputChange('username', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Enter Username"
+                  value={formData.username}
+                  onChange={(e) => handleInputChange('username', e.target.value)}
+                  className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                    usernameValidation.isAvailable === false
+                      ? 'border-red-500'
+                      : usernameValidation.isAvailable === true
+                      ? 'border-green-500'
+                      : 'border-gray-300'
+                  }`}
+                />
+                {usernameValidation.isChecking && (
+                  <Icon
+                    icon="mdi:loading"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 animate-spin"
+                  />
+                )}
+                {!usernameValidation.isChecking && usernameValidation.isAvailable === true && (
+                  <Icon
+                    icon="mdi:check-circle"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-500"
+                  />
+                )}
+                {!usernameValidation.isChecking && usernameValidation.isAvailable === false && (
+                  <Icon
+                    icon="mdi:close-circle"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500"
+                  />
+                )}
+              </div>
+              {usernameValidation.message && (
+                <p
+                  className={`mt-1 text-xs ${
+                    usernameValidation.isAvailable === false
+                      ? 'text-red-500'
+                      : usernameValidation.isAvailable === true
+                      ? 'text-green-500'
+                      : 'text-gray-500'
+                  }`}
+                >
+                  {usernameValidation.message}
+                </p>
+              )}
             </div>
 
             {/* Phone Number */}
@@ -286,20 +470,24 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
             <button
               type="button"
               onClick={handleClose}
-              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold"
+              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              disabled={isSubmitting || (!!formData.username && usernameValidation.isAvailable === false)}
             >
-              Add User
+              {isSubmitting && <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />}
+              {isSubmitting ? 'Adding User...' : 'Add User'}
             </button>
           </div>
         </form>
       </div>
     </div>
+    </>
   )
 }
 

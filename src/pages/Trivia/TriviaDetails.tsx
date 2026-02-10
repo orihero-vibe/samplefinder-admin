@@ -31,7 +31,7 @@ interface TriviaQuiz {
   skip: number
   incorrect: number
   winnersCount: number
-  status: 'Scheduled' | 'Completed' | 'Draft'
+  status: 'Scheduled' | 'Active' | 'Completed' | 'Draft'
   answers: { option: string; isCorrect: boolean; responseCount: number }[]
   totalParticipants: number
   engagementRate: number
@@ -65,14 +65,14 @@ const TriviaDetails = () => {
         const startDate = triviaDoc.startDate ? new Date(triviaDoc.startDate) : null
         const endDate = triviaDoc.endDate ? new Date(triviaDoc.endDate) : null
         
-        let status: 'Scheduled' | 'Completed' | 'Draft' = 'Draft'
+        let status: 'Scheduled' | 'Active' | 'Completed' | 'Draft' = 'Draft'
         if (startDate && endDate) {
           if (now < startDate) {
             status = 'Scheduled'
           } else if (now > endDate) {
             status = 'Completed'
           } else {
-            status = 'Scheduled' // Active/Scheduled
+            status = 'Active' // Between start and end date = Active
           }
         }
 

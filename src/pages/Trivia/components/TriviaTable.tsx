@@ -20,7 +20,7 @@ interface TriviaQuiz {
   skip: number
   incorrect: number
   winnersCount: number
-  status: 'Scheduled' | 'Completed' | 'Draft'
+  status: 'Scheduled' | 'Active' | 'Completed' | 'Draft'
 }
 
 interface TriviaTableProps {
@@ -33,6 +33,7 @@ interface TriviaTableProps {
   totalTrivia?: number
   pageSize?: number
   onPageChange?: (page: number) => void
+  isLoading?: boolean
 }
 
 const TriviaTable = ({
@@ -45,11 +46,14 @@ const TriviaTable = ({
   totalTrivia = 0,
   pageSize = 25,
   onPageChange,
+  isLoading = false,
 }: TriviaTableProps) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Scheduled':
         return 'text-red-600'
+      case 'Active':
+        return 'text-orange-600'
       case 'Completed':
         return 'text-green-600'
       case 'Draft':
@@ -164,7 +168,16 @@ const TriviaTable = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {triviaQuizzes.length === 0 ? (
+            {isLoading ? (
+              <tr>
+                <td colSpan={10} className="px-6 py-12 text-center">
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1D0A74] mb-4"></div>
+                    <p className="text-gray-500 text-lg font-medium">Loading trivia quizzes...</p>
+                  </div>
+                </td>
+              </tr>
+            ) : triviaQuizzes.length === 0 ? (
               <tr>
                 <td colSpan={10} className="px-6 py-12 text-center">
                   <div className="flex flex-col items-center justify-center">

@@ -42,6 +42,28 @@ const Dashboard = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [selectedEventDoc, setSelectedEventDoc] = useState<EventDocument | null>(null)
+  const [addModalInitialData, setAddModalInitialData] = useState<{
+    eventName?: string
+    eventDate?: string
+    startTime?: string
+    endTime?: string
+    city?: string
+    address?: string
+    state?: string
+    zipCode?: string
+    category?: string
+    products?: string[]
+    discount?: string
+    discountImage?: File | string | null
+    checkInCode?: string
+    brandName?: string
+    brandDescription?: string
+    checkInPoints?: string
+    reviewPoints?: string
+    eventInfo?: string
+    latitude?: string
+    longitude?: string
+  } | undefined>(undefined)
   const [editModalInitialData, setEditModalInitialData] = useState<{
     eventName?: string
     eventDate?: string
@@ -57,6 +79,7 @@ const Dashboard = () => {
     discountImage?: File | string | null
     checkInCode?: string
     brandName?: string
+    brandDescription?: string
     checkInPoints?: string
     reviewPoints?: string
     eventInfo?: string
@@ -226,13 +249,23 @@ const Dashboard = () => {
       
       // Apply date range filter
       if (dateRange.start) {
-        queries.push(Query.greaterThanEqual('date', dateRange.start.toISOString()))
-      }
-      if (dateRange.end) {
-        // Set end date to end of day
-        const endDate = new Date(dateRange.end)
-        endDate.setHours(23, 59, 59, 999)
-        queries.push(Query.lessThanEqual('date', endDate.toISOString()))
+        // If only start date is set (single date selection), treat it as both start and end of the same day
+        if (!dateRange.end) {
+          // Single date: filter for events on that specific day
+          const startOfDay = new Date(dateRange.start)
+          startOfDay.setHours(0, 0, 0, 0)
+          const endOfDay = new Date(dateRange.start)
+          endOfDay.setHours(23, 59, 59, 999)
+          queries.push(Query.greaterThanEqual('date', startOfDay.toISOString()))
+          queries.push(Query.lessThanEqual('date', endOfDay.toISOString()))
+        } else {
+          // Date range: use start and end dates
+          queries.push(Query.greaterThanEqual('date', dateRange.start.toISOString()))
+          // Set end date to end of day
+          const endDate = new Date(dateRange.end)
+          endDate.setHours(23, 59, 59, 999)
+          queries.push(Query.lessThanEqual('date', endDate.toISOString()))
+        }
       }
       
       // Apply sorting - parse sortBy value (format: "field-order")
@@ -415,10 +448,13 @@ const Dashboard = () => {
     }
 
     // Handle products - ensure it's always an array
+    // Products are stored as comma-separated string in database, so we need to split it
     const productsArray = Array.isArray(eventDoc.products) 
       ? eventDoc.products 
       : eventDoc.products 
-        ? [eventDoc.products as unknown as string]
+        ? typeof eventDoc.products === 'string'
+          ? (eventDoc.products as string).split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
+          : [eventDoc.products as unknown as string]
         : []
 
     // Extract latitude and longitude from location array if it exists
@@ -444,6 +480,7 @@ const Dashboard = () => {
       discountImage: eventDoc.discountImageURL || null,
       checkInCode: eventDoc.checkInCode || '',
       brandName: brandName,
+      brandDescription: eventDoc.brandDescription || '',
       checkInPoints: eventDoc.checkInPoints?.toString() || '',
       reviewPoints: eventDoc.reviewPoints?.toString() || '',
       eventInfo: eventDoc.eventInfo || '',
@@ -531,6 +568,8 @@ const Dashboard = () => {
         'brand name': 'Brand Name',
         'brandname': 'Brand Name',
         'brand': 'Brand Name',
+        'brand description': 'Brand Description',
+        'branddescription': 'Brand Description',
         'points': 'Points',
         'point': 'Points',
         // Optional columns
@@ -726,6 +765,9 @@ const Dashboard = () => {
           // Parse event info or generate default
           const eventInfo = row['Event Info']?.trim() || `Event at ${row['Address'] || row['City'] || 'location'}`
 
+          // Parse brand description
+          const brandDescription = row['Brand Description']?.trim() || ''
+
           // Parse discount (now text field)
           const discount = row['Discount']?.trim() || ''
           
@@ -748,6 +790,7 @@ const Dashboard = () => {
             checkInPoints: checkInPoints,
             reviewPoints: reviewPoints,
             eventInfo: eventInfo,
+            brandDescription: brandDescription,
             isArchived: false,
             isHidden: false,
           }
@@ -889,6 +932,7 @@ const Dashboard = () => {
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
+        brandDescription: eventData.brandDescription || '',
         isArchived: false,
         isHidden: false,
       }
@@ -1027,6 +1071,7 @@ const Dashboard = () => {
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
+        brandDescription: eventData.brandDescription || '',
       }
 
       // Add location as [longitude, latitude] array if both are provided
@@ -1315,20 +1360,10 @@ const Dashboard = () => {
           totalEvents={totalEvents}
           pageSize={pageSize}
           onPageChange={handlePageChange}
-          onEventClick={(event) => {
-            const eventId = (event as Event & { id?: string }).id
-            if (eventId) {
-              navigate(`/event-reviews/${eventId}`)
-            } else {
-              navigate('/event-reviews')
-            }
-          }}
-          onEditClick={async (event: Event) => {
+          onEventClick={async (event: Event) => {
             setSelectedEvent(event as Event)
-            setIsEditModalOpen(true)
-            setEditModalInitialData(null)
             
-            // Fetch full event document for editing
+            // Fetch full event document for editing BEFORE opening modal
             const eventId = (event as Event & { id?: string }).id
             if (eventId) {
               const eventDoc = await fetchEventForEdit(eventId)
@@ -1338,6 +1373,34 @@ const Dashboard = () => {
                 // Format event data for edit modal
                 const formattedData = await formatEventForEditModal(eventDoc)
                 setEditModalInitialData(formattedData)
+                // Open modal only after data is ready
+                setIsEditModalOpen(true)
+              }
+            }
+          }}
+          onReviewClick={(event) => {
+            const eventId = (event as Event & { id?: string }).id
+            if (eventId) {
+              navigate(`/event-reviews/${eventId}`)
+            } else {
+              navigate('/event-reviews')
+            }
+          }}
+          onEditClick={async (event: Event) => {
+            setSelectedEvent(event as Event)
+            
+            // Fetch full event document for editing BEFORE opening modal
+            const eventId = (event as Event & { id?: string }).id
+            if (eventId) {
+              const eventDoc = await fetchEventForEdit(eventId)
+              setSelectedEventDoc(eventDoc)
+              
+              if (eventDoc) {
+                // Format event data for edit modal
+                const formattedData = await formatEventForEditModal(eventDoc)
+                setEditModalInitialData(formattedData)
+                // Open modal only after data is ready
+                setIsEditModalOpen(true)
               }
             }
           }}
@@ -1414,10 +1477,14 @@ const Dashboard = () => {
       {/* Add Event Modal */}
       <AddEventModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false)
+          setAddModalInitialData(undefined)
+        }}
         onSave={handleCreateEvent}
         categories={categories}
         brands={brands}
+        initialData={addModalInitialData}
       />
 
       {/* Edit Event Modal */}
@@ -1431,6 +1498,19 @@ const Dashboard = () => {
         }}
         onSave={handleUpdateEvent}
         eventId={selectedEventDoc?.$id}
+        onDuplicate={() => {
+          // Close edit modal
+          setIsEditModalOpen(false)
+          // Open add modal with current event data
+          if (editModalInitialData) {
+            setAddModalInitialData(editModalInitialData)
+            setIsModalOpen(true)
+          }
+          // Clear edit modal state
+          setSelectedEvent(null)
+          setSelectedEventDoc(null)
+          setEditModalInitialData(null)
+        }}
         onShowArchiveConfirm={() => {
           setConfirmationModal({
             isOpen: true,

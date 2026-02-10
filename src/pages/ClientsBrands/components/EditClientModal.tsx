@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
-import { ImageCropper } from '../../../components'
+import { ImageCropper, UnsavedChangesModal } from '../../../components'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 
 interface EditClientModalProps {
   isOpen: boolean
@@ -26,21 +27,28 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
     productTypes: [] as string[],
     description: '',
   })
+  const initialDataRef = useRef(formData)
 
   const [newProductType, setNewProductType] = useState('')
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [showCropper, setShowCropper] = useState(false)
   const [tempImageForCrop, setTempImageForCrop] = useState<string | null>(null)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
     if (isOpen && initialData) {
-      setFormData({
+      const newData = {
         logo: null,
         clientName: initialData.clientName || '',
         productTypes: initialData.productTypes || [],
         description: initialData.description || '',
-      })
+      }
+      setFormData(newData)
+      initialDataRef.current = newData
       setLogoPreview(initialData.logoUrl || null)
       setNewProductType('')
     }
@@ -106,20 +114,43 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
     }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    onSave({
-      logo: formData.logo,
-      clientName: formData.clientName,
-      productTypes: formData.productTypes,
-      description: formData.description,
-    })
-    onClose()
+    setIsSubmitting(true)
+    try {
+      await onSave({
+        logo: formData.logo,
+        clientName: formData.clientName,
+        productTypes: formData.productTypes,
+        description: formData.description,
+      })
+      setShowUnsavedChangesModal(false)
+      onClose()
+    } catch (error) {
+      console.error('Error saving client:', error)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
     onClose()
+  }
+
+  const handleSaveFromUnsavedModal = () => {
+    const form = document.querySelector('form[data-client-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
   }
 
   const handleRemoveImage = () => {
@@ -141,11 +172,19 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
         />
       )}
       
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
+      />
+      
       <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+        onClick={isSubmitting ? undefined : handleClose}
       />
 
       {/* Modal */}
@@ -167,7 +206,7 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} data-client-form className="p-6">
           {/* Image Section */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">

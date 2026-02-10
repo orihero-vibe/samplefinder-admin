@@ -33,14 +33,15 @@ interface TriviaQuiz {
   skip: number
   incorrect: number
   winnersCount: number
-  status: 'Scheduled' | 'Completed' | 'Draft'
+  status: 'Scheduled' | 'Active' | 'Completed' | 'Draft'
   clientName?: string
 }
 
 const Trivia = () => {
   const navigate = useNavigate()
   const { addNotification } = useNotificationStore()
-  const [isLoading, setIsLoading] = useState(true)
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
+  const [isListLoading, setIsListLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('Date')
@@ -79,14 +80,14 @@ const Trivia = () => {
     const startDate = doc.startDate ? new Date(doc.startDate) : null
     const endDate = doc.endDate ? new Date(doc.endDate) : null
     
-    let status: 'Scheduled' | 'Completed' | 'Draft' = 'Draft'
+    let status: 'Scheduled' | 'Active' | 'Completed' | 'Draft' = 'Draft'
     if (startDate && endDate) {
       if (now < startDate) {
         status = 'Scheduled'
       } else if (now > endDate) {
         status = 'Completed'
       } else {
-        status = 'Scheduled' // Active/Scheduled
+        status = 'Active' // Between start and end date = Active
       }
     }
 
@@ -173,9 +174,13 @@ const Trivia = () => {
   }
 
   // Fetch trivia from Appwrite with statistics and pagination
-  const fetchTrivia = async (page: number = currentPage) => {
+  const fetchTrivia = async (page: number = currentPage, isInitial: boolean = false) => {
     try {
-      setIsLoading(true)
+      if (isInitial) {
+        setIsInitialLoading(true)
+      } else {
+        setIsListLoading(true)
+      }
       setError(null)
       
       // Fetch clients first if not already loaded
@@ -210,7 +215,7 @@ const Trivia = () => {
         const lastValidPage = totalPagesCount
         setCurrentPage(lastValidPage)
         if (page !== lastValidPage) {
-          return fetchTrivia(lastValidPage)
+          return fetchTrivia(lastValidPage, false)
         }
       } else if (totalPagesCount === 0) {
         setCurrentPage(1)
@@ -255,14 +260,18 @@ const Trivia = () => {
       console.error('Error fetching trivia:', err)
       setError('Failed to load trivia quizzes. Please try again.')
     } finally {
-      setIsLoading(false)
+      if (isInitial) {
+        setIsInitialLoading(false)
+      } else {
+        setIsListLoading(false)
+      }
     }
   }
 
   // Handle page change
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
-      fetchTrivia(page)
+      fetchTrivia(page, false)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
@@ -282,18 +291,25 @@ const Trivia = () => {
     }
   }
 
-  // Reset to page 1 when search or sort changes
+  // Initial load
   useEffect(() => {
-    setCurrentPage(1)
-    fetchTrivia(1)
-    fetchStatistics()
+    const initialLoad = async () => {
+      await fetchClients()
+      await fetchTrivia(1, true)
+      await fetchStatistics()
+    }
+    initialLoad()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Reset to page 1 when search or sort changes (not initial load)
+  useEffect(() => {
+    if (!isInitialLoading) {
+      setCurrentPage(1)
+      fetchTrivia(1, false)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, sortBy])
-
-  useEffect(() => {
-    // Fetch clients on mount
-    fetchClients()
-  }, [])
 
   const handleDeleteClick = (trivia: TriviaQuiz) => {
     setTriviaToDelete(trivia)
@@ -307,9 +323,9 @@ const Trivia = () => {
         // Check if we need to go back a page if current page becomes empty
         if (triviaQuizzes.length === 1 && currentPage > 1) {
           setCurrentPage(currentPage - 1)
-          await fetchTrivia(currentPage - 1)
+          await fetchTrivia(currentPage - 1, false)
         } else {
-          await fetchTrivia(currentPage) // Refresh list
+          await fetchTrivia(currentPage, false) // Refresh list
         }
         addNotification({
           type: 'success',
@@ -336,7 +352,7 @@ const Trivia = () => {
   }
 
   const handleUpdateTrivia = async () => {
-    await fetchTrivia(currentPage) // Refresh list after update
+    await fetchTrivia(currentPage, false) // Refresh list after update
     addNotification({
       type: 'success',
       title: 'Trivia Updated',
@@ -368,7 +384,7 @@ const Trivia = () => {
       await triviaService.create(dbData)
       setIsCreateModalOpen(false)
       setCurrentPage(1)
-      await fetchTrivia(1) // Refresh list - reset to page 1
+      await fetchTrivia(1, false) // Refresh list - reset to page 1
       addNotification({
         type: 'success',
         title: 'Trivia Created',
@@ -386,7 +402,7 @@ const Trivia = () => {
 
   const filteredTrivia = triviaQuizzes
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <DashboardLayout>
         <ShimmerPage />
@@ -459,6 +475,7 @@ const Trivia = () => {
           onViewClick={(trivia) => navigate(`/trivia/${trivia.id}`)}
           onEditClick={handleEditClick}
           onDeleteClick={handleDeleteClick}
+          isLoading={isListLoading}
         />
       </div>
 

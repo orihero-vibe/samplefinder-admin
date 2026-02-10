@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { clientsService } from '../../../lib/services'
 import type { ClientDocument } from '../../../lib/services'
 import { formatDateWithTimezone } from '../../../lib/dateUtils'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '../../../components'
 
 interface CreateTriviaModalProps {
   isOpen: boolean
@@ -19,7 +21,7 @@ interface CreateTriviaModalProps {
 }
 
 const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) => {
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     client: '', // Client ID
     question: '',
     answers: ['', '', '', ''], // Array of answer strings
@@ -27,10 +29,17 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     startDate: '', // Start date/time
     endDate: '', // End date/time
     points: 10, // Default points
-  })
+  }
+  
+  const [formData, setFormData] = useState(initialFormData)
+  const initialDataRef = useRef(initialFormData)
   const [brands, setBrands] = useState<ClientDocument[]>([])
   const [isLoadingBrands, setIsLoadingBrands] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Fetch brands when modal opens
   useEffect(() => {
@@ -53,18 +62,12 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     }
   }
 
-  // Reset form when modal closes
+  // Reset form when modal opens/closes
   useEffect(() => {
-    if (!isOpen) {
-      setFormData({
-        client: '',
-        question: '',
-        answers: ['', '', '', ''],
-        correctOptionIndex: 1,
-        startDate: '',
-        endDate: '',
-        points: 10,
-      })
+    if (isOpen) {
+      initialDataRef.current = initialFormData
+    } else {
+      setFormData(initialFormData)
       setError(null)
     }
   }, [isOpen])
@@ -83,6 +86,26 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
 
   const handleCorrectAnswerChange = (index: number) => {
     setFormData((prev) => ({ ...prev, correctOptionIndex: index }))
+  }
+
+  const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
+    onClose()
+  }
+
+  const handleSaveFromUnsavedModal = () => {
+    const form = document.querySelector('form[data-trivia-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -133,48 +156,56 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
         endDate: formatDateWithTimezone(endDate),
         points: formData.points,
       }
+      setIsSubmitting(true)
       await onSave(triviaData)
-      // onSave is async, parent will handle closing modal on success
-      // The useEffect will reset form when modal closes
+      setShowUnsavedChangesModal(false)
+      onClose()
     } catch (err) {
       console.error('Error saving trivia:', err)
       setError('Failed to save trivia quiz. Please try again.')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  const handleClose = () => {
-    setError(null)
-    onClose()
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+    <>
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
       />
+      
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={isSubmitting ? undefined : handleClose}
+        />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Create New Trivia Quiz</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              New Trivia Quiz for users.
-            </p>
-          </div>
-          <button
-            onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+        {/* Modal */}
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+          {/* Header */}
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Create New Trivia Quiz</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                New Trivia Quiz for users.
+              </p>
+            </div>
+            <button
+              onClick={handleClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+              disabled={isSubmitting}
           >
             <Icon icon="mdi:close" className="w-6 h-6" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} data-trivia-form className="p-6">
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
               {error}
@@ -348,6 +379,7 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
         </form>
       </div>
     </div>
+    </>
   )
 }
 

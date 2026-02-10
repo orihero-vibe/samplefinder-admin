@@ -512,6 +512,7 @@ export interface EventDocument extends Models.Document {
   checkInPoints: number
   reviewPoints: number
   eventInfo: string
+  brandDescription?: string // Brand description text field
   isArchived: boolean
   isHidden: boolean
   radius?: number
@@ -722,6 +723,17 @@ export const appUsersService = {
   // This implementation uses account.create which may work if admin has permissions
   create: async (userData: UserFormData): Promise<AppUser> => {
     try {
+      // Validate username uniqueness if username is provided
+      if (userData.username && userData.username.trim()) {
+        const existingUsers = await userProfilesService.list([
+          Query.equal('username', userData.username.trim())
+        ])
+        
+        if (existingUsers.documents.length > 0) {
+          throw new Error('Username already exists. Please choose a different username.')
+        }
+      }
+      
       // Step 1: Create Auth user
       // Note: This requires server-side execution or admin permissions
       // For now, we'll create the profile and assume Auth user is created separately
@@ -953,6 +965,37 @@ export const appUsersService = {
     } catch (error) {
       console.error('Error getting user:', error)
       return null
+    }
+  },
+
+  // Update user profile
+  update: async (id: string, data: Record<string, unknown>): Promise<AppUser> => {
+    try {
+      // Validate username uniqueness if username is being updated
+      if (data.username && typeof data.username === 'string' && data.username.trim()) {
+        const existingUsers = await userProfilesService.list([
+          Query.equal('username', data.username.trim())
+        ])
+        
+        // Check if username exists for a different user (exclude current user)
+        const duplicateUser = existingUsers.documents.find(user => user.$id !== id)
+        if (duplicateUser) {
+          throw new Error('Username already exists. Please choose a different username.')
+        }
+      }
+      
+      // Update user_profiles
+      const updatedProfile = await userProfilesService.update(id, data)
+      
+      // Map firstname/lastname to firstName/lastName for UI compatibility
+      return {
+        ...updatedProfile,
+        firstName: (updatedProfile as { firstname?: string }).firstname,
+        lastName: (updatedProfile as { lastname?: string }).lastname,
+      } as AppUser
+    } catch (error) {
+      console.error('Error updating user:', error)
+      throw error
     }
   },
 
