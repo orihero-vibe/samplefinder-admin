@@ -464,8 +464,7 @@ const Users = () => {
       <AddUserModal
         isOpen={isAddUserModalOpen}
         onClose={() => setIsAddUserModalOpen(false)}
-        onSave={(userData) => {
-          // Map AddUserModal's type to UserFormData
+        onSave={(userData) =>
           handleCreateUser({
             email: userData.email,
             password: userData.password,
@@ -476,7 +475,7 @@ const Users = () => {
             role: userData.role as 'admin' | 'user',
             tierLevel: userData.tierLevel,
           })
-        }}
+        }
       />
 
       {/* Edit User Modal */}

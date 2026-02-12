@@ -718,63 +718,56 @@ export interface AppUser extends UserProfile {
 
 // Users service - handles creating Auth users and user_profiles
 export const appUsersService = {
-  // Create a new user (Auth + user_profiles)
-  // Note: Creating users as admin requires server-side execution
-  // This implementation uses account.create which may work if admin has permissions
+  // Create a new user (Auth + user_profiles) via Appwrite function
+  // Requires server-side execution; uses Mobile API function with users.write scope
   create: async (userData: UserFormData): Promise<AppUser> => {
     try {
-      // Validate username uniqueness if username is provided
-      if (userData.username && userData.username.trim()) {
-        const existingUsers = await userProfilesService.list([
-          Query.equal('username', userData.username.trim())
-        ])
-        
-        if (existingUsers.documents.length > 0) {
-          throw new Error('Username already exists. Please choose a different username.')
+      if (!appwriteConfig.functions.mobileApiFunctionId) {
+        throw new Error('Mobile API function ID is not configured')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.mobileApiFunctionId,
+        xpath: '/create-user',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({
+          email: userData.email,
+          password: userData.password,
+          firstname: userData.firstname,
+          lastname: userData.lastname,
+          username: userData.username,
+          phoneNumber: userData.phoneNumber,
+          role: userData.role || 'user',
+          tierLevel: userData.tierLevel,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (execution.responseStatusCode !== 200) {
+        let errorMessage = 'Failed to create user'
+        try {
+          const errorBody = execution.responseBody ? JSON.parse(execution.responseBody) : {}
+          errorMessage = errorBody.error || errorMessage
+        } catch {
+          errorMessage = execution.responseBody || errorMessage
         }
-      }
-      
-      // Step 1: Create Auth user
-      // Note: This requires server-side execution or admin permissions
-      // For now, we'll create the profile and assume Auth user is created separately
-      // In production, use a Cloud Function with server SDK
-
-      // Step 2: Create user profile
-      // For now, we'll create profile with a placeholder authID
-      // In production, get the actual authID from the Auth user creation
-      
-      // Calculate idAdult based on date of birth (18+ years old)
-      let idAdult = true // Default to true if no DOB provided
-      if (userData.dob) {
-        const dobDate = new Date(userData.dob)
-        const today = new Date()
-        const age = today.getFullYear() - dobDate.getFullYear()
-        const monthDiff = today.getMonth() - dobDate.getMonth()
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dobDate.getDate())) {
-          idAdult = age - 1 >= 18
-        } else {
-          idAdult = age >= 18
-        }
-      }
-      
-      const profileData = {
-        authID: ID.unique(), // Placeholder - should be actual Auth user ID
-        firstname: userData.firstname || '',
-        lastname: userData.lastname || '',
-        username: userData.username || '',
-        phoneNumber: userData.phoneNumber || '',
-        dob: userData.dob || null,
-        zipCode: userData.zipCode || '',
-        role: userData.role || 'user',
-        tierLevel: userData.tierLevel || '',
-        isBlocked: false,
-        idAdult, // Required field - indicates if user is an adult (18+)
+        throw new Error(errorMessage)
       }
 
-      const profile = await userProfilesService.create(profileData)
+      const response = JSON.parse(execution.responseBody)
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to create user')
+      }
 
-      // For production, consider using a Cloud Function with server SDK
-      return profile as AppUser
+      const profile = await userProfilesService.getById(response.profileId)
+      return {
+        ...profile,
+        firstName: profile.firstname,
+        lastName: profile.lastname,
+        email: userData.email,
+      } as AppUser
     } catch (error) {
       console.error('Error creating user:', error)
       throw error

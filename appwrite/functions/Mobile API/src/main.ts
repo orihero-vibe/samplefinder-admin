@@ -89,6 +89,18 @@ interface UpdateUserStatusRequest {
   block: boolean;
 }
 
+// Create user request (Auth + user profile)
+interface CreateUserRequest {
+  email: string;
+  password: string;
+  firstname?: string;
+  lastname?: string;
+  username?: string;
+  phoneNumber?: string;
+  role?: string;
+  tierLevel?: string;
+}
+
 interface TriviaClientDocument {
   $id: string;
   name: string;
@@ -663,6 +675,97 @@ async function updateUserStatus(
 }
 
 // ============================================================================
+// CREATE USER FUNCTION
+// ============================================================================
+
+/**
+ * Create a new user in both Appwrite Auth and user_profiles collection.
+ * Requires server-side execution as creating Auth users needs users.write scope.
+ */
+async function createUser(
+  users: Users,
+  databases: Databases,
+  data: CreateUserRequest,
+  log: (message: string) => void
+): Promise<{ success: boolean; userId: string; profileId: string; error?: string }> {
+  log(`Creating user: ${data.email}`);
+
+  try {
+    // 1. Check if email already exists in Auth
+    const existingByEmail = await users.list([Query.equal('email', data.email)]);
+    if (existingByEmail.total > 0) {
+      throw { code: 409, message: 'A user with this email already exists. Please use a different email.' };
+    }
+
+    // 2. Check if phone already exists (when provided)
+    if (data.phoneNumber?.trim()) {
+      const phoneFormatted = `+1${data.phoneNumber.replace(/\D/g, '')}`;
+      if (phoneFormatted.length >= 12) {
+        const existingByPhone = await users.list([Query.equal('phone', phoneFormatted)]);
+        if (existingByPhone.total > 0) {
+          throw { code: 409, message: 'A user with this phone number already exists. Please use a different email or phone.' };
+        }
+      }
+    }
+
+    // 3. Validate username uniqueness if provided
+    if (data.username?.trim()) {
+      const existingByUsername = await databases.listDocuments(
+        DATABASE_ID,
+        USER_PROFILES_TABLE_ID,
+        [Query.equal('username', data.username.trim())]
+      );
+      if (existingByUsername.total > 0) {
+        throw { code: 409, message: 'Username already exists. Please choose a different username.' };
+      }
+    }
+
+    // 4. Create Auth user (node-appwrite v14 uses positional params: userId, email, phone, password, name)
+    const userId = ID.unique();
+    const name = [data.firstname, data.lastname].filter(Boolean).join(' ').trim() || '';
+    await users.create(
+      userId,
+      data.email,
+      data.phoneNumber ? `+1${data.phoneNumber.replace(/\D/g, '')}` : undefined,
+      data.password,
+      name || undefined
+    );
+    log(`Auth user created: ${userId}`);
+
+    // 5. Create user profile
+    const profileData: Record<string, unknown> = {
+      authID: userId,
+      firstname: data.firstname || '',
+      lastname: data.lastname || '',
+      username: data.username || '',
+      phoneNumber: data.phoneNumber || '',
+      role: data.role || 'user',
+      tierLevel: data.tierLevel || '',
+      isBlocked: false,
+      idAdult: true,
+    };
+
+    const profile = await databases.createDocument(
+      DATABASE_ID,
+      USER_PROFILES_TABLE_ID,
+      ID.unique(),
+      profileData
+    );
+    log(`User profile created: ${profile.$id}`);
+
+    return {
+      success: true,
+      userId,
+      profileId: profile.$id,
+    };
+  } catch (err: unknown) {
+    const typedErr = err as { code?: number; message?: string };
+    log(`Error creating user: ${typedErr.message || 'Unknown error'}`);
+    throw typedErr;
+  }
+}
+
+// ============================================================================
 // ACCOUNT DELETION FUNCTION
 // ============================================================================
 
@@ -1007,6 +1110,57 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     }
 
     // ========================================================================
+    // CREATE USER ENDPOINT
+    // ========================================================================
+
+    if (req.path === '/create-user' && req.method === 'POST') {
+      log('Processing create-user request');
+
+      const body = req.body as CreateUserRequest;
+
+      if (!body || !body.email || !body.password) {
+        return res.json(
+          {
+            success: false,
+            error: 'email and password are required',
+          },
+          400
+        );
+      }
+
+      if (body.password.length < 8) {
+        return res.json(
+          {
+            success: false,
+            error: 'Password must be at least 8 characters',
+          },
+          400
+        );
+      }
+
+      try {
+        const result = await createUser(users, databases, body, log);
+
+        return res.json({
+          success: true,
+          ...result,
+        });
+      } catch (err: unknown) {
+        const typedErr = err as { code?: number; message?: string };
+        if (typedErr.code && typedErr.message) {
+          return res.json(
+            {
+              success: false,
+              error: typedErr.message,
+            },
+            typedErr.code
+          );
+        }
+        throw err;
+      }
+    }
+
+    // ========================================================================
     // USER STATUS MANAGEMENT
     // ========================================================================
     
@@ -1060,7 +1214,7 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     return res.json({
       success: false,
       error:
-        'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /delete-account, POST /update-user-status, GET /ping',
+        'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /create-user, POST /delete-account, POST /update-user-status, GET /ping',
     });
   } catch (err: unknown) {
     const errorMessage =
