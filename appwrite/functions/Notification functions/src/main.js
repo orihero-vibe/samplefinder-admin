@@ -203,7 +203,7 @@ async function checkAndSendEventReminders(databases, messaging, log) {
                 try {
                     savedEvents = JSON.parse(user.savedEventIds);
                 }
-                catch (parseError) {
+                catch {
                     log(`Error parsing savedEventIds for user ${user.$id}`);
                     continue;
                 }
@@ -333,6 +333,59 @@ export default async function handler({ req, res, log, error }) {
             return res.json({
                 ...result,
             });
+        }
+        // Handle send system push to single user (e.g. badge earned)
+        if (req.path === '/send-system-push' && req.method === 'POST') {
+            log('Processing send-system-push request');
+            let body;
+            try {
+                if (!req.body || typeof req.body !== 'object') {
+                    throw new Error('Request body is required');
+                }
+                const b = req.body;
+                if (!b.userId || typeof b.userId !== 'string') {
+                    throw new Error('userId is required and must be a string');
+                }
+                if (!b.templateId || typeof b.templateId !== 'string') {
+                    throw new Error('templateId is required and must be a string');
+                }
+                body = { userId: b.userId, templateId: b.templateId };
+            }
+            catch (validationError) {
+                const msg = validationError instanceof Error ? validationError.message : String(validationError);
+                error(`Validation error: ${msg}`);
+                return res.json({ success: false, error: msg }, 400);
+            }
+            const SYSTEM_TEMPLATES = {
+                brand_ambassador_badge: {
+                    title: 'BRAND AMBASSADOR BADGE EARNED!',
+                    body: "Congratulations, you're an official SampleFinder Brand Ambassador!",
+                },
+                influencer_badge: {
+                    title: "INFLUENCER BADGE EARNED!",
+                    body: "Congratulations on earning your SampleFinder Influencer badge!",
+                },
+            };
+            const template = SYSTEM_TEMPLATES[body.templateId];
+            if (!template) {
+                error(`Unknown templateId: ${body.templateId}`);
+                return res.json({ success: false, error: `Unknown templateId. Valid: ${Object.keys(SYSTEM_TEMPLATES).join(', ')}` }, 400);
+            }
+            try {
+                const userDoc = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, body.userId);
+                if (!userDoc.authID) {
+                    error('User has no authID');
+                    return res.json({ success: false, error: 'User has no auth ID for push' }, 400);
+                }
+                await sendPushNotificationToUsers(messaging, [userDoc.authID], template.title, template.body, log, { templateId: body.templateId, type: 'System' });
+                log(`System push sent to user ${body.userId}: ${body.templateId}`);
+                return res.json({ success: true, templateId: body.templateId });
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                error(`Error sending system push: ${msg}`);
+                return res.json({ success: false, error: msg }, 500);
+            }
         }
         // Handle check event reminders endpoint (for scheduled execution)
         if (req.path === '/check-event-reminders' || req.method === 'GET') {

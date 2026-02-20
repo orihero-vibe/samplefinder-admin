@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
+import { categoriesService } from '../../../lib/services'
 
 interface EditCategoryModalProps {
   isOpen: boolean
@@ -9,9 +10,10 @@ interface EditCategoryModalProps {
     title: string
     isAdult?: boolean
   }
+  categoryId?: string
 }
 
-const EditCategoryModal = ({ isOpen, onClose, onSave, initialData }: EditCategoryModalProps) => {
+const EditCategoryModal = ({ isOpen, onClose, onSave, initialData, categoryId }: EditCategoryModalProps) => {
   const [title, setTitle] = useState('')
   const [isAdult, setIsAdult] = useState(false)
   const [showTooltip, setShowTooltip] = useState(false)
@@ -40,11 +42,21 @@ const EditCategoryModal = ({ isOpen, onClose, onSave, initialData }: EditCategor
       return
     }
 
+    // Check for duplicate title (excluding current category)
+    const trimmedTitle = title.trim()
     setIsSubmitting(true)
     try {
-      await onSave({ title: title.trim(), isAdult })
-    } catch {
+      const existingCategory = await categoriesService.findByTitle(trimmedTitle)
+      if (existingCategory && existingCategory.$id !== categoryId) {
+        setError('A category with this title already exists. Please use a different title.')
+        setIsSubmitting(false)
+        return
+      }
+
+      await onSave({ title: trimmedTitle, isAdult })
+    } catch (err) {
       // Error is handled by parent component via notification
+      // Only set local error if it's not already set (duplicate check sets it before this)
       setError('Failed to update category. Please try again.')
     } finally {
       setIsSubmitting(false)

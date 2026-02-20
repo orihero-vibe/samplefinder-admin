@@ -218,6 +218,18 @@ const Categories = () => {
 
   const handleCreateCategory = async (categoryData: { title: string; isAdult?: boolean }) => {
     try {
+      // Backup duplicate check
+      const existingCategory = await categoriesService.findByTitle(categoryData.title.trim())
+      if (existingCategory) {
+        const errorMessage = 'A category with this title already exists. Please use a different title.'
+        addNotification({
+          type: 'error',
+          title: 'Failed to Create Category',
+          message: errorMessage,
+        })
+        throw new Error(errorMessage)
+      }
+
       await categoriesService.create(categoryData)
       setCurrentPage(1)
       await fetchCategories(1) // Refresh list - reset to page 1 after creating
@@ -252,6 +264,18 @@ const Categories = () => {
     if (!selectedCategory?.id) return
 
     try {
+      // Backup duplicate check (excluding current category)
+      const existingCategory = await categoriesService.findByTitle(categoryData.title.trim())
+      if (existingCategory && existingCategory.$id !== selectedCategory.id) {
+        const errorMessage = 'A category with this title already exists. Please use a different title.'
+        addNotification({
+          type: 'error',
+          title: 'Failed to Update Category',
+          message: errorMessage,
+        })
+        throw new Error(errorMessage)
+      }
+
       await categoriesService.update(selectedCategory.id, categoryData)
       await fetchCategories(currentPage) // Refresh list - keep current page
       setIsEditModalOpen(false)
@@ -336,6 +360,7 @@ const Categories = () => {
               }
             : undefined
         }
+        categoryId={selectedCategory?.id}
       />
 
       {/* Delete Confirmation Modal */}

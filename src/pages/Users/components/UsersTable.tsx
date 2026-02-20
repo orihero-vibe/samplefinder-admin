@@ -28,6 +28,7 @@ interface UsersTableProps {
   totalUsers?: number
   pageSize?: number
   onPageChange?: (page: number) => void
+  isLoading?: boolean
 }
 
 const UsersTable = ({
@@ -39,6 +40,7 @@ const UsersTable = ({
   totalUsers = 0,
   pageSize = 25,
   onPageChange,
+  isLoading = false,
 }: UsersTableProps) => {
   // Format phone number to (XXX) XXX-XXXX
   const formatPhoneNumber = (phoneNumber: string | undefined) => {
@@ -57,7 +59,9 @@ const UsersTable = ({
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div
+      className={`bg-white border border-gray-200 rounded-lg overflow-hidden transition-opacity ${isLoading ? 'opacity-60 pointer-events-none' : ''}`}
+    >
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">

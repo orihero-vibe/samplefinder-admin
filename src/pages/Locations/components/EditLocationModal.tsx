@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import LocationPicker from '../../../components/LocationPicker'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '../../../components'
 
 interface EditLocationModalProps {
   isOpen: boolean
@@ -37,11 +39,15 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const initialDataRef = useRef(formData)
+
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
     if (isOpen && initialData) {
-      setFormData({
+      const initialFormData = {
         name: initialData.name || '',
         address: initialData.address || '',
         city: initialData.city || '',
@@ -49,7 +55,9 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
         zipCode: initialData.zipCode || '',
         latitude: initialData.latitude || '',
         longitude: initialData.longitude || '',
-      })
+      }
+      setFormData(initialFormData)
+      initialDataRef.current = initialFormData
     }
   }, [isOpen, initialData])
 
@@ -82,6 +90,7 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
       })
       
       // Success - close modal
+      setShowUnsavedChangesModal(false)
       onClose()
     } catch {
       // Error - keep modal open, error notification is handled by parent
@@ -90,16 +99,41 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
   }
 
   const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
     onClose()
   }
 
+  const handleSaveFromUnsavedModal = () => {
+    const form = document.querySelector('form[data-location-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+    <>
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
       />
+      
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={isSubmitting ? undefined : handleClose}
+        />
 
       {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto m-4">
@@ -114,13 +148,14 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
           <button
             onClick={handleClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
+            disabled={isSubmitting}
           >
             <Icon icon="mdi:close" className="w-6 h-6" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} data-location-form className="p-6">
           {/* Location Name Input */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -167,7 +202,8 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
             <button
               type="button"
               onClick={handleClose}
-              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
@@ -189,6 +225,7 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
         </form>
       </div>
     </div>
+    </>
   )
 }
 

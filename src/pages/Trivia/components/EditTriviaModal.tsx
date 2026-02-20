@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { clientsService, triviaService, type ClientDocument } from '../../../lib/services'
 import { formatDateWithTimezone, formatDateForInput } from '../../../lib/dateUtils'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '../../../components'
 
 interface EditTriviaModalProps {
   isOpen: boolean
@@ -24,6 +26,11 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
   const [isLoadingBrands, setIsLoadingBrands] = useState(false)
   const [isLoadingTrivia, setIsLoadingTrivia] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const initialDataRef = useRef(formData)
+
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Fetch trivia data and brands when modal opens
   useEffect(() => {
@@ -63,7 +70,7 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
         ? [...trivia.answers, ...Array(Math.max(0, 4 - trivia.answers.length)).fill('')].slice(0, 4)
         : ['', '', '', '']
       
-      setFormData({
+      const initialFormData = {
         client: trivia.client || '',
         question: trivia.question || '',
         answers,
@@ -71,7 +78,9 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
         startDate,
         endDate,
         points: trivia.points ?? 10,
-      })
+      }
+      setFormData(initialFormData)
+      initialDataRef.current = initialFormData
     } catch (err) {
       console.error('Error fetching trivia:', err)
       setError('Failed to load trivia quiz. Please try again.')
@@ -150,6 +159,7 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
 
     try {
       setError(null)
+      setIsSubmitting(true)
       // Convert dates to ISO 8601 format with timezone preservation
       const triviaData = {
         client: formData.client || undefined,
@@ -162,22 +172,42 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
       }
       await triviaService.update(triviaId, triviaData)
       await onUpdate() // Refresh the list
+      setShowUnsavedChangesModal(false)
       onClose()
     } catch (err) {
       console.error('Error updating trivia:', err)
       setError('Failed to update trivia quiz. Please try again.')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
   const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      setError(null)
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
     setError(null)
     onClose()
+  }
+
+  const handleSaveFromUnsavedModal = () => {
+    const form = document.querySelector('form[data-trivia-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
   }
 
   if (isLoadingTrivia) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleClose} />
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={isSubmitting ? undefined : handleClose} />
         <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl p-8 m-4">
           <div className="flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1D0A74]"></div>
@@ -189,12 +219,21 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+    <>
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
       />
+      
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={isSubmitting ? undefined : handleClose}
+        />
 
       {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
@@ -209,13 +248,14 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
           <button
             onClick={handleClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
+            disabled={isSubmitting}
           >
             <Icon icon="mdi:close" className="w-6 h-6" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} data-trivia-form className="p-6">
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
               {error}
@@ -375,20 +415,23 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
             <button
               type="button"
               onClick={handleClose}
-              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Update Trivia
+              {isSubmitting ? 'Updating...' : 'Update Trivia'}
             </button>
           </div>
         </form>
       </div>
     </div>
+    </>
   )
 }
 

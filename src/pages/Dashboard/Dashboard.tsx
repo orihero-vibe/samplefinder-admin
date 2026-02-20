@@ -295,69 +295,85 @@ const Dashboard = () => {
       }
       
       // Fetch events with filters
-      // Use search service if search term exists (does client-side filtering), otherwise use list service
-      const result = isSearching
-        ? await eventsService.search(searchTerm.trim(), queries)
-        : await eventsService.list(queries)
-      
-      // Extract pagination metadata
-      const total = result.total
-      const totalPagesCount = Math.ceil(total / pageSize)
-      setTotalEvents(total)
-      setTotalPages(totalPagesCount)
-      
-      // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
-      if (totalPagesCount > 0 && page > totalPagesCount) {
-        const lastValidPage = totalPagesCount
-        setCurrentPage(lastValidPage)
-        // Recursively fetch with corrected page (only if we're not already on that page to avoid infinite loop)
-        if (page !== lastValidPage) {
-          return fetchEvents(lastValidPage)
-        }
-      } else if (totalPagesCount === 0) {
-        // If no results, ensure we're on page 1
-        setCurrentPage(1)
-      }
-      
-      // For search results, apply client-side pagination
-      const documentsToProcess = isSearching
-        ? result.documents.slice((page - 1) * pageSize, page * pageSize)
-        : result.documents
-      
-      // OPTIMIZATION: Collect all unique client IDs and fetch them in a single batch
+      // When searching: use list() then filter by search term (including brand name) after resolving clients
+      // When not searching: use list() with server-side pagination
+      const result = await eventsService.list(queries)
+
+      // Collect client IDs from all fetched documents (needed for both search and non-search to resolve brand names)
       const clientIds = [...new Set(
-        documentsToProcess
+        result.documents
           .map(doc => doc.client as string | undefined)
           .filter((id): id is string => !!id)
       )]
-      
-      // Batch fetch all clients at once using the optimized service method
-      const clientsMap = clientIds.length > 0 
+      const clientsMap = clientIds.length > 0
         ? await clientsService.getByIds(clientIds)
         : new Map<string, ClientDocument>()
-      
-      // Map events using the pre-fetched client data
-      let mappedEvents = documentsToProcess.map((doc) => {
+
+      // Map all documents to events with brand names resolved
+      let mappedEvents = result.documents.map((doc) => {
         const event = mapEventDocumentToEvent(doc as unknown as LocalEventDocument)
-        
-        // Look up client name from the map (instant lookup)
         if (doc.client) {
           const client = clientsMap.get(doc.client as string)
           event.brand = client?.name || ''
         }
-        
         return event
       })
-      
+
+      // When searching, filter by term against event name, city, address, state, and brand name
+      if (isSearching) {
+        const term = searchTerm.toLowerCase().trim()
+        const matchingIds = new Set(
+          result.documents
+            .filter((doc) => {
+              const name = (doc.name ?? '').toLowerCase()
+              const city = (doc.city ?? '').toLowerCase()
+              const address = (doc.address ?? '').toLowerCase()
+              const state = (doc.state ?? '').toLowerCase()
+              const client = doc.client ? clientsMap.get(doc.client as string) : null
+              const brand = (client?.name ?? '').toLowerCase()
+              return (
+                name.includes(term) ||
+                city.includes(term) ||
+                address.includes(term) ||
+                state.includes(term) ||
+                brand.includes(term)
+              )
+            })
+            .map((d) => d.$id)
+        )
+        mappedEvents = mappedEvents.filter((e) => e.id && matchingIds.has(e.id))
+      }
+
+      // Pagination: when searching use filtered count; when not searching use result.total
+      const total = isSearching ? mappedEvents.length : result.total
+      const totalPagesCount = Math.ceil(total / pageSize)
+      setTotalEvents(total)
+      setTotalPages(totalPagesCount)
+
+      if (totalPagesCount > 0 && page > totalPagesCount) {
+        const lastValidPage = totalPagesCount
+        setCurrentPage(lastValidPage)
+        if (page !== lastValidPage) {
+          return fetchEvents(lastValidPage)
+        }
+      } else if (totalPagesCount === 0) {
+        setCurrentPage(1)
+      }
+
       // Apply client-side brand sorting if needed (since brand is a relationship)
       if (sortField === 'brand') {
-        mappedEvents = mappedEvents.sort((a, b) => {
+        mappedEvents = [...mappedEvents].sort((a, b) => {
           const comparison = a.brand.localeCompare(b.brand)
           return sortOrder === 'asc' ? comparison : -comparison
         })
       }
-      
-      setEvents(mappedEvents)
+
+      // For search: paginate the filtered list; for non-search we already have one page of docs
+      const eventsToShow = isSearching
+        ? mappedEvents.slice((page - 1) * pageSize, page * pageSize)
+        : mappedEvents
+
+      setEvents(eventsToShow)
       setCurrentPage(page)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch events'

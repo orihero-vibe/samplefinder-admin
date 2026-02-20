@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import LocationPicker from '../../../components/LocationPicker'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '../../../components'
 
 interface AddLocationModalProps {
   isOpen: boolean
@@ -17,7 +19,7 @@ interface AddLocationModalProps {
 }
 
 const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) => {
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     name: '',
     address: '',
     city: '',
@@ -25,24 +27,23 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
     zipCode: '',
     latitude: '',
     longitude: '',
-  })
+  }
 
+  const [formData, setFormData] = useState(initialFormData)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const initialDataRef = useRef(initialFormData)
 
-  // Reset form when modal closes
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
+
+  // Reset form when modal opens/closes
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      initialDataRef.current = initialFormData
+    } else {
       // Reset state when modal closes using requestAnimationFrame to avoid cascading renders
       requestAnimationFrame(() => {
-        setFormData({
-          name: '',
-          address: '',
-          city: '',
-          state: '',
-          zipCode: '',
-          latitude: '',
-          longitude: '',
-        })
+        setFormData(initialFormData)
         setIsSubmitting(false)
       })
     }
@@ -77,6 +78,7 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
       })
       
       // Success - close modal and reset form
+      setShowUnsavedChangesModal(false)
       onClose()
     } catch {
       // Error - keep modal open, error notification is handled by parent
@@ -85,17 +87,42 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
   }
 
   const handleClose = () => {
-    // Reset is handled by useEffect
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      // Reset is handled by useEffect
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
     onClose()
   }
 
+  const handleSaveFromUnsavedModal = () => {
+    const form = document.querySelector('form[data-location-form]') as HTMLFormElement
+    if (form) {
+      form.requestSubmit()
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+    <>
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onClose={() => setShowUnsavedChangesModal(false)}
+        onDiscard={handleDiscardChanges}
+        onSave={handleSaveFromUnsavedModal}
+        isSaving={isSubmitting}
       />
+      
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={isSubmitting ? undefined : handleClose}
+        />
 
       {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto m-4">
@@ -110,13 +137,14 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
           <button
             onClick={handleClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
+            disabled={isSubmitting}
           >
             <Icon icon="mdi:close" className="w-6 h-6" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
+        <form onSubmit={handleSubmit} data-location-form className="p-6">
           {/* Location Name Input */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -163,7 +191,8 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
             <button
               type="button"
               onClick={handleClose}
-              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
@@ -185,6 +214,7 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
         </form>
       </div>
     </div>
+    </>
   )
 }
 

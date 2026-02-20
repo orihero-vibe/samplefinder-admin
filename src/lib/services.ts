@@ -716,57 +716,113 @@ export interface AppUser extends UserProfile {
   // Additional fields from Auth user can be added here
 }
 
+/** Batch size for get-user-emails to stay under Appwrite's 30s synchronous execution limit */
+const GET_USER_EMAILS_BATCH_SIZE = 25
+
+/**
+ * Fetches emails and last login dates for auth IDs in batches to avoid function timeout.
+ * Each batch runs in a separate execution so no single call exceeds the 30s limit.
+ */
+async function fetchUserEmailsInBatches(authIDs: string[]): Promise<{
+  emailMap: Record<string, string>
+  lastLoginMap: Record<string, string>
+}> {
+  const emailMap: Record<string, string> = {}
+  const lastLoginMap: Record<string, string> = {}
+  if (authIDs.length === 0 || !appwriteConfig.functions.statisticsFunctionId) {
+    return { emailMap, lastLoginMap }
+  }
+  const chunks: string[][] = []
+  for (let i = 0; i < authIDs.length; i += GET_USER_EMAILS_BATCH_SIZE) {
+    chunks.push(authIDs.slice(i, i + GET_USER_EMAILS_BATCH_SIZE))
+  }
+  const results = await Promise.all(
+    chunks.map(async (chunk) => {
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.statisticsFunctionId,
+        xpath: '/get-user-emails',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ authIDs: chunk }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (execution.status !== 'completed' || !execution.responseBody) return { emails: {} as Record<string, string>, lastLogins: {} as Record<string, string> }
+      try {
+        const response = JSON.parse(execution.responseBody)
+        if (!response.success) return { emails: {}, lastLogins: {} }
+        return {
+          emails: response.emails ?? {},
+          lastLogins: response.lastLogins ?? {},
+        }
+      } catch {
+        return { emails: {}, lastLogins: {} }
+      }
+    })
+  )
+  for (const r of results) {
+    Object.assign(emailMap, r.emails)
+    Object.assign(lastLoginMap, r.lastLogins)
+  }
+  return { emailMap, lastLoginMap }
+}
+
 // Users service - handles creating Auth users and user_profiles
 export const appUsersService = {
-  // Create a new user (Auth + user_profiles) via Appwrite function
-  // Requires server-side execution; uses Mobile API function with users.write scope
+  // Create a new user (Auth + user_profiles) via Mobile API function (server-side creates both)
   create: async (userData: UserFormData): Promise<AppUser> => {
     try {
       if (!appwriteConfig.functions.mobileApiFunctionId) {
-        throw new Error('Mobile API function ID is not configured')
+        throw new Error('Mobile API function is not configured. Cannot create Auth user.')
+      }
+
+      const body = {
+        email: userData.email,
+        password: userData.password,
+        firstname: userData.firstname ?? '',
+        lastname: userData.lastname ?? '',
+        username: userData.username ?? '',
+        phoneNumber: userData.phoneNumber ?? '',
+        role: userData.role ?? 'user',
+        tierLevel: userData.tierLevel ?? '',
       }
 
       const execution = await functions.createExecution({
         functionId: appwriteConfig.functions.mobileApiFunctionId,
         xpath: '/create-user',
         method: ExecutionMethod.POST,
-        body: JSON.stringify({
-          email: userData.email,
-          password: userData.password,
-          firstname: userData.firstname,
-          lastname: userData.lastname,
-          username: userData.username,
-          phoneNumber: userData.phoneNumber,
-          role: userData.role || 'user',
-          tierLevel: userData.tierLevel,
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json' },
       })
 
-      if (execution.responseStatusCode !== 200) {
-        let errorMessage = 'Failed to create user'
-        try {
-          const errorBody = execution.responseBody ? JSON.parse(execution.responseBody) : {}
-          errorMessage = errorBody.error || errorMessage
-        } catch {
-          errorMessage = execution.responseBody || errorMessage
-        }
-        throw new Error(errorMessage)
+      if (execution.status !== 'completed' || !execution.responseBody) {
+        const msg =
+          execution.status === 'failed'
+            ? execution.responseBody ?? 'Create user failed'
+            : 'Create user request did not complete in time.'
+        throw new Error(msg)
       }
 
-      const response = JSON.parse(execution.responseBody)
-      if (!response.success) {
-        throw new Error(response.error || 'Failed to create user')
+      const response = JSON.parse(execution.responseBody) as {
+        success?: boolean
+        error?: string
+        profileId?: string
+      }
+
+      const status = execution.responseStatusCode ?? 0
+      if (status < 200 || status >= 300) {
+        throw new Error(response.error ?? 'Failed to create user.')
+      }
+
+      if (!response.success || !response.profileId) {
+        throw new Error(response.error ?? 'Failed to create user.')
       }
 
       const profile = await userProfilesService.getById(response.profileId)
+      if (!profile) throw new Error('User profile was created but could not be retrieved.')
+
       return {
         ...profile,
-        firstName: profile.firstname,
-        lastName: profile.lastname,
-        email: userData.email,
+        firstName: (profile as { firstname?: string }).firstname,
+        lastName: (profile as { lastname?: string }).lastname,
       } as AppUser
     } catch (error) {
       console.error('Error creating user:', error)
@@ -779,47 +835,22 @@ export const appUsersService = {
     try {
       const profiles = await userProfilesService.list(queries)
       
-      // Fetch Auth user emails and last login dates via Cloud Function
+      // Fetch Auth user emails and last login dates via Cloud Function (batched to avoid 30s timeout)
       const authIDs = profiles.documents
         .map((profile) => (profile as { authID?: string }).authID)
         .filter((id): id is string => !!id)
 
       let emailMap: Record<string, string> = {}
       let lastLoginMap: Record<string, string> = {}
-      
-      if (authIDs.length > 0 && appwriteConfig.functions.statisticsFunctionId) {
-        try {
-          const execution = await functions.createExecution({
-            functionId: appwriteConfig.functions.statisticsFunctionId,
-            xpath: '/get-user-emails',
-            method: ExecutionMethod.POST,
-            body: JSON.stringify({ authIDs }),
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          })
-
-          if (execution.status === 'completed' && execution.responseBody) {
-            try {
-              const response = JSON.parse(execution.responseBody)
-              if (response.success) {
-                if (response.emails) {
-                  emailMap = response.emails
-                }
-                if (response.lastLogins) {
-                  lastLoginMap = response.lastLogins
-                }
-              }
-            } catch (parseError) {
-              console.warn('Failed to parse email response:', parseError)
-            }
-          }
-        } catch (emailError) {
-          console.warn('Failed to fetch user emails:', emailError)
-          // Continue without emails rather than failing completely
-        }
+      try {
+        const result = await fetchUserEmailsInBatches(authIDs)
+        emailMap = result.emailMap
+        lastLoginMap = result.lastLoginMap
+      } catch (emailError) {
+        console.warn('Failed to fetch user emails:', emailError)
+        // Continue without emails rather than failing completely
       }
-      
+
       // Map profiles with emails, last login dates, and name fields
       return profiles.documents.map((profile) => {
         const authID = (profile as { authID?: string }).authID
@@ -845,47 +876,22 @@ export const appUsersService = {
     try {
       const profiles = await userProfilesService.list(queries)
       
-      // Fetch Auth user emails and last login dates via Cloud Function
+      // Fetch Auth user emails and last login dates via Cloud Function (batched to avoid 30s timeout)
       const authIDs = profiles.documents
         .map((profile) => (profile as { authID?: string }).authID)
         .filter((id): id is string => !!id)
 
       let emailMap: Record<string, string> = {}
       let lastLoginMap: Record<string, string> = {}
-      
-      if (authIDs.length > 0 && appwriteConfig.functions.statisticsFunctionId) {
-        try {
-          const execution = await functions.createExecution({
-            functionId: appwriteConfig.functions.statisticsFunctionId,
-            xpath: '/get-user-emails',
-            method: ExecutionMethod.POST,
-            body: JSON.stringify({ authIDs }),
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          })
-
-          if (execution.status === 'completed' && execution.responseBody) {
-            try {
-              const response = JSON.parse(execution.responseBody)
-              if (response.success) {
-                if (response.emails) {
-                  emailMap = response.emails
-                }
-                if (response.lastLogins) {
-                  lastLoginMap = response.lastLogins
-                }
-              }
-            } catch (parseError) {
-              console.warn('Failed to parse email response:', parseError)
-            }
-          }
-        } catch (emailError) {
-          console.warn('Failed to fetch user emails:', emailError)
-          // Continue without emails rather than failing completely
-        }
+      try {
+        const result = await fetchUserEmailsInBatches(authIDs)
+        emailMap = result.emailMap
+        lastLoginMap = result.lastLoginMap
+      } catch (emailError) {
+        console.warn('Failed to fetch user emails:', emailError)
+        // Continue without emails rather than failing completely
       }
-      
+
       // Map profiles with emails, last login dates, and name fields
       const users = profiles.documents.map((profile) => {
         const authID = (profile as { authID?: string }).authID
@@ -917,32 +923,13 @@ export const appUsersService = {
       const profile = await userProfilesService.getById(id)
       if (!profile) return null
       
-      // Fetch Auth user email via Cloud Function
+      // Fetch Auth user email via Cloud Function (uses same batched helper for consistency)
       const authID = (profile as { authID?: string }).authID
       let email: string | undefined
-
-      if (authID && appwriteConfig.functions.statisticsFunctionId) {
+      if (authID) {
         try {
-          const execution = await functions.createExecution({
-            functionId: appwriteConfig.functions.statisticsFunctionId,
-            xpath: '/get-user-emails',
-            method: ExecutionMethod.POST,
-            body: JSON.stringify({ authIDs: [authID] }),
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          })
-
-          if (execution.status === 'completed' && execution.responseBody) {
-            try {
-              const response = JSON.parse(execution.responseBody)
-              if (response.success && response.emails && response.emails[authID]) {
-                email = response.emails[authID]
-              }
-            } catch (parseError) {
-              console.warn('Failed to parse email response:', parseError)
-            }
-          }
+          const { emailMap } = await fetchUserEmailsInBatches([authID])
+          email = emailMap[authID]
         } catch (emailError) {
           console.warn('Failed to fetch user email:', emailError)
         }
@@ -1018,38 +1005,17 @@ export const appUsersService = {
         queries
       )
       
-      // Fetch Auth user emails via Cloud Function
+      // Fetch Auth user emails via Cloud Function (batched to avoid 30s timeout)
       const authIDs = result.documents
         .map((profile) => (profile as { authID?: string }).authID)
         .filter((id): id is string => !!id)
 
       let emailMap: Record<string, string> = {}
-      
-      if (authIDs.length > 0 && appwriteConfig.functions.statisticsFunctionId) {
-        try {
-          const execution = await functions.createExecution({
-            functionId: appwriteConfig.functions.statisticsFunctionId,
-            xpath: '/get-user-emails',
-            method: ExecutionMethod.POST,
-            body: JSON.stringify({ authIDs }),
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          })
-
-          if (execution.status === 'completed' && execution.responseBody) {
-            try {
-              const response = JSON.parse(execution.responseBody)
-              if (response.success && response.emails) {
-                emailMap = response.emails
-              }
-            } catch (parseError) {
-              console.warn('Failed to parse email response:', parseError)
-            }
-          }
-        } catch (emailError) {
-          console.warn('Failed to fetch user emails:', emailError)
-        }
+      try {
+        const batchResult = await fetchUserEmailsInBatches(authIDs)
+        emailMap = batchResult.emailMap
+      } catch (emailError) {
+        console.warn('Failed to fetch user emails:', emailError)
       }
 
       // Map firstname/lastname to firstName/lastName for UI compatibility
@@ -1452,6 +1418,74 @@ export const notificationsService = {
       }
     } catch (error) {
       console.error('Error sending notification:', error)
+      throw error
+    }
+  },
+
+  // Send system push notification to a specific user
+  sendSystemPush: async (userId: string, notificationType: string): Promise<void> => {
+    try {
+      if (!appwriteConfig.functions.notificationFunctionId) {
+        throw new Error('Notification function ID is not configured')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.notificationFunctionId,
+        xpath: '/send-system-push',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ userId, notificationType }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (execution.status === 'failed') {
+        let errorMessage = 'Function execution failed'
+        
+        if (execution.responseBody) {
+          try {
+            const errorResponse = JSON.parse(execution.responseBody)
+            if (errorResponse.error) {
+              errorMessage = errorResponse.error
+            }
+          } catch {
+            errorMessage = execution.responseBody
+          }
+        }
+        
+        if (execution.errors) {
+          errorMessage += ` (Execution errors: ${execution.errors})`
+        }
+        
+        throw new Error(errorMessage)
+      }
+
+      if (execution.responseStatusCode && execution.responseStatusCode >= 400) {
+        let errorMessage = `Function returned status ${execution.responseStatusCode}`
+        
+        if (execution.responseBody) {
+          try {
+            const errorResponse = JSON.parse(execution.responseBody)
+            if (errorResponse.error) {
+              errorMessage = errorResponse.error
+            }
+          } catch {
+            errorMessage = execution.responseBody
+          }
+        }
+        
+        throw new Error(errorMessage)
+      }
+
+      const response = execution.responseBody
+        ? JSON.parse(execution.responseBody)
+        : {}
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to send system push notification')
+      }
+    } catch (error) {
+      console.error('Error sending system push notification:', error)
       throw error
     }
   },

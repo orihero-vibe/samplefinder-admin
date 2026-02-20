@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
+import { categoriesService } from '../../../lib/services'
 
 interface AddCategoryModalProps {
   isOpen: boolean
@@ -45,13 +46,23 @@ const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) =>
       return
     }
 
+    // Check for duplicate title
+    const trimmedTitle = title.trim()
     setIsSubmitting(true)
     try {
-      await onSave({ title: title.trim(), isAdult })
+      const existingCategory = await categoriesService.findByTitle(trimmedTitle)
+      if (existingCategory) {
+        setError('A category with this title already exists. Please use a different title.')
+        setIsSubmitting(false)
+        return
+      }
+
+      await onSave({ title: trimmedTitle, isAdult })
       setShowUnsavedChangesModal(false)
       onClose()
-    } catch {
+    } catch (err) {
       // Error is handled by parent component via notification
+      // Only set local error if it's not already set (duplicate check sets it before this)
       setError('Failed to create category. Please try again.')
     } finally {
       setIsSubmitting(false)

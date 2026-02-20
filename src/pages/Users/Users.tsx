@@ -13,14 +13,14 @@ import {
   EditUserModal,
   StatsCards,
 } from './components'
-import { appUsersService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
+import { appUsersService, notificationsService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
   const { addNotification } = useNotificationStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [tierFilter, setTierFilter] = useState('All Tiers')
-  const [sortBy, setSortBy] = useState('Date')
+  const [sortBy, setSortBy] = useState('Sort by: Date')
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false)
@@ -41,16 +41,16 @@ const Users = () => {
   const [totalPages, setTotalPages] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fetchIdRef = useRef(0)
 
   // Fetch users from Appwrite with pagination and search
   const fetchUsers = async (page: number = currentPage) => {
-    // Prevent multiple simultaneous fetches
-    if (isLoading) return
-    
+    const thisFetchId = ++fetchIdRef.current
+
     try {
       setIsLoading(true)
       setError(null)
-      
+
       // Build queries
       const queries: string[] = []
       const trimmedSearch = searchQuery.trim()
@@ -110,9 +110,10 @@ const Users = () => {
         queries.push(Query.orderDesc('$createdAt'))
       }
       
-      // For email/phone search, fetch more results (up to 500) to enable client-side filtering
-      // Otherwise use normal pagination
-      if (isEmailSearch || isPhoneSearch) {
+      // For any search (text, email, or phone), fetch more results (up to 500) and filter client-side
+      // so only records that actually match are shown (improves accuracy; server contains() can be inconsistent)
+      const hasSearch = trimmedSearch.length > 0
+      if (isEmailSearch || isPhoneSearch || hasSearch) {
         queries.push(Query.limit(500))
         queries.push(Query.offset(0))
       } else {
@@ -121,39 +122,50 @@ const Users = () => {
       }
       
       const result = await appUsersService.listWithPagination(queries)
-      
-      // Client-side filtering for email or phone search
+
+      // Ignore result if a newer fetch has started (e.g. user cleared search before this completed)
+      if (thisFetchId !== fetchIdRef.current) return
+
+      // Client-side filtering for accurate search results (email, phone, or text)
       let filteredUsers = result.users
       let filteredTotal = result.total
-      
+
       if (isEmailSearch || isPhoneSearch) {
         filteredUsers = result.users.filter(user => {
-          // Email search
           if (isEmailSearch) {
             return user.email?.toLowerCase().includes(trimmedSearch.toLowerCase())
           }
-          
-          // Phone number search - strip all non-digits from stored phone and compare
           if (isPhoneSearch) {
             const userPhoneDigits = (user.phoneNumber || '').replace(/\D/g, '')
             return userPhoneDigits.includes(digitsOnly)
           }
-          
           return false
         })
         filteredTotal = filteredUsers.length
-        
-        // Apply client-side pagination for filtered results
+
+        const startIndex = (page - 1) * pageSize
+        const endIndex = startIndex + pageSize
+        filteredUsers = filteredUsers.slice(startIndex, endIndex)
+      } else if (hasSearch) {
+        // Text search: ensure only users matching firstname, lastname, or username (case-insensitive) are shown
+        const lowerSearch = trimmedSearch.toLowerCase()
+        filteredUsers = result.users.filter(user =>
+          [user.firstname, user.lastname, user.username].some(field =>
+            field != null && String(field).toLowerCase().includes(lowerSearch)
+          )
+        )
+        filteredTotal = filteredUsers.length
+
         const startIndex = (page - 1) * pageSize
         const endIndex = startIndex + pageSize
         filteredUsers = filteredUsers.slice(startIndex, endIndex)
       }
-      
+
       // Extract pagination metadata
       const totalPagesCount = Math.ceil(filteredTotal / pageSize)
       setTotalUsers(filteredTotal)
       setTotalPages(totalPagesCount)
-      
+
       // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
       if (totalPagesCount > 0 && page > totalPagesCount) {
         const lastValidPage = totalPagesCount
@@ -165,10 +177,11 @@ const Users = () => {
       } else if (totalPagesCount === 0) {
         setCurrentPage(1)
       }
-      
+
       setUsers(filteredUsers)
       setCurrentPage(page)
     } catch (err) {
+      if (thisFetchId !== fetchIdRef.current) return
       console.error('Error fetching users:', err)
       setError('Failed to load users. Please try again.')
       addNotification({
@@ -177,8 +190,10 @@ const Users = () => {
         message: 'Failed to load users. Please try again.',
       })
     } finally {
-      setIsInitialLoad(false)
-      setIsLoading(false)
+      if (thisFetchId === fetchIdRef.current) {
+        setIsInitialLoad(false)
+        setIsLoading(false)
+      }
     }
   }
 
@@ -212,20 +227,25 @@ const Users = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Refetch users when search query changes with debounce (but not on initial load)
+  // Refetch users when search query changes. When search is cleared, refetch immediately so the list resets; otherwise debounce.
   useEffect(() => {
     if (!isInitialLoad) {
-      // Clear existing timeout
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current)
+        searchTimeoutRef.current = null
       }
-      
-      // Set new timeout for search (debounce)
-      searchTimeoutRef.current = setTimeout(() => {
+
+      const trimmed = searchQuery.trim()
+      if (trimmed === '') {
+        // Search cleared: refetch immediately so the full list is shown right away
         fetchUsers(1)
-      }, 300) // 300ms debounce
-      
-      // Cleanup
+      } else {
+        // Typing: debounce to avoid a request on every keystroke
+        searchTimeoutRef.current = setTimeout(() => {
+          fetchUsers(1)
+        }, 300)
+      }
+
       return () => {
         if (searchTimeoutRef.current) {
           clearTimeout(searchTimeoutRef.current)
@@ -243,8 +263,12 @@ const Users = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tierFilter, sortBy])
 
-  // Handle search change
+  // Handle search change; reset tier and sort to default when keyword is removed
   const handleSearchChange = (value: string) => {
+    if (value.trim() === '') {
+      setTierFilter('All Tiers')
+      setSortBy('Sort by: Date')
+    }
     setSearchQuery(value)
     setCurrentPage(1) // Reset to page 1 when search changes
   }
@@ -444,6 +468,7 @@ const Users = () => {
         />
         <UsersTable
           users={users}
+          isLoading={isLoading}
           currentPage={currentPage}
           totalPages={totalPages}
           totalUsers={totalUsers}
@@ -537,6 +562,34 @@ const Users = () => {
             
             // Update user profile in database
             await appUsersService.update(selectedUser.$id, updateData)
+
+            // Send badge push notifications when admin assigns BA or Influencer badge
+            const prevBA = (selectedUser.isAmbassador ?? selectedUser.baBadge) ? 'Yes' : 'No'
+            const prevInf = (selectedUser.isInfluencer ?? selectedUser.influencerBadge) ? 'Yes' : 'No'
+            if (userData.baBadge === 'Yes' && prevBA !== 'Yes') {
+              try {
+                await notificationsService.sendSystemPush(selectedUser.$id, 'brand_ambassador_badge')
+              } catch (e) {
+                console.error('Failed to send BA badge push:', e)
+                addNotification({
+                  type: 'warning',
+                  title: 'Badge push not sent',
+                  message: 'User saved, but Brand Ambassador notification could not be sent.',
+                })
+              }
+            }
+            if (userData.influencerBadge === 'Yes' && prevInf !== 'Yes') {
+              try {
+                await notificationsService.sendSystemPush(selectedUser.$id, 'influencer_badge')
+              } catch (e) {
+                console.error('Failed to send Influencer badge push:', e)
+                addNotification({
+                  type: 'warning',
+                  title: 'Badge push not sent',
+                  message: 'User saved, but Influencer notification could not be sent.',
+                })
+              }
+            }
             
             // Refresh the users list
             await fetchUsers(currentPage)

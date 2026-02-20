@@ -50,8 +50,19 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     message: ''
   })
   const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [passwordError, setPasswordError] = useState('')
   
   const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
+
+  // Password validation: no spaces, min 8 chars, at least one letter and one number
+  const validatePassword = (password: string): string => {
+    if (!password) return 'Password is required'
+    if (/\s/.test(password)) return 'Password cannot contain spaces'
+    if (password.length < 8) return 'Password must be at least 8 characters'
+    if (!/[a-zA-Z]/.test(password)) return 'Password must contain at least one letter'
+    if (!/\d/.test(password)) return 'Password must contain at least one number'
+    return ''
+  }
 
   // Fetch tiers when modal opens
   useEffect(() => {
@@ -161,25 +172,35 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     
     setFormData((prev) => ({ ...prev, [field]: value }))
     
-    // Real-time username validation with debounce
+    // Real-time username validation with debounce — only when there is actual text
     if (field === 'username') {
-      // Clear existing timeout
       if (usernameCheckTimeoutRef.current) {
         clearTimeout(usernameCheckTimeoutRef.current)
+        usernameCheckTimeoutRef.current = null
       }
-      
-      // Set new timeout
-      usernameCheckTimeoutRef.current = setTimeout(() => {
-        checkUsernameAvailability(value)
-      }, 500) // 500ms debounce
+      if (!value.trim()) {
+        setUsernameValidation({ isChecking: false, isAvailable: null, message: '' })
+      } else {
+        usernameCheckTimeoutRef.current = setTimeout(() => {
+          checkUsernameAvailability(value)
+        }, 500)
+      }
+    }
+
+    if (field === 'password') {
+      setPasswordError(validatePassword(value))
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Prevent submission if username is not available
-    if (formData.username && usernameValidation.isAvailable === false) {
+    const pwdError = validatePassword(formData.password)
+    setPasswordError(pwdError)
+    if (pwdError) return
+
+    // Prevent submission if username is required but not available
+    if (formData.username.trim() && usernameValidation.isAvailable === false) {
       return
     }
     
@@ -191,6 +212,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       // Reset form and validation state
       setFormData(initialFormData)
       setShowPassword(false)
+      setPasswordError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -220,6 +242,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     setShowUnsavedChangesModal(false)
     setFormData(initialFormData)
     setShowPassword(false)
+    setPasswordError('')
     setUsernameValidation({
       isChecking: false,
       isAvailable: null,
@@ -299,11 +322,13 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter Password"
+                  placeholder="Enter Password (min 8 characters, letter and number)"
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   required
-                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                    passwordError ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 />
                 <button
                   type="button"
@@ -316,18 +341,22 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                   />
                 </button>
               </div>
+              {passwordError && (
+                <p className="mt-1 text-xs text-red-500">{passwordError}</p>
+              )}
             </div>
 
             {/* First Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                First Name
+                First Name <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 placeholder="Enter First Name"
                 value={formData.firstName}
                 onChange={(e) => handleInputChange('firstName', e.target.value)}
+                required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
             </div>
@@ -349,7 +378,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
             {/* Username */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Username
+                Username <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <input
@@ -357,34 +386,37 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                   placeholder="Enter Username"
                   value={formData.username}
                   onChange={(e) => handleInputChange('username', e.target.value)}
+                  required
                   className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
-                    usernameValidation.isAvailable === false
-                      ? 'border-red-500'
-                      : usernameValidation.isAvailable === true
-                      ? 'border-green-500'
+                    formData.username.trim()
+                      ? usernameValidation.isAvailable === false
+                        ? 'border-red-500'
+                        : usernameValidation.isAvailable === true
+                        ? 'border-green-500'
+                        : 'border-gray-300'
                       : 'border-gray-300'
                   }`}
                 />
-                {usernameValidation.isChecking && (
+                {formData.username.trim() && usernameValidation.isChecking && (
                   <Icon
                     icon="mdi:loading"
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 animate-spin"
                   />
                 )}
-                {!usernameValidation.isChecking && usernameValidation.isAvailable === true && (
+                {formData.username.trim() && !usernameValidation.isChecking && usernameValidation.isAvailable === true && (
                   <Icon
                     icon="mdi:check-circle"
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-500"
                   />
                 )}
-                {!usernameValidation.isChecking && usernameValidation.isAvailable === false && (
+                {formData.username.trim() && !usernameValidation.isChecking && usernameValidation.isAvailable === false && (
                   <Icon
                     icon="mdi:close-circle"
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500"
                   />
                 )}
               </div>
-              {usernameValidation.message && (
+              {formData.username.trim() && usernameValidation.message && (
                 <p
                   className={`mt-1 text-xs ${
                     usernameValidation.isAvailable === false
@@ -402,13 +434,14 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
             {/* Phone Number */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Phone Number
+                Phone Number <span className="text-red-500">*</span>
               </label>
               <input
                 type="tel"
                 placeholder="Enter Phone Number"
                 value={formData.phoneNumber}
                 onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
+                required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
             </div>
@@ -478,7 +511,11 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
             <button
               type="submit"
               className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              disabled={isSubmitting || (!!formData.username && usernameValidation.isAvailable === false)}
+              disabled={
+                isSubmitting ||
+                !!passwordError ||
+                (!!formData.username.trim() && usernameValidation.isAvailable === false)
+              }
             >
               {isSubmitting && <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />}
               {isSubmitting ? 'Adding User...' : 'Add User'}
