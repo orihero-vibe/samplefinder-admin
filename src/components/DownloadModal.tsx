@@ -44,7 +44,7 @@ const DownloadModal = ({
           <button
             onClick={onClose}
             disabled={isLoading}
-            className={`text-gray-400 hover:text-gray-600 transition-colors ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`text-gray-400 hover:text-gray-600 transition-colors ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
           >
             <Icon icon="mdi:close" className="w-6 h-6" />
           </button>
@@ -62,7 +62,7 @@ const DownloadModal = ({
               <button
                 type="button"
                 onClick={() => handleDownload('csv')}
-                className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold flex items-center justify-center gap-2"
+                className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Icon icon="mdi:file-excel" className="w-5 h-5" />
                 Export CSV
@@ -70,7 +70,7 @@ const DownloadModal = ({
               <button
                 type="button"
                 onClick={() => handleDownload('pdf')}
-                className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold flex items-center justify-center gap-2"
+                className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Icon icon="mdi:file-pdf-box" className="w-5 h-5" />
                 Export PDF

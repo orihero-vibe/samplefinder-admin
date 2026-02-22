@@ -49,14 +49,19 @@ const ReportCard = ({ name, icon, lastGenerated, onPreview, onExport, isDownload
           <div className="flex items-center gap-2">
             <button
               onClick={handleExportClick}
-              className="px-3 py-1.5 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors flex items-center gap-1.5 text-sm font-medium whitespace-nowrap"
+              disabled={isDownloading}
+              className="px-3 py-1.5 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors flex items-center gap-1.5 text-sm font-medium whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Icon icon="mdi:download" className="w-4 h-4" />
+              {isDownloading ? (
+                <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent inline-block" />
+              ) : (
+                <Icon icon="mdi:download" className="w-4 h-4" />
+              )}
               Export
             </button>
             <button
               onClick={onPreview}
-              className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1.5 text-sm text-gray-700 font-medium whitespace-nowrap"
+              className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1.5 text-sm text-gray-700 font-medium whitespace-nowrap cursor-pointer"
             >
               <Icon icon="mdi:eye" className="w-4 h-4" />
               Preview

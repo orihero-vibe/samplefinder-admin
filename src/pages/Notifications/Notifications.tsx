@@ -28,7 +28,7 @@ const Notifications = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('All Types')
-  const [sortBy, setSortBy] = useState('Date')
+  const [sortBy, setSortBy] = useState('Sort by: Date')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingNotification, setEditingNotification] = useState<{ id: string; data: NotificationFormData } | null>(null)
   const [duplicatingData, setDuplicatingData] = useState<NotificationFormData | null>(null)
@@ -390,9 +390,7 @@ const Notifications = () => {
   }
 
   const sortedNotifications = [...notifications].sort((a, b) => {
-    if (sortBy === 'Date') {
-      // Parse date strings (MM/DD/YYYY format)
-      // Handle date parsing more carefully
+    if (sortBy === 'Sort by: Date') {
       const parseDate = (dateStr: string): Date => {
         const [month, day, year] = dateStr.split('/')
         return new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
@@ -400,6 +398,12 @@ const Notifications = () => {
       const dateA = parseDate(a.date)
       const dateB = parseDate(b.date)
       return dateB.getTime() - dateA.getTime()
+    }
+    if (sortBy === 'Sort by: Name') {
+      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
+    }
+    if (sortBy === 'Sort by: Recipients') {
+      return b.recipients - a.recipients
     }
     return 0
   })

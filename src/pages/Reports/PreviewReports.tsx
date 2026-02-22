@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useState, useEffect, useMemo } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { DashboardLayout, DownloadModal } from '../../components'
 import type { DownloadFormat } from '../../components'
@@ -11,12 +11,26 @@ const REPORT_PAGE_SIZE = 50
 const PreviewReports = () => {
   const navigate = useNavigate()
   const { reportId } = useParams<{ reportId: string }>()
+  const [searchParams] = useSearchParams()
   const [sortBy, setSortBy] = useState<string>('date')
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [reportData, setReportData] = useState<{ columns: { header: string; key: string; getValue?: (row: Record<string, string | number>) => string | number }[]; rows: Record<string, string | number>[] } | null>(null)
   const { addNotification } = useNotificationStore()
+
+  // Date filter from Reports menu (passed via URL ?start=...&end=...)
+  const dateRange = useMemo(() => {
+    const startStr = searchParams.get('start')
+    const endStr = searchParams.get('end')
+    const start = startStr ? new Date(startStr) : null
+    const end = endStr ? new Date(endStr) : null
+    if ((start && isNaN(start.getTime())) || (end && isNaN(end.getTime()))) {
+      return { start: null as Date | null, end: null as Date | null }
+    }
+    return { start, end }
+  }, [searchParams])
 
   // Map reportId to ReportType
   const getReportType = (): ReportType => {
@@ -46,15 +60,26 @@ const PreviewReports = () => {
     return reportNames[reportId || '1'] || 'Dashboard (All)'
   }
 
-  // Load report data
+  // Load report data (with date filter when applicable)
   useEffect(() => {
     const loadReportData = async () => {
       try {
         setIsLoading(true)
         setCurrentPage(1)
         const reportType = getReportType()
-        const data = await exportService.generateReportData(reportType)
-        setReportData(data)
+        const useDateRange = (dateRange.start && dateRange.end) ? dateRange : undefined
+        const data = await exportService.generateReportData(reportType, useDateRange)
+        if (data?.columns?.length && data?.rows?.length) {
+          const columnKeys = data.columns.map((c) => c.key)
+          const effectiveSortBy = columnKeys.includes(sortBy)
+            ? sortBy
+            : columnKeys[0]
+          const sortedRows = sortRowsByKey(data.rows, effectiveSortBy)
+          setSortBy(effectiveSortBy)
+          setReportData({ ...data, rows: sortedRows })
+        } else {
+          setReportData(data)
+        }
       } catch (error) {
         console.error('Error loading report data:', error)
         addNotification({
@@ -69,7 +94,7 @@ const PreviewReports = () => {
 
     loadReportData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportId])
+  }, [reportId, dateRange.start?.toISOString(), dateRange.end?.toISOString()])
 
   // Clamp current page when report has fewer pages (e.g. after switching report)
   useEffect(() => {
@@ -83,21 +108,23 @@ const PreviewReports = () => {
   }
 
   const handleDownload = async (format: DownloadFormat) => {
+    setIsDownloading(true)
     try {
       const reportType = getReportType()
       const reportName = getReportName()
       const timestamp = new Date().toISOString().split('T')[0]
       const filename = `${reportName}_${timestamp}.${format}`
+      const useDateRange = (dateRange.start && dateRange.end) ? dateRange : undefined
 
       if (format === 'csv') {
-        await exportService.exportReport(reportType, filename)
+        await exportService.exportReport(reportType, filename, useDateRange, sortBy)
         addNotification({
           type: 'success',
           title: 'Export Successful',
           message: `Report has been exported to ${filename}`,
         })
       } else if (format === 'pdf') {
-        await exportService.exportReportToPDF(reportType, filename)
+        await exportService.exportReportToPDF(reportType, filename, useDateRange, sortBy)
         addNotification({
           type: 'success',
           title: 'Export Successful',
@@ -111,6 +138,8 @@ const PreviewReports = () => {
         title: 'Export Failed',
         message: error instanceof Error ? error.message : 'Failed to export report. Please try again.',
       })
+    } finally {
+      setIsDownloading(false)
     }
   }
 
@@ -132,40 +161,43 @@ const PreviewReports = () => {
     return isNaN(d.getTime()) ? NaN : d.getTime()
   }
 
+  const sortRowsByKey = (
+    rows: Record<string, string | number>[],
+    sortKey: string
+  ): Record<string, string | number>[] => {
+    if (rows.length === 0) return rows
+    const isDateColumn = dateColumnKeys.has(sortKey)
+    return [...rows].sort((a, b) => {
+      const aValue = a[sortKey] ?? ''
+      const bValue = b[sortKey] ?? ''
+
+      if (isDateColumn) {
+        const aTime = parseSortableDate(aValue as string)
+        const bTime = parseSortableDate(bValue as string)
+        const aEmpty = isNaN(aTime)
+        const bEmpty = isNaN(bTime)
+        if (aEmpty && bEmpty) return 0
+        if (aEmpty) return 1
+        if (bEmpty) return -1
+        return aTime - bTime
+      }
+
+      const aNum = Number(aValue)
+      const bNum = Number(bValue)
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        return aNum - bNum
+      }
+      return String(aValue).localeCompare(String(bValue))
+    })
+  }
+
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newSortBy = e.target.value
     setSortBy(newSortBy)
     setCurrentPage(1)
-    
-    // Sort report data if available
+
     if (reportData && reportData.rows.length > 0) {
-      const isDateColumn = dateColumnKeys.has(newSortBy)
-      const sortedRows = [...reportData.rows].sort((a, b) => {
-        const aValue = a[newSortBy] ?? ''
-        const bValue = b[newSortBy] ?? ''
-        
-        if (isDateColumn) {
-          const aTime = parseSortableDate(aValue as string)
-          const bTime = parseSortableDate(bValue as string)
-          const aEmpty = isNaN(aTime)
-          const bEmpty = isNaN(bTime)
-          if (aEmpty && bEmpty) return 0
-          if (aEmpty) return 1
-          if (bEmpty) return -1
-          return aTime - bTime
-        }
-        
-        // Try to compare as numbers first
-        const aNum = Number(aValue)
-        const bNum = Number(bValue)
-        if (!isNaN(aNum) && !isNaN(bNum)) {
-          return aNum - bNum
-        }
-        
-        // Compare as strings
-        return String(aValue).localeCompare(String(bValue))
-      })
-      
+      const sortedRows = sortRowsByKey(reportData.rows, newSortBy)
       setReportData({ ...reportData, rows: sortedRows })
     }
   }
@@ -212,10 +244,14 @@ const PreviewReports = () => {
             )}
             <button
               onClick={handleDownloadClick}
-              disabled={isLoading || !reportData}
-              className="px-4 py-2 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isLoading || isDownloading || !reportData}
+              className="px-4 py-2 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              <Icon icon="mdi:download" className="w-5 h-5" />
+              {isDownloading ? (
+                <span className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent inline-block" />
+              ) : (
+                <Icon icon="mdi:download" className="w-5 h-5" />
+              )}
               Download
             </button>
           </div>
@@ -224,8 +260,9 @@ const PreviewReports = () => {
         {/* Download Modal */}
         <DownloadModal
           isOpen={isDownloadModalOpen}
-          onClose={() => setIsDownloadModalOpen(false)}
+          onClose={() => !isDownloading && setIsDownloadModalOpen(false)}
           onDownload={handleDownload}
+          isLoading={isDownloading}
         />
 
         {/* Loading State */}

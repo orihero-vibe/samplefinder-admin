@@ -223,9 +223,10 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
 
   // Update available products and brand description when brand changes
   useEffect(() => {
-    // Only clear products and update description if brand actually changed (not on initial load)
+    // Only clear products when brand actually changed (not on initial load with initialData)
     const brandChanged = prevBrandNameRef.current !== '' && prevBrandNameRef.current !== formData.brandName
-    
+    const firstBrandSelection = prevBrandNameRef.current === '' && formData.brandName
+
     if (formData.brandName) {
       const selectedBrand = brands.find((brand) => brand.name === formData.brandName)
       if (selectedBrand) {
@@ -235,13 +236,15 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
         } else {
           setAvailableProducts([])
         }
-        // Clear selected products and prefill brand description only when brand actually changes (not on initial load)
+        // Prefill brand description when user selects a brand (first time or switching)
         if (brandChanged) {
-          setFormData((prev) => ({ 
-            ...prev, 
-            products: [], 
-            brandDescription: selectedBrand.description || '' 
+          setFormData((prev) => ({
+            ...prev,
+            products: [],
+            brandDescription: selectedBrand.description || '',
           }))
+        } else if (firstBrandSelection) {
+          setFormData((prev) => ({ ...prev, brandDescription: selectedBrand.description || '' }))
         }
       } else {
         setAvailableProducts([])

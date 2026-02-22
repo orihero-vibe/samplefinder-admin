@@ -223,6 +223,7 @@ const Reports = () => {
           onPageChange={handlePageChange}
           onExport={handleExport}
           downloadingReportId={downloadingReportId}
+          dateRange={dateRange}
         />
       </div>
     </DashboardLayout>

@@ -19,6 +19,7 @@ interface ReportsListProps {
   onPageChange?: (page: number) => void
   onExport: (reportId: string, format: DownloadFormat) => void
   downloadingReportId?: string | null
+  dateRange?: { start: Date | null; end: Date | null }
 }
 
 const ReportsList = ({
@@ -30,11 +31,18 @@ const ReportsList = ({
   onPageChange,
   onExport,
   downloadingReportId,
+  dateRange,
 }: ReportsListProps) => {
   const navigate = useNavigate()
 
   const handlePreview = (reportId: string) => {
-    navigate(`/reports/preview/${reportId}`)
+    const params = new URLSearchParams()
+    if (dateRange?.start && dateRange?.end) {
+      params.set('start', dateRange.start.toISOString())
+      params.set('end', dateRange.end.toISOString())
+    }
+    const query = params.toString()
+    navigate(`/reports/preview/${reportId}${query ? `?${query}` : ''}`)
   }
 
   return (

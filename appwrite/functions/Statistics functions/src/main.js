@@ -264,15 +264,14 @@ async function getUsersStats(databases, log) {
  */
 async function getNotificationsStats(databases, log) {
     try {
-        // Total Sent
-        const notificationsResponse = await databases.listDocuments(DATABASE_ID, NOTIFICATIONS_TABLE_ID);
-        const totalSent = notificationsResponse.total;
-        // Scheduled (notifications with future dates)
-        // Note: This assumes notifications have a date/scheduledAt field
-        // Since the notifications table structure is empty, we'll need to check the actual schema
-        // For now, we'll return 0 or calculate based on available fields
+        // Total Sent: count documents with status = 'Sent'
+        const sentResponse = await databases.listDocuments(DATABASE_ID, NOTIFICATIONS_TABLE_ID, [
+            Query.equal('status', 'Sent'),
+        ]);
+        const totalSent = sentResponse.total;
+        // Scheduled: count documents with status = 'Scheduled'
         const scheduledResponse = await databases.listDocuments(DATABASE_ID, NOTIFICATIONS_TABLE_ID, [
-        // Query.greaterThan('scheduledAt', nowISO), // Uncomment when field exists
+            Query.equal('status', 'Scheduled'),
         ]);
         const scheduled = scheduledResponse.total;
         // Avg Open Rate and Click Rate

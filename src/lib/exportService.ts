@@ -1,4 +1,4 @@
-import { eventsService, clientsService, appUsersService } from './services'
+import { eventsService, clientsService, appUsersService, categoriesService } from './services'
 import type { EventDocument, ClientDocument, AppUser } from './services'
 import { Query } from './appwrite'
 import jsPDF from 'jspdf'
@@ -41,7 +41,6 @@ const eventListColumns: ReportColumn[] = [
   { header: 'Date', key: 'date' },
   { header: 'Discount', key: 'discount' },
   { header: 'Discount Image URL', key: 'discountImageURL' },
-  { header: 'Discount Link', key: 'discountLink' },
   { header: 'End Time', key: 'endTime' },
   { header: 'Event Info', key: 'eventInfo' },
   { header: 'Event Name', key: 'name' },
@@ -146,6 +145,68 @@ const formatProducts = (products?: string[]): string => {
   return products.join(', ')
 }
 
+// Wrap long text at word boundaries so PDF table cells don't crop (max chars per line)
+const wrapTextForPdf = (text: string, maxCharsPerLine = 35): string => {
+  if (!text || text.length <= maxCharsPerLine) return text
+  const words = text.split(/\s+/)
+  const lines: string[] = []
+  let current = ''
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word
+    if (next.length <= maxCharsPerLine) {
+      current = next
+    } else {
+      if (current) lines.push(current)
+      current = word.length > maxCharsPerLine ? word.slice(0, maxCharsPerLine) : word
+    }
+  }
+  if (current) lines.push(current)
+  return lines.join('\n')
+}
+
+// Column keys that hold display dates (MM/DD/YYYY) for sort order in exports
+const SORT_DATE_COLUMN_KEYS = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'signupDate'])
+
+const parseSortableDate = (value: string | number): number => {
+  if (value === '' || value === undefined || value === null) return NaN
+  const str = String(value).trim()
+  if (!str) return NaN
+  const mmddyy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (mmddyy) {
+    const [, month, day, year] = mmddyy
+    const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10))
+    return isNaN(d.getTime()) ? NaN : d.getTime()
+  }
+  const d = new Date(str)
+  return isNaN(d.getTime()) ? NaN : d.getTime()
+}
+
+function sortReportRows(
+  rows: Record<string, string | number>[],
+  sortKey: string
+): Record<string, string | number>[] {
+  if (rows.length === 0) return rows
+  const isDateColumn = SORT_DATE_COLUMN_KEYS.has(sortKey)
+  return [...rows].sort((a, b) => {
+    const aValue = a[sortKey] ?? ''
+    const bValue = b[sortKey] ?? ''
+    if (isDateColumn) {
+      const aTime = parseSortableDate(aValue as string)
+      const bTime = parseSortableDate(bValue as string)
+      const aEmpty = isNaN(aTime)
+      const bEmpty = isNaN(bTime)
+      if (aEmpty && bEmpty) return 0
+      if (aEmpty) return 1
+      if (bEmpty) return -1
+      return aTime - bTime
+    }
+    const aNum = Number(aValue)
+    const bNum = Number(bValue)
+    if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum
+    return String(aValue).localeCompare(String(bValue))
+  })
+}
+
 // Appwrite listDocuments returns max 25 by default. Fetch all users in pages for report consistency.
 const REPORT_USERS_PAGE_SIZE = 100
 
@@ -232,6 +293,15 @@ export const exportService = {
           }
         }
 
+        // Normalize products: DB may store array or comma-separated string (same as Event List / Dashboard UI)
+        const productsArray = Array.isArray(event.products)
+          ? event.products
+          : event.products
+            ? typeof event.products === 'string'
+              ? (event.products as string).split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
+              : [event.products as unknown as string]
+            : []
+
         const hasDiscount = (event.discount != null && String(event.discount).trim() !== '') ||
           (event.discountImageURL != null && String(event.discountImageURL).trim() !== '')
         return {
@@ -240,7 +310,7 @@ export const exportService = {
           brand: brandName,
           startTime: formatTime(event.startTime),
           endTime: formatTime(event.endTime),
-          products: formatProducts(event.products),
+          products: formatProducts(productsArray),
           discount: hasDiscount ? 'YES' : 'NO',
         }
       })
@@ -276,6 +346,26 @@ export const exportService = {
           }
         }
 
+        // Resolve category ID to category title
+        let categoryTitle = ''
+        if (event.categories) {
+          try {
+            const category = await categoriesService.getById(event.categories)
+            categoryTitle = category?.title || ''
+          } catch (err) {
+            console.error('Error fetching category for event:', err)
+          }
+        }
+
+        // Normalize products: DB may store array or comma-separated string (same as Dashboard)
+        const productsArray = Array.isArray(event.products)
+          ? event.products
+          : event.products
+            ? typeof event.products === 'string'
+              ? (event.products as string).split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
+              : [event.products as unknown as string]
+            : []
+
         // Extract latitude and longitude from location array [longitude, latitude]
         let latitude = ''
         let longitude = ''
@@ -283,23 +373,18 @@ export const exportService = {
           longitude = event.location[0]?.toString() || ''
           latitude = event.location[1]?.toString() || ''
         }
-        
-        // Get discount link if available (not in standard schema but may be in record)
-        const eventRecord = event as Record<string, unknown>
-        const discountLink = (eventRecord.discountLink as string) || ''
-        
+
         return {
           name: event.name || '',
           date: formatDateForUpload(event.date),
           startTime: formatTimeForUpload(event.startTime),
           endTime: formatTimeForUpload(event.endTime),
-          category: event.categories || '',
+          category: categoryTitle,
           brandName: brandName,
           brandDescription: event.brandDescription || '',
-          products: formatProducts(event.products),
+          products: formatProducts(productsArray),
           discount: event.discount?.toString() || '',
           discountImageURL: event.discountImageURL || '',
-          discountLink: discountLink,
           checkInCode: event.checkInCode || '',
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
@@ -486,16 +571,16 @@ export const exportService = {
   async exportReport(
     reportType: ReportType,
     filename: string,
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    sortKey?: string
   ): Promise<void> {
     try {
-      // Generate report data
       const { columns, rows } = await this.generateReportData(reportType, dateRange)
-      
-      // Convert to CSV
-      const csvContent = this.exportToCSV(columns, rows)
-      
-      // Download CSV
+      const columnKeys = new Set(columns.map((c) => c.key))
+      const effectiveSortKey = sortKey && columnKeys.has(sortKey) ? sortKey : columns[0]?.key
+      const sortedRows = effectiveSortKey ? sortReportRows(rows, effectiveSortKey) : rows
+
+      const csvContent = this.exportToCSV(columns, sortedRows)
       this.downloadCSV(filename, csvContent)
     } catch (error) {
       console.error('Error exporting report:', error)
@@ -509,12 +594,15 @@ export const exportService = {
   async exportReportToPDF(
     reportType: ReportType,
     filename: string,
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    sortKey?: string
   ): Promise<void> {
     try {
-      // Generate report data
       const { columns, rows } = await this.generateReportData(reportType, dateRange)
-      
+      const columnKeys = new Set(columns.map((c) => c.key))
+      const effectiveSortKey = sortKey && columnKeys.has(sortKey) ? sortKey : columns[0]?.key
+      const sortedRows = effectiveSortKey ? sortReportRows(rows, effectiveSortKey) : rows
+
       // Create PDF document
       const doc = new jsPDF({
         orientation: columns.length > 8 ? 'landscape' : 'portrait',
@@ -539,26 +627,39 @@ export const exportService = {
         doc.text(rangeText, 14, 28)
       }
       
-      // Prepare table data
+      // Prepare table data (use sorted rows); wrap long cell text so PDF does not crop
       const headers = columns.map(col => col.header)
-      const tableRows = rows.map(row => 
+      const tableRows = sortedRows.map(row =>
         columns.map(col => {
           const value = col.getValue ? col.getValue(row) : row[col.key]
-          return String(value ?? '')
+          return wrapTextForPdf(String(value ?? ''))
         })
       )
       
-      // Add table using autoTable
+      // Table width and column widths: explicit widths so text wraps instead of cropping
+      const pageWidth = doc.internal.pageSize.getWidth ? doc.internal.pageSize.getWidth() : doc.internal.pageSize.width
+      const marginLeft = 14
+      const marginRight = 14
+      const tableWidth = pageWidth - marginLeft - marginRight
+      const colCount = headers.length
+      const colWidth = tableWidth / colCount
+      const columnStyles: Record<string, { cellWidth: number; overflow: 'linebreak' }> = {}
+      for (let i = 0; i < colCount; i++) {
+        columnStyles[String(i)] = { cellWidth: colWidth, overflow: 'linebreak' }
+      }
+
       autoTable(doc, {
         head: [headers],
         body: tableRows,
         startY: dateRange && (dateRange.start || dateRange.end) ? 32 : 28,
         theme: 'grid',
+        tableWidth,
+        margin: { left: marginLeft, right: marginRight },
+        columnStyles,
         styles: {
-          fontSize: 8,
+          fontSize: 7,
           cellPadding: 2,
           overflow: 'linebreak',
-          cellWidth: 'wrap',
         },
         headStyles: {
           fillColor: [59, 130, 246], // Blue-500
@@ -566,10 +667,12 @@ export const exportService = {
           fontStyle: 'bold',
           halign: 'left',
         },
+        bodyStyles: {
+          valign: 'top',
+        },
         alternateRowStyles: {
           fillColor: [249, 250, 251], // Gray-50
         },
-        margin: { left: 14, right: 14 },
         didDrawPage: (data) => {
           // Footer with page numbers
           const pageCount = doc.getNumberOfPages()

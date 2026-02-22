@@ -296,8 +296,101 @@
                     "type": "string",
                     "required": false,
                     "array": false,
-                    "size": 1000000,
+                    "size": 100000,
                     "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "totalEvents",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 9223372036854775807,
+                    "default": 0
+                },
+                {
+                    "key": "totalReviews",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 9223372036854775807,
+                    "default": 0
+                },
+                {
+                    "key": "totalPoints",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 9223372036854775807,
+                    "default": 0
+                },
+                {
+                    "key": "isAmbassador",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
+                },
+                {
+                    "key": "isInfluencer",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
+                },
+                {
+                    "key": "favoriteIds",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "referralCode",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "notifications",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 65000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "notificationPreferences",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 100000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "idAdult",
+                    "type": "boolean",
+                    "required": true,
+                    "array": false,
+                    "default": null
+                },
+                {
+                    "key": "tierLevel",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 100,
+                    "default": "NewbieSampler",
                     "encrypt": false
                 }
             ],
@@ -343,47 +436,13 @@
                     "encrypt": false
                 },
                 {
-                    "key": "city",
+                    "key": "description",
                     "type": "string",
                     "required": false,
                     "array": false,
-                    "size": 100,
+                    "size": 10000,
                     "default": null,
                     "encrypt": false
-                },
-                {
-                    "key": "address",
-                    "type": "string",
-                    "required": false,
-                    "array": false,
-                    "size": 100,
-                    "default": null,
-                    "encrypt": false
-                },
-                {
-                    "key": "state",
-                    "type": "string",
-                    "required": false,
-                    "array": false,
-                    "size": 100,
-                    "default": null,
-                    "encrypt": false
-                },
-                {
-                    "key": "zip",
-                    "type": "string",
-                    "required": false,
-                    "array": false,
-                    "size": 20,
-                    "default": null,
-                    "encrypt": false
-                },
-                {
-                    "key": "location",
-                    "type": "point",
-                    "required": false,
-                    "array": false,
-                    "default": null
                 }
             ],
             "indexes": []
@@ -409,6 +468,13 @@
                     "size": 1000,
                     "default": null,
                     "encrypt": false
+                },
+                {
+                    "key": "isAdult",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
                 }
             ],
             "indexes": []
@@ -591,6 +657,15 @@
                     "encrypt": false
                 },
                 {
+                    "key": "brandDescription",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 10000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
                     "key": "isArchived",
                     "type": "boolean",
                     "required": false,
@@ -635,7 +710,96 @@
             "name": "Notifications",
             "enabled": true,
             "rowSecurity": false,
-            "columns": [],
+            "columns": [
+                {
+                    "key": "title",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 500,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "message",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 5000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "scheduledAt",
+                    "type": "datetime",
+                    "required": false,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "sentAt",
+                    "type": "datetime",
+                    "required": false,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "recipients",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 1000000,
+                    "default": 0
+                },
+                {
+                    "key": "openRate",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 100,
+                    "default": 0
+                },
+                {
+                    "key": "clickRate",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 100,
+                    "default": 0
+                },
+                {
+                    "key": "type",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "elements": ["Event Reminder", "Promotional", "Engagement"],
+                    "format": "enum",
+                    "default": null
+                },
+                {
+                    "key": "targetAudience",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "elements": ["All", "Targeted", "Specific Segment"],
+                    "format": "enum",
+                    "default": null
+                },
+                {
+                    "key": "status",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "elements": ["Scheduled", "Sent", "Draft"],
+                    "format": "enum",
+                    "default": null
+                }
+            ],
             "indexes": []
         },
         {
@@ -732,6 +896,15 @@
                     "min": 0,
                     "max": 10000000,
                     "default": 0
+                },
+                {
+                    "key": "skippedUsers",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 10000,
+                    "default": null,
+                    "encrypt": false
                 }
             ],
             "indexes": []
@@ -870,6 +1043,275 @@
                     "array": false,
                     "min": -9223372036854775808,
                     "max": 9223372036854775807,
+                    "default": null
+                },
+                {
+                    "key": "helpfulCount",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 9223372036854775807,
+                    "default": 0
+                },
+                {
+                    "key": "isHidden",
+                    "type": "boolean",
+                    "required": false,
+                    "array": false,
+                    "default": false
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "settings",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Settings",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "key",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 255,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "value",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 10000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "description",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "tiers",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Tiers",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "name",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "requiredPoints",
+                    "type": "integer",
+                    "required": true,
+                    "array": false,
+                    "min": 0,
+                    "max": 10000000,
+                    "default": null
+                },
+                {
+                    "key": "order",
+                    "type": "integer",
+                    "required": true,
+                    "array": false,
+                    "min": 0,
+                    "max": 1000,
+                    "default": null
+                },
+                {
+                    "key": "description",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 2000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "imageURL",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "format": "url",
+                    "default": null
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "locations",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Locations",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "name",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 255,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "address",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 500,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "city",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "state",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "zipCode",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 20,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "location",
+                    "type": "point",
+                    "required": true,
+                    "array": false,
+                    "default": "-"
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "checkins",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Checkins",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "user",
+                    "type": "relationship",
+                    "required": false,
+                    "array": false,
+                    "relatedTable": "user_profiles",
+                    "relationType": "manyToOne",
+                    "twoWay": false,
+                    "twoWayKey": "checkins",
+                    "onDelete": "cascade",
+                    "side": "parent"
+                },
+                {
+                    "key": "event",
+                    "type": "relationship",
+                    "required": false,
+                    "array": false,
+                    "relatedTable": "events",
+                    "relationType": "manyToOne",
+                    "twoWay": false,
+                    "twoWayKey": "checkins",
+                    "onDelete": "cascade",
+                    "side": "parent"
+                },
+                {
+                    "key": "points",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 1000000,
+                    "default": null
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "report_logs",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
+            "databaseId": "69217af50038b9005a61",
+            "name": "Report Logs",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "reportType",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "generatedAt",
+                    "type": "datetime",
+                    "required": true,
+                    "array": false,
+                    "format": "",
                     "default": null
                 }
             ],
