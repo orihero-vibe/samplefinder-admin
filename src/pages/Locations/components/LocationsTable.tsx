@@ -13,6 +13,7 @@ interface Location {
 
 interface LocationsTableProps {
   locations: Location[]
+  isLoading?: boolean
   onEditClick: (location: Location) => void
   onDeleteClick: (location: Location) => void
   currentPage?: number
@@ -24,6 +25,7 @@ interface LocationsTableProps {
 
 const LocationsTable = ({
   locations,
+  isLoading = false,
   onEditClick,
   onDeleteClick,
   currentPage = 1,
@@ -85,7 +87,16 @@ const LocationsTable = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {locations.length === 0 ? (
+            {isLoading ? (
+              <tr>
+                <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <div className="flex items-center justify-center gap-2">
+                    <Icon icon="mdi:loading" className="w-6 h-6 animate-spin" />
+                    <span>Loading...</span>
+                  </div>
+                </td>
+              </tr>
+            ) : locations.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                   No locations found. Click "Add Location" to create one.

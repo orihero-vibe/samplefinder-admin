@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { DashboardLayout, ShimmerPage, ConfirmationModal } from '../../components'
+import { DashboardLayout, ConfirmationModal } from '../../components'
 import type { ConfirmationType } from '../../components'
 import {
   NotificationsHeader,
@@ -404,14 +404,6 @@ const Notifications = () => {
     return 0
   })
 
-  if (isLoading) {
-    return (
-      <DashboardLayout>
-        <ShimmerPage />
-      </DashboardLayout>
-    )
-  }
-
   return (
     <DashboardLayout>
       <div className="p-8">
@@ -427,6 +419,7 @@ const Notifications = () => {
         />
         <NotificationsTable
           notifications={sortedNotifications}
+          isLoading={isLoading}
           currentPage={currentPage}
           totalPages={totalPages}
           totalNotifications={totalNotifications}

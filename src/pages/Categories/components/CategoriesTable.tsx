@@ -10,6 +10,7 @@ interface Category {
 
 interface CategoriesTableProps {
   categories: Category[]
+  isLoading?: boolean
   onEditClick: (category: Category) => void
   onDeleteClick: (category: Category) => void
   currentPage?: number
@@ -21,6 +22,7 @@ interface CategoriesTableProps {
 
 const CategoriesTable = ({
   categories,
+  isLoading = false,
   onEditClick,
   onDeleteClick,
   currentPage = 1,
@@ -59,7 +61,16 @@ const CategoriesTable = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {categories.length === 0 ? (
+            {isLoading ? (
+              <tr>
+                <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
+                  <div className="flex items-center justify-center gap-2">
+                    <Icon icon="mdi:loading" className="w-6 h-6 animate-spin" />
+                    <span>Loading...</span>
+                  </div>
+                </td>
+              </tr>
+            ) : categories.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
                   No categories found. Click "Add Category" to create one.

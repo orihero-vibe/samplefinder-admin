@@ -196,21 +196,10 @@ const Dashboard = () => {
       return 'bg-gray-100 text-gray-800'
     }
 
-    // Convert discount boolean/string/number to "YES"/"NO"
-    const formatDiscount = (discount?: boolean | string | number): string => {
-      if (discount === undefined || discount === null) return 'NO'
-      if (typeof discount === 'boolean') {
-        return discount ? 'YES' : 'NO'
-      }
-      if (typeof discount === 'string') {
-        const lower = discount.toLowerCase()
-        return lower === 'yes' || lower === 'true' ? 'YES' : 'NO'
-      }
-      if (typeof discount === 'number') {
-        return discount > 0 ? 'YES' : 'NO'
-      }
-      return 'NO'
-    }
+    // Show YES if event has any discount text or discount image
+    const hasDiscount =
+      (doc.discount != null && String(doc.discount).trim() !== '') ||
+      (doc.discountImageURL != null && String(doc.discountImageURL).trim() !== '')
 
     const status = getStatus(doc)
     
@@ -221,7 +210,7 @@ const Dashboard = () => {
       brand: '', // Will be populated from client relationship if needed
       startTime: formatTime(doc.startTime),
       endTime: formatTime(doc.endTime),
-      discount: formatDiscount(doc.discount),
+      discount: hasDiscount ? 'YES' : 'NO',
       status: status,
       statusColor: getStatusColor(status),
     }
@@ -457,10 +446,10 @@ const Dashboard = () => {
       return `${hours}:${minutes}`
     }
 
-    // Format discount number for the input field
-    const formatDiscount = (discount?: number): string => {
-      if (discount === undefined || discount === null) return ''
-      return discount.toString()
+    // Format discount for the input field (single discount field, string)
+    const formatDiscountForInput = (discount?: string): string => {
+      if (discount == null || String(discount).trim() === '') return ''
+      return String(discount).trim()
     }
 
     // Handle products - ensure it's always an array
@@ -492,7 +481,7 @@ const Dashboard = () => {
       zipCode: eventDoc.zipCode || '',
       category: categoryTitle,
       products: productsArray,
-      discount: formatDiscount(eventDoc.discount),
+      discount: formatDiscountForInput(eventDoc.discount),
       discountImage: eventDoc.discountImageURL || null,
       checkInCode: eventDoc.checkInCode || '',
       brandName: brandName,
@@ -811,11 +800,11 @@ const Dashboard = () => {
             isHidden: false,
           }
 
-          // Add discount if provided
+          // Discount: single string field
           if (discount) {
-            eventPayload.discount = discount
+            eventPayload.discount = discount.trim()
           }
-          
+
           // Add discount image URL if provided
           if (discountImageURL) {
             eventPayload.discountImageURL = discountImageURL
@@ -974,12 +963,9 @@ const Dashboard = () => {
         eventPayload.discountImageURL = discountImageURL
       }
 
-      // Parse discount as number (if provided)
-      if (eventData.discount) {
-        const discountValue = parseFloat(eventData.discount)
-        if (!isNaN(discountValue)) {
-          eventPayload.discount = discountValue
-        }
+      // Discount: single string field (text or number as string)
+      if (eventData.discount !== undefined && eventData.discount !== '') {
+        eventPayload.discount = String(eventData.discount).trim()
       }
 
       // 6. Create event
@@ -1125,15 +1111,11 @@ const Dashboard = () => {
         eventPayload.discountImageURL = discountImageURL
       }
 
-      // Parse discount as number
+      // Discount: single string field (text or number as string)
       if (eventData.discount !== undefined && eventData.discount !== '') {
-        const discountValue = parseFloat(eventData.discount)
-        if (!isNaN(discountValue)) {
-          eventPayload.discount = discountValue
-        }
-      } else if (selectedEventDoc.discount !== undefined) {
-        // Keep existing discount if no new one provided
-        eventPayload.discount = selectedEventDoc.discount
+        eventPayload.discount = String(eventData.discount).trim()
+      } else {
+        eventPayload.discount = null
       }
 
       // 6. Update event

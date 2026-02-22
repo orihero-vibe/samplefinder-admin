@@ -30,7 +30,10 @@ const PasswordReset = () => {
   }, [userId, secret, navigate, addNotification])
 
   const hasMinLength = password.length >= 8
-  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password)
+  const hasUppercase = /[A-Z]/.test(password)
+  const hasNumber = /\d/.test(password)
+  const hasLetter = /[a-zA-Z]/.test(password)
+  const hasNoSpaces = !/\s/.test(password)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -40,13 +43,28 @@ const PasswordReset = () => {
       return
     }
 
+    if (/\s/.test(password)) {
+      setPasswordError('Password cannot contain spaces')
+      return
+    }
+
     if (password.length < 8) {
       setPasswordError('Password must be at least 8 characters')
       return
     }
 
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-      setPasswordError('Password must contain one special character')
+    if (!/[a-zA-Z]/.test(password)) {
+      setPasswordError('Password must contain at least one letter')
+      return
+    }
+
+    if (!/\d/.test(password)) {
+      setPasswordError('Password must contain at least one number')
+      return
+    }
+
+    if (!/[A-Z]/.test(password)) {
+      setPasswordError('Password must contain at least one uppercase letter')
       return
     }
 
@@ -128,10 +146,31 @@ const PasswordReset = () => {
           </div>
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <Icon 
-              icon={hasSpecialChar ? "mdi:check-circle" : "mdi:circle-outline"} 
-              className={`w-4 h-4 ${hasSpecialChar ? 'text-green-500' : 'text-gray-400'}`} 
+              icon={hasLetter ? "mdi:check-circle" : "mdi:circle-outline"} 
+              className={`w-4 h-4 ${hasLetter ? 'text-green-500' : 'text-gray-400'}`} 
             />
-            <span>Must contain one special character</span>
+            <span>Must contain at least one letter</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Icon 
+              icon={hasNumber ? "mdi:check-circle" : "mdi:circle-outline"} 
+              className={`w-4 h-4 ${hasNumber ? 'text-green-500' : 'text-gray-400'}`} 
+            />
+            <span>Must contain at least one number</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Icon 
+              icon={hasUppercase ? "mdi:check-circle" : "mdi:circle-outline"} 
+              className={`w-4 h-4 ${hasUppercase ? 'text-green-500' : 'text-gray-400'}`} 
+            />
+            <span>Must contain at least one uppercase letter</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Icon 
+              icon={hasNoSpaces ? "mdi:check-circle" : "mdi:circle-outline"} 
+              className={`w-4 h-4 ${hasNoSpaces ? 'text-green-500' : 'text-gray-400'}`} 
+            />
+            <span>Cannot contain spaces</span>
           </div>
         </div>
 

@@ -14,6 +14,7 @@ interface Notification {
 
 interface NotificationsTableProps {
   notifications: Notification[]
+  isLoading?: boolean
   onEditClick: (notification: Notification) => void
   onDuplicateClick: (notification: Notification) => void
   onDeleteClick: (notification: Notification) => void
@@ -26,6 +27,7 @@ interface NotificationsTableProps {
 
 const NotificationsTable = ({
   notifications,
+  isLoading = false,
   onEditClick,
   onDuplicateClick,
   onDeleteClick,
@@ -115,7 +117,17 @@ const NotificationsTable = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {notifications.map((notification) => (
+            {isLoading ? (
+              <tr>
+                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                  <div className="flex items-center justify-center gap-2">
+                    <Icon icon="mdi:loading" className="w-6 h-6 animate-spin" />
+                    <span>Loading...</span>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+            notifications.map((notification) => (
               <tr key={notification.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {notification.title}
@@ -176,7 +188,7 @@ const NotificationsTable = ({
                   </div>
                 </td>
               </tr>
-            ))}
+            )) )}
           </tbody>
         </table>
       </div>

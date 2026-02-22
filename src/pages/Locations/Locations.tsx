@@ -1,9 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  ConfirmationModal,
-  DashboardLayout,
-  ShimmerPage,
-} from '../../components'
+import { ConfirmationModal, DashboardLayout } from '../../components'
 import { Query } from '../../lib/appwrite'
 import { locationsService, type LocationDocument, type LocationFormData } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
@@ -332,14 +328,6 @@ const Locations = () => {
     }
   }
 
-  if (isLoading) {
-    return (
-      <DashboardLayout>
-        <ShimmerPage />
-      </DashboardLayout>
-    )
-  }
-
   return (
     <DashboardLayout>
       <div className="p-8">
@@ -365,6 +353,7 @@ const Locations = () => {
         />
         <LocationsTable
           locations={locations}
+          isLoading={isLoading}
           currentPage={currentPage}
           totalPages={totalPages}
           totalLocations={totalLocations}

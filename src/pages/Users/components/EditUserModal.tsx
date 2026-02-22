@@ -88,8 +88,24 @@ const EditUserModal = ({
   const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wasOpenRef = useRef(false)
   const initialDataRef = useRef(formData)
+  const [passwordError, setPasswordError] = useState('')
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
+
+  // Placeholder shown when editing (password not changed); do not validate as real password
+  const isPasswordPlaceholder = (p: string) => p && /^\*+$/.test(p) && p.length >= 8
+
+  // Password validation: no spaces, min 8 chars, at least one letter, one number, and one uppercase
+  const validatePassword = (password: string): string => {
+    if (!password) return 'Password is required'
+    if (isPasswordPlaceholder(password)) return '' // editing: masked value = unchanged, skip validation
+    if (/\s/.test(password)) return 'Password cannot contain spaces'
+    if (password.length < 8) return 'Password must be at least 8 characters'
+    if (!/[a-zA-Z]/.test(password)) return 'Password must contain at least one letter'
+    if (!/\d/.test(password)) return 'Password must contain at least one number'
+    if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter'
+    return ''
+  }
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
@@ -168,26 +184,19 @@ const EditUserModal = ({
           const tiersList = await tiersService.list()
           setTiers(tiersList)
           
-          // After tiers are loaded, ensure tierLevel is set correctly from initialData
-          if (initialData?.tierLevel && tiersList.length > 0) {
-            // Verify the tierLevel exists in the tiers list (case-insensitive match)
-            const tierExists = tiersList.some(tier => 
-              tier.name.toLowerCase() === initialData.tierLevel?.toLowerCase()
+          // After tiers are loaded, sync tierLevel from initialData so dropdown shows correct selection
+          const profileTier = (initialData?.tierLevel ?? '').trim()
+          if (profileTier && tiersList.length > 0) {
+            const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, '')
+            const normalizedProfile = normalize(profileTier)
+            const matchingTier = tiersList.find(
+              (tier) => normalize(tier.name) === normalizedProfile
             )
-            if (tierExists) {
-              // Find the exact tier name (to handle case differences)
-              const matchingTier = tiersList.find(tier => 
-                tier.name.toLowerCase() === initialData.tierLevel?.toLowerCase()
-              )
-              if (matchingTier) {
-                setFormData(prev => ({
-                  ...prev,
-                  tierLevel: matchingTier.name // Use the exact tier name from database
-                }))
-              }
-            } else if (initialData.tierLevel) {
-              // If tierLevel doesn't match any tier, log a warning but keep the value
-              console.warn(`Tier level "${initialData.tierLevel}" not found in tiers list`)
+            if (matchingTier) {
+              setFormData((prev) => ({
+                ...prev,
+                tierLevel: matchingTier.name,
+              }))
             }
           }
         } catch (error) {
@@ -323,6 +332,10 @@ const EditUserModal = ({
         checkUsernameAvailability(value)
       }, 500) // 500ms debounce
     }
+
+    if (field === 'password') {
+      setPasswordError(validatePassword(value))
+    }
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -348,6 +361,10 @@ const EditUserModal = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    const pwdError = validatePassword(formData.password || '')
+    setPasswordError(pwdError)
+    if (pwdError) return
+    
     // Prevent submission if username is not available
     if (formData.username && usernameValidation.isAvailable === false) {
       return
@@ -357,6 +374,7 @@ const EditUserModal = ({
     try {
       await onSave(formData)
       setShowUnsavedChangesModal(false)
+      setPasswordError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -374,6 +392,7 @@ const EditUserModal = ({
     if (hasUnsavedChanges && !isSubmitting) {
       setShowUnsavedChangesModal(true)
     } else {
+      setPasswordError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -385,6 +404,7 @@ const EditUserModal = ({
 
   const handleDiscardChanges = () => {
     setShowUnsavedChangesModal(false)
+    setPasswordError('')
     setUsernameValidation({
       isChecking: false,
       isAvailable: null,
@@ -606,11 +626,13 @@ const EditUserModal = ({
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="Enter Password"
+                    placeholder="Enter Password (min 8 chars, letter, number, uppercase)"
                     value={formData.password}
                     onChange={(e) => handleInputChange('password', e.target.value)}
                     required
-                    className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                    className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                      passwordError ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   />
                   <button
                     type="button"
@@ -623,6 +645,9 @@ const EditUserModal = ({
                     />
                   </button>
                 </div>
+                {passwordError && (
+                  <p className="mt-1 text-xs text-red-500">{passwordError}</p>
+                )}
               </div>
 
               {/* Check Ins */}
@@ -850,7 +875,7 @@ const EditUserModal = ({
                 />
               </div>
 
-              {/* Trivias Won */}
+              {/* Trivias Won (read-only: computed from trivia responses or stored value) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Trivias Won <span className="text-red-500">*</span>
@@ -859,9 +884,9 @@ const EditUserModal = ({
                   type="text"
                   placeholder="Enter Trivias Won"
                   value={formData.triviasWon}
-                  onChange={(e) => handleInputChange('triviasWon', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  disabled
+                  readOnly
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
               </div>
             </div>
@@ -910,7 +935,7 @@ const EditUserModal = ({
             <button
               type="submit"
               className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              disabled={isSubmitting || (!!formData.username && usernameValidation.isAvailable === false)}
+              disabled={isSubmitting || !!passwordError || (!!formData.username && usernameValidation.isAvailable === false)}
             >
               {isSubmitting && (
                 <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />

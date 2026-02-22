@@ -17,6 +17,7 @@ interface AddUserModalProps {
     phoneNumber: string
     role: string
     tierLevel?: string
+    totalPoints?: number
   }) => void
 }
 
@@ -54,13 +55,14 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
   
   const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
-  // Password validation: no spaces, min 8 chars, at least one letter and one number
+  // Password validation: no spaces, min 8 chars, at least one letter, one number, and one uppercase
   const validatePassword = (password: string): string => {
     if (!password) return 'Password is required'
     if (/\s/.test(password)) return 'Password cannot contain spaces'
     if (password.length < 8) return 'Password must be at least 8 characters'
     if (!/[a-zA-Z]/.test(password)) return 'Password must contain at least one letter'
     if (!/\d/.test(password)) return 'Password must contain at least one number'
+    if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter'
     return ''
   }
 
@@ -206,7 +208,9 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     
     setIsSubmitting(true)
     try {
-      await onSave(formData)
+      const selectedTier = tiers.find((t) => t.name === formData.tierLevel)
+      const totalPoints = selectedTier?.requiredPoints ?? 100
+      await onSave({ ...formData, totalPoints })
       // Close unsaved changes modal if it's open
       setShowUnsavedChangesModal(false)
       // Reset form and validation state
@@ -322,7 +326,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter Password (min 8 characters, letter and number)"
+                  placeholder="Enter Password (min 8 chars, letter, number, uppercase)"
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   required

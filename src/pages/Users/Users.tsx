@@ -13,7 +13,7 @@ import {
   EditUserModal,
   StatsCards,
 } from './components'
-import { appUsersService, notificationsService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
+import { appUsersService, notificationsService, triviaResponsesService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
@@ -31,6 +31,8 @@ const Users = () => {
     isLoading: boolean
   }>({ isOpen: false, user: null, isLoading: false })
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null)
+  const [userForEdit, setUserForEdit] = useState<AppUser | null>(null)
+  const [editModalTriviasWon, setEditModalTriviasWon] = useState<number | null>(null)
   const [userToDelete, setUserToDelete] = useState<AppUser | null>(null)
   const [users, setUsers] = useState<AppUser[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -474,9 +476,19 @@ const Users = () => {
           totalUsers={totalUsers}
           pageSize={pageSize}
           onPageChange={handlePageChange}
-          onEditClick={(user) => {
-            setSelectedUser(user as AppUser)
+          onEditClick={async (user) => {
+            const appUser = user as AppUser
+            setSelectedUser(appUser)
+            setUserForEdit(null)
+            setEditModalTriviasWon(null)
             setIsEditUserModalOpen(true)
+            triviaResponsesService.getTriviasWonCountByUserId(appUser.$id).then(setEditModalTriviasWon).catch(() => setEditModalTriviasWon(0))
+            try {
+              const fresh = await appUsersService.getById(appUser.$id)
+              if (fresh) setUserForEdit(fresh)
+            } catch {
+              setUserForEdit(appUser)
+            }
           }}
           onDeleteClick={(user) => {
             setUserToDelete(user as AppUser)
@@ -499,6 +511,7 @@ const Users = () => {
             phoneNumber: userData.phoneNumber,
             role: userData.role as 'admin' | 'user',
             tierLevel: userData.tierLevel,
+            totalPoints: userData.totalPoints,
           })
         }
       />
@@ -510,6 +523,8 @@ const Users = () => {
         onClose={() => {
           setIsEditUserModalOpen(false)
           setSelectedUser(null)
+          setUserForEdit(null)
+          setEditModalTriviasWon(null)
         }}
         onSave={async (userData) => {
           if (!selectedUser?.$id) return
@@ -550,15 +565,16 @@ const Users = () => {
               isInfluencer: userData.influencerBadge === 'Yes',
               referralCode: userData.referralCode,
               totalReviews: Number(userData.reviews) || 0,
+              // Persist tier so admin edits stay in sync with app (tierLevel must exist on user_profiles)
+              tierLevel: userData.tierLevel ?? '',
+              // Persist Trivias Won so admin edits stick (user_profiles must have integer attribute triviasWon)
+              triviasWon: Number(userData.triviasWon) || 0,
             }
             
             // Add avatarURL only if it was changed
             if (avatarURL !== undefined) {
               updateData.avatarURL = avatarURL
             }
-            
-            // Note: Fields like tierLevel, triviasWon, checkInReviewPoints, signUpDate, lastLogin, password
-            // are not stored in the database and are either calculated, read-only, or legacy fields
             
             // Update user profile in database
             await appUsersService.update(selectedUser.$id, updateData)
@@ -596,6 +612,8 @@ const Users = () => {
             
             setIsEditUserModalOpen(false)
             setSelectedUser(null)
+            setUserForEdit(null)
+            setEditModalTriviasWon(null)
             
             addNotification({
               type: 'success',
@@ -618,48 +636,33 @@ const Users = () => {
           setUserToDelete(selectedUser)
           setIsDeleteModalOpen(true)
         }}
-        initialData={
-          selectedUser
+        initialData={(() => {
+          const u = userForEdit ?? selectedUser
+          return u
             ? {
-                image: selectedUser.avatarURL || null,
-                firstName: String(selectedUser.firstname ?? selectedUser.firstName ?? ''),
-                lastName: String(selectedUser.lastname ?? selectedUser.lastName ?? ''),
-                zipCode: String(selectedUser.zipCode ?? ''),
-                phoneNumber: String(selectedUser.phoneNumber ?? ''),
-                // Use correct database field name: totalPoints
-                userPoints: String(selectedUser.totalPoints ?? selectedUser.userPoints ?? '0'),
-                // Use correct database field name: isAmbassador
-                baBadge: (selectedUser.isAmbassador ?? selectedUser.baBadge) ? 'Yes' : 'No',
-                signUpDate: selectedUser.$createdAt
-                  ? new Date(selectedUser.$createdAt).toISOString().split('T')[0]
-                  : '',
+                image: u.avatarURL || null,
+                firstName: String(u.firstname ?? u.firstName ?? ''),
+                lastName: String(u.lastname ?? u.lastName ?? ''),
+                zipCode: String(u.zipCode ?? ''),
+                phoneNumber: String(u.phoneNumber ?? ''),
+                userPoints: String(u.totalPoints ?? u.userPoints ?? '0'),
+                baBadge: (u.isAmbassador ?? u.baBadge) ? 'Yes' : 'No',
+                signUpDate: u.$createdAt ? new Date(u.$createdAt).toISOString().split('T')[0] : '',
                 password: '**********',
-                // Use correct database field name: totalEvents
-                checkIns: String(selectedUser.totalEvents ?? selectedUser.checkIns ?? '0'),
-                tierLevel: String(
-                  selectedUser.tierLevel ?? 
-                  (selectedUser.totalPoints !== undefined && selectedUser.totalPoints >= 100000 ? 'SampleMaster' :
-                   selectedUser.totalPoints !== undefined && selectedUser.totalPoints >= 25000 ? 'VIS' :
-                   selectedUser.totalPoints !== undefined && selectedUser.totalPoints >= 5000 ? 'SuperSampler' :
-                   selectedUser.totalPoints !== undefined && selectedUser.totalPoints >= 1000 ? 'SampleFan' :
-                   'NewbieSampler')
-                ),
-                username: String(selectedUser.username ?? ''),
-                email: selectedUser.email,
-                checkInReviewPoints: String(selectedUser.checkInReviewPoints ?? '0'),
-                // Use correct database field name: isInfluencer
-                influencerBadge: (selectedUser.isInfluencer ?? selectedUser.influencerBadge) ? 'Yes' : 'No',
-                lastLogin: selectedUser.$updatedAt
-                  ? new Date(selectedUser.$updatedAt).toISOString().split('T')[0]
-                  : '',
-                referralCode: String(selectedUser.referralCode ?? ''),
-                // Use correct database field name: totalReviews
-                reviews: String(selectedUser.totalReviews ?? selectedUser.reviews ?? '0'),
-                triviasWon: String(selectedUser.triviasWon ?? '0'),
-                isBlocked: (selectedUser as { isBlocked?: boolean }).isBlocked || false,
+                checkIns: String(u.totalEvents ?? u.checkIns ?? '0'),
+                tierLevel: String(u.tierLevel ?? ''),
+                username: String(u.username ?? ''),
+                email: u.email,
+                checkInReviewPoints: String(u.checkInReviewPoints ?? '0'),
+                influencerBadge: (u.isInfluencer ?? u.influencerBadge) ? 'Yes' : 'No',
+                lastLogin: u.$updatedAt ? new Date(u.$updatedAt).toISOString().split('T')[0] : '',
+                referralCode: String(u.referralCode ?? ''),
+                reviews: String(u.totalReviews ?? u.reviews ?? '0'),
+                triviasWon: String(u.triviasWon ?? editModalTriviasWon ?? 0),
+                isBlocked: (u as { isBlocked?: boolean }).isBlocked || false,
               }
             : undefined
-        }
+        })()}
       />
 
       {/* Block/Unblock Confirmation Modal */}

@@ -6,12 +6,15 @@ import type { DownloadFormat } from '../../components'
 import { exportService, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
 
+const REPORT_PAGE_SIZE = 50
+
 const PreviewReports = () => {
   const navigate = useNavigate()
   const { reportId } = useParams<{ reportId: string }>()
   const [sortBy, setSortBy] = useState<string>('date')
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
   const [reportData, setReportData] = useState<{ columns: { header: string; key: string; getValue?: (row: Record<string, string | number>) => string | number }[]; rows: Record<string, string | number>[] } | null>(null)
   const { addNotification } = useNotificationStore()
 
@@ -48,6 +51,7 @@ const PreviewReports = () => {
     const loadReportData = async () => {
       try {
         setIsLoading(true)
+        setCurrentPage(1)
         const reportType = getReportType()
         const data = await exportService.generateReportData(reportType)
         setReportData(data)
@@ -66,6 +70,13 @@ const PreviewReports = () => {
     loadReportData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportId])
+
+  // Clamp current page when report has fewer pages (e.g. after switching report)
+  useEffect(() => {
+    if (!reportData?.rows.length) return
+    const totalPages = Math.max(1, Math.ceil(reportData.rows.length / REPORT_PAGE_SIZE))
+    if (currentPage > totalPages) setCurrentPage(totalPages)
+  }, [reportData?.rows.length, currentPage])
 
   const handleDownloadClick = () => {
     setIsDownloadModalOpen(true)
@@ -103,15 +114,46 @@ const PreviewReports = () => {
     }
   }
 
+  // Column keys that hold display dates (MM/DD/YYYY) and should be sorted chronologically
+  const dateColumnKeys = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'signupDate'])
+
+  const parseSortableDate = (value: string | number): number => {
+    if (value === '' || value === undefined || value === null) return NaN
+    const str = String(value).trim()
+    if (!str) return NaN
+    // Support MM/DD/YYYY (report display format)
+    const mmddyy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+    if (mmddyy) {
+      const [, month, day, year] = mmddyy
+      const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10))
+      return isNaN(d.getTime()) ? NaN : d.getTime()
+    }
+    const d = new Date(str)
+    return isNaN(d.getTime()) ? NaN : d.getTime()
+  }
+
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newSortBy = e.target.value
     setSortBy(newSortBy)
+    setCurrentPage(1)
     
     // Sort report data if available
     if (reportData && reportData.rows.length > 0) {
+      const isDateColumn = dateColumnKeys.has(newSortBy)
       const sortedRows = [...reportData.rows].sort((a, b) => {
-        const aValue = a[newSortBy] || ''
-        const bValue = b[newSortBy] || ''
+        const aValue = a[newSortBy] ?? ''
+        const bValue = b[newSortBy] ?? ''
+        
+        if (isDateColumn) {
+          const aTime = parseSortableDate(aValue as string)
+          const bTime = parseSortableDate(bValue as string)
+          const aEmpty = isNaN(aTime)
+          const bEmpty = isNaN(bTime)
+          if (aEmpty && bEmpty) return 0
+          if (aEmpty) return 1
+          if (bEmpty) return -1
+          return aTime - bTime
+        }
         
         // Try to compare as numbers first
         const aNum = Number(aValue)
@@ -194,51 +236,91 @@ const PreviewReports = () => {
         )}
 
         {/* Table */}
-        {!isLoading && reportData && (
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    {reportData.columns.map((col) => (
-                      <th
-                        key={col.key}
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
-                      >
-                        {col.header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {reportData.rows.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={reportData.columns.length}
-                        className="px-6 py-8 text-center text-sm text-gray-500"
-                      >
-                        No data available for this report
-                      </td>
-                    </tr>
-                  ) : (
-                    reportData.rows.map((row, rowIndex) => (
-                      <tr key={rowIndex} className="hover:bg-gray-50">
+        {!isLoading && reportData && (() => {
+          const totalRows = reportData.rows.length
+          const totalPages = Math.max(1, Math.ceil(totalRows / REPORT_PAGE_SIZE))
+          const page = Math.min(currentPage, totalPages)
+          const start = (page - 1) * REPORT_PAGE_SIZE
+          const end = Math.min(start + REPORT_PAGE_SIZE, totalRows)
+          const displayedRows = reportData.rows.slice(start, end)
+          const showPagination = totalRows > REPORT_PAGE_SIZE
+
+          return (
+            <>
+              {showPagination && (
+                <div className="mb-4 flex items-center justify-between text-sm text-gray-600">
+                  <span>
+                    Showing {totalRows === 0 ? 0 : start + 1}–{end} of {totalRows.toLocaleString()} records
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={page <= 1}
+                      className="px-3 py-1.5 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    <span className="px-2">
+                      Page {page} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={page >= totalPages}
+                      className="px-3 py-1.5 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
                         {reportData.columns.map((col) => (
-                          <td
+                          <th
                             key={col.key}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
                           >
-                            {col.getValue ? col.getValue(row) : row[col.key] || ''}
-                          </td>
+                            {col.header}
+                          </th>
                         ))}
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {displayedRows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={reportData.columns.length}
+                            className="px-6 py-8 text-center text-sm text-gray-500"
+                          >
+                            No data available for this report
+                          </td>
+                        </tr>
+                      ) : (
+                        displayedRows.map((row, rowIndex) => (
+                          <tr key={start + rowIndex} className="hover:bg-gray-50">
+                            {reportData.columns.map((col) => (
+                              <td
+                                key={col.key}
+                                className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
+                              >
+                                {col.getValue ? col.getValue(row) : row[col.key] || ''}
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )
+        })()}
 
         {/* Empty State */}
         {!isLoading && !reportData && (

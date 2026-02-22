@@ -24,11 +24,27 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
 
   const [showPassword, setShowPassword] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState('')
+
+  // Password validation: no spaces, min 8 chars, at least one letter, one number, and one uppercase
+  const validatePassword = (password: string): string => {
+    if (!password) return 'Password is required'
+    if (/\s/.test(password)) return 'Password cannot contain spaces'
+    if (password.length < 8) return 'Password must be at least 8 characters'
+    if (!/[a-zA-Z]/.test(password)) return 'Password must contain at least one letter'
+    if (!/\d/.test(password)) return 'Password must contain at least one number'
+    if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter'
+    return ''
+  }
 
   if (!isOpen) return null
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+    
+    if (field === 'password') {
+      setPasswordError(validatePassword(value))
+    }
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,6 +62,11 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    
+    const pwdError = validatePassword(formData.password)
+    setPasswordError(pwdError)
+    if (pwdError) return
+    
     onSave(formData)
     // Reset form
     setFormData({
@@ -57,6 +78,7 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
     })
     setImagePreview(null)
     setShowPassword(false)
+    setPasswordError('')
     onClose()
   }
 
@@ -71,6 +93,7 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
     })
     setImagePreview(null)
     setShowPassword(false)
+    setPasswordError('')
     onClose()
   }
 
@@ -199,11 +222,13 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter Password"
+                  placeholder="Enter Password (min 8 chars, letter, number, uppercase)"
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   required
-                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                    passwordError ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 />
                 <button
                   type="button"
@@ -216,6 +241,9 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
                   />
                 </button>
               </div>
+              {passwordError && (
+                <p className="mt-1 text-xs text-red-500">{passwordError}</p>
+              )}
             </div>
           </div>
 
@@ -230,7 +258,8 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
             </button>
             <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold"
+              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!!passwordError}
             >
               Create User
             </button>

@@ -15,6 +15,7 @@ interface Client {
 
 interface ClientsTableProps {
   clients: Client[]
+  isLoading?: boolean
   onEditClick: (client: Client) => void
   onDeleteClick: (client: Client) => void
   currentPage?: number
@@ -26,6 +27,7 @@ interface ClientsTableProps {
 
 const ClientsTable = ({
   clients,
+  isLoading = false,
   onEditClick,
   onDeleteClick,
   currentPage = 1,
@@ -82,7 +84,17 @@ const ClientsTable = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {clients.map((client) => (
+            {isLoading ? (
+              <tr>
+                <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <div className="flex items-center justify-center gap-2">
+                    <Icon icon="mdi:loading" className="w-6 h-6 animate-spin" />
+                    <span>Loading...</span>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+            clients.map((client) => (
               <tr key={client.id || client.clientName} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                   {client.clientName}
@@ -125,7 +137,7 @@ const ClientsTable = ({
                   </div>
                 </td>
               </tr>
-            ))}
+            )) )}
           </tbody>
         </table>
       </div>

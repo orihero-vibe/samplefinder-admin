@@ -527,12 +527,12 @@
                 },
                 {
                     "key": "discount",
-                    "type": "double",
+                    "type": "string",
                     "required": false,
                     "array": false,
-                    "min": -1000,
-                    "max": 1000,
-                    "default": null
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
                 },
                 {
                     "key": "discountImageURL",

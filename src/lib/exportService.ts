@@ -146,6 +146,25 @@ const formatProducts = (products?: string[]): string => {
   return products.join(', ')
 }
 
+// Appwrite listDocuments returns max 25 by default. Fetch all users in pages for report consistency.
+const REPORT_USERS_PAGE_SIZE = 100
+
+async function fetchAllAppUsers(): Promise<AppUser[]> {
+  const all: AppUser[] = []
+  let offset = 0
+  let chunk: AppUser[]
+  do {
+    chunk = await appUsersService.list([
+      Query.orderDesc('$createdAt'),
+      Query.limit(REPORT_USERS_PAGE_SIZE),
+      Query.offset(offset),
+    ])
+    all.push(...chunk)
+    offset += REPORT_USERS_PAGE_SIZE
+  } while (chunk.length === REPORT_USERS_PAGE_SIZE)
+  return all
+}
+
 // Export Service
 export const exportService = {
   /**
@@ -213,6 +232,8 @@ export const exportService = {
           }
         }
 
+        const hasDiscount = (event.discount != null && String(event.discount).trim() !== '') ||
+          (event.discountImageURL != null && String(event.discountImageURL).trim() !== '')
         return {
           date: formatDate(event.date),
           venueName: event.name || '',
@@ -220,7 +241,7 @@ export const exportService = {
           startTime: formatTime(event.startTime),
           endTime: formatTime(event.endTime),
           products: formatProducts(event.products),
-          discount: event.discount && event.discount > 0 ? 'YES' : 'NO',
+          discount: hasDiscount ? 'YES' : 'NO',
         }
       })
     )
@@ -323,11 +344,11 @@ export const exportService = {
 
   /**
    * Generate App Users report
-   * Fetches data from user_profiles collection with correct field mappings
+   * Fetches all users (paginated) so report total matches actual user count.
    */
   async generateAppUsersReport(): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
-    const usersResult = await appUsersService.list([Query.orderDesc('$createdAt')])
-    
+    const usersResult = await fetchAllAppUsers()
+
     const rows = usersResult.map((user: AppUser) => {
       const userRecord = user as Record<string, unknown>
       
@@ -383,14 +404,11 @@ export const exportService = {
 
   /**
    * Generate Points Earned report
-   * Fetches data from user_profiles collection with correct field mappings
+   * Fetches all users (paginated) so report total matches actual user count.
    */
   async generatePointsEarnedReport(): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
-    // Fetch all users without ordering by userPoints (since it may not be in schema)
-    const usersResult = await appUsersService.list([
-      Query.orderDesc('$createdAt'),
-    ])
-    
+    const usersResult = await fetchAllAppUsers()
+
     const rows = usersResult.map((user: AppUser) => {
       const userRecord = user as Record<string, unknown>
       

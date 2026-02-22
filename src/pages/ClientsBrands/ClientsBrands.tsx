@@ -1,9 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import {
-  ConfirmationModal,
-  DashboardLayout,
-  ShimmerPage,
-} from '../../components'
+import { ConfirmationModal, DashboardLayout } from '../../components'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { clientsService, statisticsService, type ClientDocument, type ClientsStats } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
@@ -436,14 +432,6 @@ const ClientsBrands = () => {
     }
   }
 
-  if (isLoading) {
-    return (
-      <DashboardLayout>
-        <ShimmerPage />
-      </DashboardLayout>
-    )
-  }
-
   return (
     <DashboardLayout>
       <div className="p-8">
@@ -470,6 +458,7 @@ const ClientsBrands = () => {
         />
         <ClientsTable
           clients={clients}
+          isLoading={isLoading}
           currentPage={currentPage}
           totalPages={totalPages}
           totalClients={totalClients}

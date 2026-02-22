@@ -506,7 +506,7 @@ export interface EventDocument extends Models.Document {
   state: string
   zipCode: string
   products?: string[]
-  discount?: number
+  discount?: string
   discountImageURL?: string
   checkInCode: string
   checkInPoints: number
@@ -627,6 +627,25 @@ export const triviaResponsesService = {
     )
     return result.documents
   },
+  /** Count correct trivia answers (wins) for a user from trivia_responses + trivia correctOptionIndex */
+  getTriviasWonCountByUserId: async (userId: string): Promise<number> => {
+    const responses = await triviaResponsesService.getByUserId(userId)
+    if (responses.length === 0) return 0
+    const triviaIds = [...new Set(responses.map((r) => r.trivia).filter(Boolean))] as string[]
+    let count = 0
+    for (const tid of triviaIds) {
+      try {
+        const trivia = await triviaService.getById(tid)
+        const correct = responses.filter(
+          (r) => r.trivia === tid && r.answerIndex === trivia.correctOptionIndex
+        )
+        count += correct.length
+      } catch {
+        // Trivia may be deleted, skip
+      }
+    }
+    return count
+  },
 }
 
 // Trivia service
@@ -705,6 +724,7 @@ export interface UserFormData {
   zipCode?: string
   role?: 'admin' | 'user'
   tierLevel?: string
+  totalPoints?: number
 }
 
 // App User interface (combines Auth user and user_profiles)
@@ -783,6 +803,7 @@ export const appUsersService = {
         phoneNumber: userData.phoneNumber ?? '',
         role: userData.role ?? 'user',
         tierLevel: userData.tierLevel ?? '',
+        totalPoints: userData.totalPoints ?? 100,
       }
 
       const execution = await functions.createExecution({

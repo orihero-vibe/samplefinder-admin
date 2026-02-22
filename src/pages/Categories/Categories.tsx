@@ -1,9 +1,5 @@
 import { useState, useEffect } from 'react'
-import {
-  DashboardLayout,
-  ConfirmationModal,
-  ShimmerPage,
-} from '../../components'
+import { DashboardLayout, ConfirmationModal } from '../../components'
 import {
   CategoriesHeader,
   SummaryCards,
@@ -297,14 +293,6 @@ const Categories = () => {
     }
   }
 
-  if (isLoading) {
-    return (
-      <DashboardLayout>
-        <ShimmerPage />
-      </DashboardLayout>
-    )
-  }
-
   return (
     <DashboardLayout>
       <div className="p-8">
@@ -327,6 +315,7 @@ const Categories = () => {
         />
         <CategoriesTable
           categories={categories}
+          isLoading={isLoading}
           currentPage={currentPage}
           totalPages={totalPages}
           totalCategories={totalCategories}
