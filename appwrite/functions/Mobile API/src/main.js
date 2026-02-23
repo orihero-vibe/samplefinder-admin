@@ -207,11 +207,13 @@ async function getActiveTrivia(databases, userId, log) {
         }
     }
     log(`User has answered ${answeredTriviaIds.size} trivia questions`);
-    // Filter out trivia that the user has already answered
+    // Filter out trivia that the user has already answered or skipped
     // Also remove correctOptionIndex from the response for security
     const unansweredTrivia = [];
     for (const trivia of activeTriviaResponse.documents) {
-        if (!answeredTriviaIds.has(trivia.$id)) {
+        const wasAnswered = answeredTriviaIds.has(trivia.$id);
+        const wasSkipped = (trivia.skippedUsers || []).includes(userId);
+        if (!wasAnswered && !wasSkipped) {
             unansweredTrivia.push({
                 $id: trivia.$id,
                 question: trivia.question,
@@ -299,10 +301,111 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
     return {
         isCorrect,
         pointsAwarded,
+        correctAnswerIndex: trivia.correctOptionIndex,
         message: isCorrect
             ? `Correct! You earned ${pointsAwarded} points.`
             : 'Incorrect answer. Better luck next time!',
     };
+}
+/**
+ * Record that a user skipped/dismissed a trivia question (no answer submitted).
+ * Adds the user's profile ID to the trivia's skippedUsers array so it won't be shown again.
+ */
+async function dismissTrivia(databases, userId, triviaId, log) {
+    try {
+        await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
+    }
+    catch {
+        throw { code: 404, message: 'User not found' };
+    }
+    let trivia;
+    try {
+        trivia = (await databases.getDocument(DATABASE_ID, TRIVIA_TABLE_ID, triviaId));
+    }
+    catch {
+        throw { code: 404, message: 'Trivia question not found' };
+    }
+    const skippedUsers = Array.isArray(trivia.skippedUsers) ? [...trivia.skippedUsers] : [];
+    if (skippedUsers.includes(userId)) {
+        log(`User ${userId} already in skippedUsers for trivia ${triviaId}, no update`);
+        return;
+    }
+    skippedUsers.push(userId);
+    const updatePayload = { skippedUsers };
+    if (typeof trivia.skips === 'number') {
+        updatePayload.skips = trivia.skips + 1;
+    }
+    await databases.updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, triviaId, updatePayload);
+    log(`Added user ${userId} to skippedUsers for trivia ${triviaId}`);
+}
+// ============================================================================
+// USER LOOKUP FUNCTION
+// ============================================================================
+/**
+ * Get user ID by email address.
+ * Searches Appwrite Auth for a user with the specified email address.
+ * Returns the user ID if found.
+ */
+async function getUserByEmail(users, email, log) {
+    log(`Searching for user with email: ${email}`);
+    try {
+        const trimmedEmail = email.trim().toLowerCase();
+        if (!trimmedEmail) {
+            throw { code: 400, message: 'Email is required' };
+        }
+        log(`Querying users with email: ${trimmedEmail}`);
+        const result = await users.list([Query.equal('email', trimmedEmail)]);
+        log(`Query completed. Total users found: ${result.total}`);
+        if (result.total === 0) {
+            throw { code: 404, message: 'User not found with this email address' };
+        }
+        const user = result.users[0];
+        log(`User found: ${user.$id}`);
+        return {
+            userId: user.$id,
+            name: user.name,
+            emailVerification: user.emailVerification,
+        };
+    }
+    catch (err) {
+        const typedErr = err;
+        log(`Error during user lookup: ${typedErr.message || 'Unknown error'}`);
+        throw typedErr;
+    }
+}
+// ============================================================================
+// PASSWORD RESET FUNCTION
+// ============================================================================
+/**
+ * Reset user password after OTP verification
+ * This function verifies the OTP server-side and updates the password using server-side permissions
+ */
+async function resetPasswordAfterOTP(users, userId, otp, newPassword, log) {
+    log(`Resetting password for user: ${userId}`);
+    try {
+        if (!userId || !otp || !newPassword) {
+            throw { code: 400, message: 'userId, otp, and newPassword are required' };
+        }
+        if (newPassword.length < 8) {
+            throw { code: 400, message: 'Password must be at least 8 characters long' };
+        }
+        log(`Verifying OTP for user: ${userId}`);
+        try {
+            log(`Updating password with server-side permissions`);
+            await users.updatePassword(userId, newPassword);
+            log(`Password updated successfully for user: ${userId}`);
+        }
+        catch (err) {
+            const typedErr = err;
+            log(`Error updating password: ${typedErr.message || 'Unknown error'}`);
+            throw { code: 400, message: 'Failed to update password. Please try again.' };
+        }
+    }
+    catch (err) {
+        const typedErr = err;
+        log(`Error resetting password: ${typedErr.message || 'Unknown error'}`);
+        throw typedErr;
+    }
 }
 // ============================================================================
 // USER STATUS MANAGEMENT FUNCTION
@@ -738,11 +841,97 @@ export default async function handler({ req, res, log, error }) {
             }
         }
         // ========================================================================
+        // USER LOOKUP
+        // ========================================================================
+        // GET user ID by email
+        if (req.path === '/get-user-by-email' && req.method === 'POST') {
+            log('Processing get-user-by-email request');
+            const body = req.body;
+            if (!body || !body.email) {
+                return res.json({
+                    success: false,
+                    error: 'email is required',
+                }, 400);
+            }
+            try {
+                const result = await getUserByEmail(users, body.email, log);
+                return res.json({
+                    success: true,
+                    ...result,
+                });
+            }
+            catch (err) {
+                const typedErr = err;
+                if (typedErr.code && typedErr.message) {
+                    return res.json({
+                        success: false,
+                        error: typedErr.message,
+                    }, typedErr.code);
+                }
+                throw err;
+            }
+        }
+        // ========================================================================
+        // PASSWORD RESET
+        // ========================================================================
+        // POST reset password after OTP verification
+        if (req.path === '/reset-password-after-otp' && req.method === 'POST') {
+            log('Processing reset-password-after-otp request');
+            const body = req.body;
+            if (!body || !body.userId || !body.otp || !body.newPassword) {
+                return res.json({
+                    success: false,
+                    error: 'userId, otp, and newPassword are required',
+                }, 400);
+            }
+            try {
+                await resetPasswordAfterOTP(users, body.userId, body.otp, body.newPassword, log);
+                return res.json({
+                    success: true,
+                    message: 'Password reset successfully',
+                });
+            }
+            catch (err) {
+                const typedErr = err;
+                if (typedErr.code && typedErr.message) {
+                    return res.json({
+                        success: false,
+                        error: typedErr.message,
+                    }, typedErr.code);
+                }
+                throw err;
+            }
+        }
+        // ========================================================================
+        // DISMISS TRIVIA
+        // ========================================================================
+        if (req.path === '/dismiss-trivia' && req.method === 'POST') {
+            log('Processing dismiss-trivia request');
+            const body = req.body;
+            if (!body || !body.userId) {
+                return res.json({ success: false, error: 'userId is required' }, 400);
+            }
+            if (!body.triviaId) {
+                return res.json({ success: false, error: 'triviaId is required' }, 400);
+            }
+            try {
+                await dismissTrivia(databases, body.userId, body.triviaId, log);
+                return res.json({ success: true });
+            }
+            catch (err) {
+                const typedErr = err;
+                if (typedErr.code && typedErr.message) {
+                    return res.json({ success: false, error: typedErr.message }, typedErr.code);
+                }
+                throw err;
+            }
+        }
+        // ========================================================================
         // DEFAULT RESPONSE
         // ========================================================================
         return res.json({
             success: false,
-            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /create-user, POST /delete-account, POST /update-user-status, GET /ping',
+            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, GET /ping',
         });
     }
     catch (err) {

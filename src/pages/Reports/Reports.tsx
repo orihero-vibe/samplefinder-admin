@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { DashboardLayout, ShimmerPage } from '../../components'
 import type { DownloadFormat } from '../../components'
 import { ReportsHeader, SearchAndFilter, ReportsList } from './components'
-import { exportService, type ReportType } from '../../lib/exportService'
+import { exportService, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { reportsService } from '../../lib/services'
 
@@ -20,14 +20,42 @@ interface ReportMetadata {
   reviews: Date | null
 }
 
+const REPORTS_DATE_RANGE_KEY = 'reports-date-range'
+
+function loadPersistedDateRange(): { start: Date | null; end: Date | null } {
+  try {
+    const raw = localStorage.getItem(REPORTS_DATE_RANGE_KEY)
+    if (!raw) return { start: null, end: null }
+    const parsed = JSON.parse(raw) as { start: string | null; end: string | null }
+    const start = parsed?.start ? new Date(parsed.start) : null
+    const end = parsed?.end ? new Date(parsed.end) : null
+    if ((start && isNaN(start.getTime())) || (end && isNaN(end.getTime()))) return { start: null, end: null }
+    return { start, end }
+  } catch {
+    return { start: null, end: null }
+  }
+}
+
+function savePersistedDateRange(range: { start: Date | null; end: Date | null }) {
+  try {
+    if (range.start) {
+      localStorage.setItem(REPORTS_DATE_RANGE_KEY, JSON.stringify({
+        start: range.start.toISOString(),
+        end: (range.end ?? range.start).toISOString(),
+      }))
+    } else {
+      localStorage.removeItem(REPORTS_DATE_RANGE_KEY)
+    }
+  } catch {
+    // ignore
+  }
+}
+
 const Reports = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null)
-  const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({
-    start: null,
-    end: null,
-  })
+  const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>(loadPersistedDateRange)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize] = useState(25)
   const [reportMetadata, setReportMetadata] = useState<ReportMetadata | null>(null)
@@ -166,8 +194,8 @@ const Reports = () => {
       const timestamp = new Date().toISOString().split('T')[0]
       const filename = `${reportName}_${timestamp}.${format}`
 
-      // Use date range if one is set, otherwise undefined (which means "all data")
-      const useDateRange = (dateRange.start && dateRange.end) ? dateRange : undefined
+      // Single date => that day; date range => that range; future dates allowed
+      const useDateRange = getEffectiveDateRange(dateRange)
 
       if (format === 'csv') {
         await exportService.exportReport(reportType, filename, useDateRange)
@@ -212,7 +240,10 @@ const Reports = () => {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           dateRange={dateRange}
-          onDateRangeChange={setDateRange}
+          onDateRangeChange={(range) => {
+            setDateRange(range)
+            savePersistedDateRange(range)
+          }}
         />
         <ReportsList
           reports={paginatedReports}

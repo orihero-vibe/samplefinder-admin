@@ -42,24 +42,23 @@ const SearchAndFilter = ({
           <h2 className="text-lg font-semibold text-gray-900">Search & Filter</h2>
         </div>
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Icon
-              icon="mdi:magnify"
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
-            />
+          <div className="flex-1 flex items-center h-10 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-[#1D0A74] focus-within:border-transparent bg-white">
+            <span className="pl-3 flex items-center justify-center shrink-0 text-gray-400" aria-hidden>
+              <Icon icon="mdi:magnify" className="w-5 h-5" />
+            </span>
             <input
               type="text"
               placeholder="Search by report name"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              className="flex-1 min-w-0 h-full py-0 pl-2 pr-4 border-0 rounded-lg focus:outline-none focus:ring-0 bg-transparent placeholder-gray-400"
             />
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
               <button
                 onClick={() => setIsDateFilterOpen(true)}
-                className={`px-4 py-2 border rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap ${
+                className={`h-10 px-4 border rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap ${
                   dateRange.start && dateRange.end
                     ? 'border-[#1D0A74] bg-[#1D0A74]/5 text-[#1D0A74] font-medium'
                     : 'border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -72,7 +71,7 @@ const SearchAndFilter = ({
               {dateRange.start && dateRange.end && (
                 <button
                   onClick={() => onDateRangeChange({ start: null, end: null })}
-                  className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center"
+                  className="h-10 px-3 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center"
                   title="Clear date range"
                 >
                   <Icon icon="mdi:close" className="w-5 h-5 text-gray-600" />

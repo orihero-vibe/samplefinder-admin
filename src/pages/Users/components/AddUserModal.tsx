@@ -52,17 +52,38 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
   })
   const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [passwordError, setPasswordError] = useState('')
+  const [firstNameError, setFirstNameError] = useState('')
+  const [lastNameError, setLastNameError] = useState('')
+  const [usernameError, setUsernameError] = useState('')
   
   const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
-  // Password validation: no spaces, min 8 chars, at least one letter, one number, and one uppercase
+  // Password validation: min 8 chars, at least one letter, one number, and one uppercase
   const validatePassword = (password: string): string => {
     if (!password) return 'Password is required'
-    if (/\s/.test(password)) return 'Password cannot contain spaces'
     if (password.length < 8) return 'Password must be at least 8 characters'
     if (!/[a-zA-Z]/.test(password)) return 'Password must contain at least one letter'
     if (!/\d/.test(password)) return 'Password must contain at least one number'
     if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter'
+    return ''
+  }
+
+  // Name validation: only alphabets, starting with capital letter
+  const validateName = (name: string, fieldName: string): string => {
+    if (!name) return `${fieldName} is required`
+    if (!/^[A-Z][a-zA-Z]*$/.test(name)) {
+      return `${fieldName} must start with a capital letter and contain only alphabets`
+    }
+    return ''
+  }
+
+  // Username validation: character limit
+  const validateUsername = (username: string): string => {
+    const maxLength = 20
+    if (!username) return 'Username is required'
+    if (username.length > maxLength) {
+      return `Username must not exceed ${maxLength} characters`
+    }
     return ''
   }
 
@@ -172,22 +193,49 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       return
     }
     
-    setFormData((prev) => ({ ...prev, [field]: value }))
+    // Filter out non-alphabetic characters for name fields and auto-capitalize
+    if (field === 'firstName' || field === 'lastName') {
+      // Only allow alphabetic characters (a-z, A-Z)
+      const filteredValue = value.replace(/[^a-zA-Z]/g, '')
+      // Auto-capitalize first letter
+      const capitalizedValue = filteredValue.charAt(0).toUpperCase() + filteredValue.slice(1).toLowerCase()
+      setFormData((prev) => ({ ...prev, [field]: capitalizedValue }))
+      
+      if (field === 'firstName') {
+        setFirstNameError(validateName(capitalizedValue, 'First Name'))
+      }
+      
+      if (field === 'lastName') {
+        if (capitalizedValue.trim()) {
+          setLastNameError(validateName(capitalizedValue, 'Last Name'))
+        } else {
+          setLastNameError('')
+        }
+      }
+      return
+    }
     
-    // Real-time username validation with debounce — only when there is actual text
+    // Limit username to 20 characters
     if (field === 'username') {
+      const maxLength = 20
+      const limitedValue = value.slice(0, maxLength)
+      setFormData((prev) => ({ ...prev, [field]: limitedValue }))
+      setUsernameError(validateUsername(limitedValue))
       if (usernameCheckTimeoutRef.current) {
         clearTimeout(usernameCheckTimeoutRef.current)
         usernameCheckTimeoutRef.current = null
       }
-      if (!value.trim()) {
+      if (!limitedValue.trim()) {
         setUsernameValidation({ isChecking: false, isAvailable: null, message: '' })
       } else {
         usernameCheckTimeoutRef.current = setTimeout(() => {
-          checkUsernameAvailability(value)
+          checkUsernameAvailability(limitedValue)
         }, 500)
       }
+      return
     }
+    
+    setFormData((prev) => ({ ...prev, [field]: value }))
 
     if (field === 'password') {
       setPasswordError(validatePassword(value))
@@ -198,8 +246,16 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     e.preventDefault()
     
     const pwdError = validatePassword(formData.password)
+    const fnError = validateName(formData.firstName, 'First Name')
+    const lnError = formData.lastName.trim() ? validateName(formData.lastName, 'Last Name') : ''
+    const unError = validateUsername(formData.username)
+    
     setPasswordError(pwdError)
-    if (pwdError) return
+    setFirstNameError(fnError)
+    setLastNameError(lnError)
+    setUsernameError(unError)
+    
+    if (pwdError || fnError || lnError || unError) return
 
     // Prevent submission if username is required but not available
     if (formData.username.trim() && usernameValidation.isAvailable === false) {
@@ -217,6 +273,9 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       setFormData(initialFormData)
       setShowPassword(false)
       setPasswordError('')
+      setFirstNameError('')
+      setLastNameError('')
+      setUsernameError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -238,6 +297,15 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       // Reset form on close
       setFormData(initialFormData)
       setShowPassword(false)
+      setPasswordError('')
+      setFirstNameError('')
+      setLastNameError('')
+      setUsernameError('')
+      setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
       onClose()
     }
   }
@@ -247,6 +315,9 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     setFormData(initialFormData)
     setShowPassword(false)
     setPasswordError('')
+    setFirstNameError('')
+    setLastNameError('')
+    setUsernameError('')
     setUsernameValidation({
       isChecking: false,
       isAvailable: null,
@@ -326,7 +397,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter Password (min 8 chars, letter, number, uppercase)"
+                  placeholder="Enter Password (min 8 chars with letter, number, uppercase)"
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   required
@@ -361,8 +432,13 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                 value={formData.firstName}
                 onChange={(e) => handleInputChange('firstName', e.target.value)}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                  firstNameError ? 'border-red-500' : 'border-gray-300'
+                }`}
               />
+              {firstNameError && (
+                <p className="mt-1 text-xs text-red-500">{firstNameError}</p>
+              )}
             </div>
 
             {/* Last Name */}
@@ -375,14 +451,24 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                 placeholder="Enter Last Name"
                 value={formData.lastName}
                 onChange={(e) => handleInputChange('lastName', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                  lastNameError ? 'border-red-500' : 'border-gray-300'
+                }`}
               />
+              {lastNameError && (
+                <p className="mt-1 text-xs text-red-500">{lastNameError}</p>
+              )}
             </div>
 
             {/* Username */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Username <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center justify-between">
+                <span>
+                  Username <span className="text-red-500">*</span>
+                </span>
+                <span className="text-xs text-gray-500 font-normal">
+                  {formData.username.length}/20 characters
+                </span>
               </label>
               <div className="relative">
                 <input
@@ -390,6 +476,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                   placeholder="Enter Username"
                   value={formData.username}
                   onChange={(e) => handleInputChange('username', e.target.value)}
+                  maxLength={20}
                   required
                   className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
                     formData.username.trim()
@@ -420,7 +507,10 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                   />
                 )}
               </div>
-              {formData.username.trim() && usernameValidation.message && (
+              {usernameError && (
+                <p className="mt-1 text-xs text-red-500">{usernameError}</p>
+              )}
+              {!usernameError && formData.username.trim() && usernameValidation.message && (
                 <p
                   className={`mt-1 text-xs ${
                     usernameValidation.isAvailable === false
@@ -518,6 +608,9 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               disabled={
                 isSubmitting ||
                 !!passwordError ||
+                !!firstNameError ||
+                !!lastNameError ||
+                !!usernameError ||
                 (!!formData.username.trim() && usernameValidation.isAvailable === false)
               }
             >

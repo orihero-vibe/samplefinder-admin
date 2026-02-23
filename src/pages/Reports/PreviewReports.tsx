@@ -3,10 +3,25 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { DashboardLayout, DownloadModal } from '../../components'
 import type { DownloadFormat } from '../../components'
-import { exportService, type ReportType } from '../../lib/exportService'
+import { exportService, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
 
 const REPORT_PAGE_SIZE = 50
+const REPORTS_DATE_RANGE_KEY = 'reports-date-range'
+
+function loadDateRangeFromStorage(): { start: Date | null; end: Date | null } {
+  try {
+    const raw = localStorage.getItem(REPORTS_DATE_RANGE_KEY)
+    if (!raw) return { start: null, end: null }
+    const parsed = JSON.parse(raw) as { start: string; end: string }
+    const start = parsed?.start ? new Date(parsed.start) : null
+    const end = parsed?.end ? new Date(parsed.end) : null
+    if ((start && isNaN(start.getTime())) || (end && isNaN(end.getTime()))) return { start: null, end: null }
+    return { start, end }
+  } catch {
+    return { start: null, end: null }
+  }
+}
 
 const PreviewReports = () => {
   const navigate = useNavigate()
@@ -20,16 +35,16 @@ const PreviewReports = () => {
   const [reportData, setReportData] = useState<{ columns: { header: string; key: string; getValue?: (row: Record<string, string | number>) => string | number }[]; rows: Record<string, string | number>[] } | null>(null)
   const { addNotification } = useNotificationStore()
 
-  // Date filter from Reports menu (passed via URL ?start=...&end=...)
+  // Date filter: URL params (from Reports) take precedence; else use last persisted range so filter is retained
   const dateRange = useMemo(() => {
     const startStr = searchParams.get('start')
     const endStr = searchParams.get('end')
-    const start = startStr ? new Date(startStr) : null
-    const end = endStr ? new Date(endStr) : null
-    if ((start && isNaN(start.getTime())) || (end && isNaN(end.getTime()))) {
-      return { start: null as Date | null, end: null as Date | null }
+    if (startStr && endStr) {
+      const start = new Date(startStr)
+      const end = new Date(endStr)
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) return { start, end }
     }
-    return { start, end }
+    return loadDateRangeFromStorage()
   }, [searchParams])
 
   // Map reportId to ReportType
@@ -67,13 +82,16 @@ const PreviewReports = () => {
         setIsLoading(true)
         setCurrentPage(1)
         const reportType = getReportType()
-        const useDateRange = (dateRange.start && dateRange.end) ? dateRange : undefined
+        const useDateRange = getEffectiveDateRange(dateRange)
         const data = await exportService.generateReportData(reportType, useDateRange)
         if (data?.columns?.length && data?.rows?.length) {
           const columnKeys = data.columns.map((c) => c.key)
+          const reportDefault = reportId ? defaultSortKeyByReport[reportId] : undefined
           const effectiveSortBy = columnKeys.includes(sortBy)
             ? sortBy
-            : columnKeys[0]
+            : (reportDefault && columnKeys.includes(reportDefault))
+              ? reportDefault
+              : columnKeys[0]
           const sortedRows = sortRowsByKey(data.rows, effectiveSortBy)
           setSortBy(effectiveSortBy)
           setReportData({ ...data, rows: sortedRows })
@@ -114,7 +132,7 @@ const PreviewReports = () => {
       const reportName = getReportName()
       const timestamp = new Date().toISOString().split('T')[0]
       const filename = `${reportName}_${timestamp}.${format}`
-      const useDateRange = (dateRange.start && dateRange.end) ? dateRange : undefined
+      const useDateRange = getEffectiveDateRange(dateRange)
 
       if (format === 'csv') {
         await exportService.exportReport(reportType, filename, useDateRange, sortBy)
@@ -145,6 +163,10 @@ const PreviewReports = () => {
 
   // Column keys that hold display dates (MM/DD/YYYY) and should be sorted chronologically
   const dateColumnKeys = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'signupDate'])
+  // Ensure Clients & Brands default sort key exists in that report's columns
+  const defaultSortKeyByReport: Record<string, string> = { '4': 'signupDate' }
+  // Numeric columns that should sort descending (e.g. points, counts) so higher values appear first
+  const descendingNumericKeys = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites'])
 
   const parseSortableDate = (value: string | number): number => {
     if (value === '' || value === undefined || value === null) return NaN
@@ -167,28 +189,40 @@ const PreviewReports = () => {
   ): Record<string, string | number>[] => {
     if (rows.length === 0) return rows
     const isDateColumn = dateColumnKeys.has(sortKey)
-    return [...rows].sort((a, b) => {
+    // Stable sort: compare by sortKey first, then by username, then by original index
+    const withIndex = rows.map((row, i) => ({ row, i }))
+    withIndex.sort(({ row: a, i: aIdx }, { row: b, i: bIdx }) => {
       const aValue = a[sortKey] ?? ''
       const bValue = b[sortKey] ?? ''
 
+      let cmp = 0
       if (isDateColumn) {
         const aTime = parseSortableDate(aValue as string)
         const bTime = parseSortableDate(bValue as string)
         const aEmpty = isNaN(aTime)
         const bEmpty = isNaN(bTime)
-        if (aEmpty && bEmpty) return 0
-        if (aEmpty) return 1
-        if (bEmpty) return -1
-        return aTime - bTime
+        if (aEmpty && bEmpty) cmp = 0
+        else if (aEmpty) cmp = 1
+        else if (bEmpty) cmp = -1
+        else cmp = aTime - bTime
+      } else {
+        const aNum = Number(aValue)
+        const bNum = Number(bValue)
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          // Points/counts columns: descending (high first); others: ascending
+          cmp = descendingNumericKeys.has(sortKey) ? bNum - aNum : aNum - bNum
+        } else {
+          cmp = String(aValue).localeCompare(String(bValue))
+        }
       }
-
-      const aNum = Number(aValue)
-      const bNum = Number(bValue)
-      if (!isNaN(aNum) && !isNaN(bNum)) {
-        return aNum - bNum
-      }
-      return String(aValue).localeCompare(String(bValue))
+      if (cmp !== 0) return cmp
+      const aUser = String(a.username ?? a.firstName ?? a[sortKey] ?? '')
+      const bUser = String(b.username ?? b.firstName ?? b[sortKey] ?? '')
+      const nameCmp = aUser.localeCompare(bUser)
+      if (nameCmp !== 0) return nameCmp
+      return aIdx - bIdx
     })
+    return withIndex.map(({ row }) => row)
   }
 
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -345,7 +379,7 @@ const PreviewReports = () => {
                                 key={col.key}
                                 className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
                               >
-                                {col.getValue ? col.getValue(row) : row[col.key] || ''}
+                                {col.getValue ? col.getValue(row) : (row[col.key] !== undefined && row[col.key] !== null ? String(row[col.key]) : '')}
                               </td>
                             ))}
                           </tr>

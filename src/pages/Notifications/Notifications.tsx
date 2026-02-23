@@ -245,13 +245,15 @@ const Notifications = () => {
   const handleSaveNotification = async (notificationData: NotificationFormData) => {
     try {
       if (editingNotification) {
-        // Update existing notification
+        // Update existing notification (and send if "Send Immediately")
         await notificationsService.update(editingNotification.id, notificationData)
         
         addNotification({
           type: 'success',
           title: 'Notification Updated',
-          message: 'Notification has been updated successfully.',
+          message: notificationData.schedule === 'Send Immediately'
+            ? 'Notification has been sent successfully.'
+            : 'Notification has been updated successfully.',
         })
         
         setEditingNotification(null)

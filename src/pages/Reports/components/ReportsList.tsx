@@ -37,9 +37,9 @@ const ReportsList = ({
 
   const handlePreview = (reportId: string) => {
     const params = new URLSearchParams()
-    if (dateRange?.start && dateRange?.end) {
+    if (dateRange?.start) {
       params.set('start', dateRange.start.toISOString())
-      params.set('end', dateRange.end.toISOString())
+      params.set('end', (dateRange.end ?? dateRange.start).toISOString())
     }
     const query = params.toString()
     navigate(`/reports/preview/${reportId}${query ? `?${query}` : ''}`)

@@ -157,7 +157,9 @@ const DateFilterModal = ({
   }
 
   const handleSelect = () => {
-    onSelect(selectedStartDate, selectedEndDate)
+    // Single day: use same date for start and end so it applies
+    const end = selectedEndDate ?? selectedStartDate
+    onSelect(selectedStartDate, end)
     onClose()
   }
 

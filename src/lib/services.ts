@@ -209,6 +209,18 @@ export interface UserProfile extends Models.Document {
   [key: string]: unknown
 }
 
+/** Parse user favoriteIds (JSON string or array) to event ID array for counting favorites. */
+function parseFavoriteIds(favoriteIds?: string | string[]): string[] {
+  if (favoriteIds == null) return []
+  if (Array.isArray(favoriteIds)) return favoriteIds.filter((id): id is string => typeof id === 'string')
+  try {
+    const parsed = JSON.parse(favoriteIds as string)
+    return Array.isArray(parsed) ? parsed.filter((id: unknown): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 // User Profiles service
 export const userProfilesService = {
   create: (data: Record<string, unknown>) =>
@@ -335,49 +347,41 @@ export const clientsService = {
       const totalEvents = eventsResult.total
       const eventIds = events.map(e => e.$id)
       
-      if (eventIds.length === 0) {
-        return { totalEvents: 0, totalFavorites: 0, totalCheckIns: 0, totalPoints: 0 }
-      }
-      
-      // 2. Count reviews (check-ins) for these events and sum points
       let totalCheckIns = 0
       let totalPoints = 0
-      
-      // Query reviews for each event (batch in chunks to avoid query limits)
-      const chunkSize = 100
-      for (let i = 0; i < eventIds.length; i += chunkSize) {
-        const chunk = eventIds.slice(i, i + chunkSize)
-        const reviewsResult = await DatabaseService.list<ReviewDocument>(
-          appwriteConfig.collections.reviews,
-          [Query.equal('event', chunk), Query.limit(1000)]
-        )
-        totalCheckIns += reviewsResult.total
-        totalPoints += reviewsResult.documents.reduce((sum, r) => sum + (r.pointsEarned || 0), 0)
-      }
-      
-      // 3. Count favorites - query users who have these events in favoriteIds
-      let totalFavorites = 0
-      const usersResult = await DatabaseService.list<UserProfile>(
-        appwriteConfig.collections.userProfiles,
-        [Query.limit(1000)]
-      )
-      
-      for (const user of usersResult.documents) {
-        if (user.favoriteIds) {
-          try {
-            // favoriteIds is stored as JSON string array
-            const favoriteIds = typeof user.favoriteIds === 'string' 
-              ? JSON.parse(user.favoriteIds as string) 
-              : user.favoriteIds
-            if (Array.isArray(favoriteIds)) {
-              const hasClientEvent = favoriteIds.some((favId: string) => eventIds.includes(favId))
-              if (hasClientEvent) totalFavorites++
-            }
-          } catch {
-            // Skip if favoriteIds is not valid JSON
-          }
+      if (eventIds.length > 0) {
+        const chunkSize = 100
+        for (let i = 0; i < eventIds.length; i += chunkSize) {
+          const chunk = eventIds.slice(i, i + chunkSize)
+          const reviewsResult = await DatabaseService.list<ReviewDocument>(
+            appwriteConfig.collections.reviews,
+            [Query.equal('event', chunk), Query.limit(1000)]
+          )
+          totalCheckIns += reviewsResult.total
+          totalPoints += reviewsResult.documents.reduce((sum, r) => sum + (r.pointsEarned || 0), 0)
         }
       }
+
+      // 3. Count favorites from all users' favoriteIds arrays (paginate so we don't miss anyone)
+      let totalFavorites = 0
+      const userPageSize = 500
+      let userOffset = 0
+      let userChunk: UserProfile[]
+      do {
+        const usersResult = await DatabaseService.list<UserProfile>(
+          appwriteConfig.collections.userProfiles,
+          [Query.limit(userPageSize), Query.offset(userOffset)]
+        )
+        userChunk = usersResult.documents ?? []
+        const eventIdSet = new Set(eventIds)
+        for (const user of userChunk) {
+          const ids = parseFavoriteIds(user.favoriteIds)
+          for (const favId of ids) {
+            if (eventIdSet.has(favId) || favId === clientId) totalFavorites++
+          }
+        }
+        userOffset += userPageSize
+      } while (userChunk.length === userPageSize)
       
       return { totalEvents, totalFavorites, totalCheckIns, totalPoints }
     } catch (err) {
@@ -398,24 +402,26 @@ export const clientsService = {
     if (clientIds.length === 0) return statsMap
     
     try {
-      // 1. Get all events for all clients in one query
-      const eventsResult = await DatabaseService.list<EventDocument>(
-        appwriteConfig.collections.events,
-        [Query.equal('client', clientIds), Query.limit(5000)]
-      )
-      
-      // Group events by client ID
+      // 1. Get all events for all clients (chunk clientIds to stay under Appwrite's 100-value limit per query)
       const eventsByClient = new Map<string, EventDocument[]>()
       const allEventIds: string[] = []
-      
-      for (const event of eventsResult.documents) {
-        const clientId = event.client as string
-        if (clientId) {
-          if (!eventsByClient.has(clientId)) {
-            eventsByClient.set(clientId, [])
+      const CLIENT_IDS_CHUNK = 100
+
+      for (let i = 0; i < clientIds.length; i += CLIENT_IDS_CHUNK) {
+        const chunk = clientIds.slice(i, i + CLIENT_IDS_CHUNK)
+        const eventsResult = await DatabaseService.list<EventDocument>(
+          appwriteConfig.collections.events,
+          [Query.equal('client', chunk), Query.limit(5000)]
+        )
+        for (const event of eventsResult.documents) {
+          const clientId = event.client as string
+          if (clientId) {
+            if (!eventsByClient.has(clientId)) {
+              eventsByClient.set(clientId, [])
+            }
+            eventsByClient.get(clientId)!.push(event)
+            allEventIds.push(event.$id)
           }
-          eventsByClient.get(clientId)!.push(event)
-          allEventIds.push(event.$id)
         }
       }
       
@@ -441,44 +447,45 @@ export const clientsService = {
         }
       }
       
-      // 3. Get all users for favorite counting
-      const usersResult = await DatabaseService.list<UserProfile>(
-        appwriteConfig.collections.userProfiles,
-        [Query.limit(5000)]
-      )
-      
+      // 3. Fetch ALL users in pages so we don't miss anyone (favorites count from favoriteIds)
+      const allUsers: UserProfile[] = []
+      const USER_PAGE_SIZE = 500
+      let userOffset = 0
+      let userChunk: UserProfile[]
+      do {
+        const userResult = await DatabaseService.list<UserProfile>(
+          appwriteConfig.collections.userProfiles,
+          [Query.limit(USER_PAGE_SIZE), Query.offset(userOffset)]
+        )
+        userChunk = userResult.documents ?? []
+        allUsers.push(...userChunk)
+        userOffset += USER_PAGE_SIZE
+      } while (userChunk.length === USER_PAGE_SIZE)
+
       // 4. Compute stats for each client
       for (const clientId of clientIds) {
         const clientEvents = eventsByClient.get(clientId) || []
         const clientEventIds = clientEvents.map(e => e.$id)
-        
+
         let totalCheckIns = 0
         let totalPoints = 0
-        
+
         for (const eventId of clientEventIds) {
           const eventReviews = reviewsByEvent.get(eventId) || []
           totalCheckIns += eventReviews.length
           totalPoints += eventReviews.reduce((sum, r) => sum + (r.pointsEarned || 0), 0)
         }
-        
-        // Count favorites
+
+        // Favorites count from users' favoriteIds: event IDs that belong to this client, or the client ID itself
         let totalFavorites = 0
-        for (const user of usersResult.documents) {
-          if (user.favoriteIds) {
-            try {
-              const favoriteIds = typeof user.favoriteIds === 'string'
-                ? JSON.parse(user.favoriteIds as string)
-                : user.favoriteIds
-              if (Array.isArray(favoriteIds)) {
-                const hasClientEvent = favoriteIds.some((favId: string) => clientEventIds.includes(favId))
-                if (hasClientEvent) totalFavorites++
-              }
-            } catch {
-              // Skip invalid JSON
-            }
+        const clientEventIdSet = new Set(clientEventIds)
+        for (const user of allUsers) {
+          const ids = parseFavoriteIds(user.favoriteIds)
+          for (const favId of ids) {
+            if (clientEventIdSet.has(favId) || favId === clientId) totalFavorites++
           }
         }
-        
+
         statsMap.set(clientId, {
           totalEvents: clientEvents.length,
           totalFavorites,
@@ -1335,7 +1342,7 @@ export const notificationsService = {
   list: (queries?: string[]) =>
     DatabaseService.list<NotificationDocument>(appwriteConfig.collections.notifications, queries),
 
-  update: (id: string, data: Partial<NotificationFormData>) => {
+  update: async (id: string, data: Partial<NotificationFormData>): Promise<NotificationDocument> => {
     // Only include actual database fields
     const dbData: Record<string, unknown> = {
       title: data.title,
@@ -1357,11 +1364,23 @@ export const notificationsService = {
       dbData.status = 'Draft'
     }
 
-    return DatabaseService.update<NotificationDocument>(
+    const updated = await DatabaseService.update<NotificationDocument>(
       appwriteConfig.collections.notifications,
       id,
       dbData
     )
+
+    // If publishing (Send Immediately), trigger the send function after updating the document
+    if (data.schedule === 'Send Immediately') {
+      try {
+        await notificationsService.sendNotification(id)
+      } catch (error) {
+        console.error('Error sending notification:', error)
+        throw error
+      }
+    }
+
+    return updated
   },
 
   delete: (id: string) =>

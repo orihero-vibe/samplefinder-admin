@@ -1,8 +1,23 @@
-import { eventsService, clientsService, appUsersService, categoriesService } from './services'
-import type { EventDocument, ClientDocument, AppUser } from './services'
+import { eventsService, clientsService, appUsersService, categoriesService, reviewsService, triviaService, triviaResponsesService } from './services'
+import type { EventDocument, ClientDocument, AppUser, TriviaDocument, TriviaResponseDocument } from './services'
 import { Query } from './appwrite'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+
+/**
+ * Normalize date range for filtering: single date => that full day; range => start through end of end day.
+ * Future dates are allowed. Returns undefined when no start date.
+ */
+export function getEffectiveDateRange(
+  dateRange: { start: Date | null; end: Date | null } | undefined
+): { start: Date; end: Date } | undefined {
+  if (!dateRange?.start) return undefined
+  const start = new Date(dateRange.start)
+  start.setHours(0, 0, 0, 0)
+  const end = dateRange.end ? new Date(dateRange.end) : new Date(dateRange.start)
+  end.setHours(23, 59, 59, 999)
+  return { start, end }
+}
 
 // Report type definitions matching the requirements from the image
 export type ReportType = 
@@ -166,6 +181,8 @@ const wrapTextForPdf = (text: string, maxCharsPerLine = 35): string => {
 
 // Column keys that hold display dates (MM/DD/YYYY) for sort order in exports
 const SORT_DATE_COLUMN_KEYS = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'signupDate'])
+// Numeric columns that sort descending in export so order matches Preview Reports UI
+const SORT_DESCENDING_NUMERIC_KEYS = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites'])
 
 const parseSortableDate = (value: string | number): number => {
   if (value === '' || value === undefined || value === null) return NaN
@@ -181,49 +198,180 @@ const parseSortableDate = (value: string | number): number => {
   return isNaN(d.getTime()) ? NaN : d.getTime()
 }
 
+/**
+ * Sort rows for export so PDF/CSV match the Preview Reports sort (same key, direction, and tie-break).
+ */
 function sortReportRows(
   rows: Record<string, string | number>[],
   sortKey: string
 ): Record<string, string | number>[] {
   if (rows.length === 0) return rows
   const isDateColumn = SORT_DATE_COLUMN_KEYS.has(sortKey)
-  return [...rows].sort((a, b) => {
+  const descendingNumeric = SORT_DESCENDING_NUMERIC_KEYS.has(sortKey)
+  const withIndex = rows.map((row, i) => ({ row, i }))
+  withIndex.sort(({ row: a, i: aIdx }, { row: b, i: bIdx }) => {
     const aValue = a[sortKey] ?? ''
     const bValue = b[sortKey] ?? ''
+    let cmp = 0
     if (isDateColumn) {
       const aTime = parseSortableDate(aValue as string)
       const bTime = parseSortableDate(bValue as string)
       const aEmpty = isNaN(aTime)
       const bEmpty = isNaN(bTime)
-      if (aEmpty && bEmpty) return 0
-      if (aEmpty) return 1
-      if (bEmpty) return -1
-      return aTime - bTime
+      if (aEmpty && bEmpty) cmp = 0
+      else if (aEmpty) cmp = 1
+      else if (bEmpty) cmp = -1
+      else cmp = aTime - bTime
+    } else {
+      const aNum = Number(aValue)
+      const bNum = Number(bValue)
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        cmp = descendingNumeric ? bNum - aNum : aNum - bNum
+      } else {
+        cmp = String(aValue).localeCompare(String(bValue))
+      }
     }
-    const aNum = Number(aValue)
-    const bNum = Number(bValue)
-    if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum
-    return String(aValue).localeCompare(String(bValue))
+    if (cmp !== 0) return cmp
+    const aUser = String(a.username ?? a.firstName ?? a[sortKey] ?? '')
+    const bUser = String(b.username ?? b.firstName ?? b[sortKey] ?? '')
+    const nameCmp = aUser.localeCompare(bUser)
+    return nameCmp !== 0 ? nameCmp : aIdx - bIdx
   })
+  return withIndex.map(({ row }) => row)
 }
 
 // Appwrite listDocuments returns max 25 by default. Fetch all users in pages for report consistency.
 const REPORT_USERS_PAGE_SIZE = 100
+const REPORT_LIST_PAGE_SIZE = 100
+const REPORT_REVIEWS_PAGE_SIZE = 500
+const EVENT_IDS_BATCH_SIZE = 25
 
-async function fetchAllAppUsers(): Promise<AppUser[]> {
+/**
+ * Check-in/Review Pts = sum of (event check-in points + review points) per user.
+ * For each review: add event.checkInPoints + review.pointsEarned to that user's total.
+ * When dateRange is provided, only reviews with $createdAt within the range are included.
+ */
+async function fetchCheckInReviewPointsByUser(
+  dateRange?: { start: Date | null; end: Date | null }
+): Promise<Map<string, number>> {
+  const userTotals = new Map<string, number>()
+  const reviewRows: { user?: string; event?: string; pointsEarned?: number }[] = []
+  let offset = 0
+  let docs: { user?: string; event?: string; pointsEarned?: number }[] = []
+
+  do {
+    const queries: string[] = [
+      Query.limit(REPORT_REVIEWS_PAGE_SIZE),
+      Query.offset(offset),
+    ]
+    if (dateRange?.start) {
+      queries.push(Query.greaterThanEqual('$createdAt', dateRange.start.toISOString()))
+    }
+    if (dateRange?.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999)
+      queries.push(Query.lessThanEqual('$createdAt', endDate.toISOString()))
+    }
+    const result = await reviewsService.list(queries) as { documents: { user?: string; event?: string; pointsEarned?: number }[] }
+    docs = result.documents ?? []
+    reviewRows.push(...docs)
+    offset += REPORT_REVIEWS_PAGE_SIZE
+  } while (docs.length === REPORT_REVIEWS_PAGE_SIZE)
+
+  const eventIds = [...new Set(reviewRows.map((r) => r.event).filter(Boolean))] as string[]
+  const eventPointsMap = new Map<string, number>()
+
+  for (let i = 0; i < eventIds.length; i += EVENT_IDS_BATCH_SIZE) {
+    const chunk = eventIds.slice(i, i + EVENT_IDS_BATCH_SIZE)
+    const eventsResult = await eventsService.list([Query.equal('$id', chunk)]) as { documents: EventDocument[] }
+    const events = eventsResult.documents ?? []
+    for (const event of events) {
+      const pts = (event.checkInPoints as number) ?? 0
+      eventPointsMap.set(event.$id, pts)
+    }
+  }
+
+  for (const r of reviewRows) {
+    const userId = r.user
+    if (!userId) continue
+    const eventPts = (r.event ? eventPointsMap.get(r.event) : undefined) ?? 0
+    const reviewPts = (typeof r.pointsEarned === 'number' ? r.pointsEarned : 0) ?? 0
+    const add = eventPts + reviewPts
+    userTotals.set(userId, (userTotals.get(userId) ?? 0) + add)
+  }
+
+  return userTotals
+}
+
+async function fetchAllAppUsers(
+  dateRange?: { start: Date | null; end: Date | null }
+): Promise<AppUser[]> {
   const all: AppUser[] = []
   let offset = 0
   let chunk: AppUser[]
   do {
-    chunk = await appUsersService.list([
+    const queries: string[] = [
       Query.orderDesc('$createdAt'),
       Query.limit(REPORT_USERS_PAGE_SIZE),
       Query.offset(offset),
-    ])
+    ]
+    if (dateRange?.start) {
+      queries.push(Query.greaterThanEqual('$createdAt', dateRange.start.toISOString()))
+    }
+    if (dateRange?.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999)
+      queries.push(Query.lessThanEqual('$createdAt', endDate.toISOString()))
+    }
+    chunk = await appUsersService.list(queries)
     all.push(...chunk)
     offset += REPORT_USERS_PAGE_SIZE
   } while (chunk.length === REPORT_USERS_PAGE_SIZE)
   return all
+}
+
+/** Build a map of user ID -> count of trivia wins (correct answers). Fetches all trivia and responses in batches. */
+async function fetchTriviasWonCountByUser(): Promise<Map<string, number>> {
+  const correctIndexByTriviaId = new Map<string, number>()
+  let offset = 0
+  let chunk: TriviaDocument[]
+  do {
+    const listResult = await triviaService.list([
+      Query.limit(REPORT_LIST_PAGE_SIZE),
+      Query.offset(offset),
+    ]) as { documents: TriviaDocument[] }
+    chunk = listResult.documents
+    for (const t of chunk) {
+      if (t.$id != null && t.correctOptionIndex != null) {
+        correctIndexByTriviaId.set(t.$id, t.correctOptionIndex)
+      }
+    }
+    offset += REPORT_LIST_PAGE_SIZE
+  } while (chunk.length === REPORT_LIST_PAGE_SIZE)
+
+  const countByUserId = new Map<string, number>()
+  offset = 0
+  let responseChunk: TriviaResponseDocument[]
+  do {
+    const listResult = await triviaResponsesService.list([
+      Query.limit(REPORT_LIST_PAGE_SIZE),
+      Query.offset(offset),
+    ]) as { documents: TriviaResponseDocument[] }
+    responseChunk = listResult.documents ?? []
+    for (const r of responseChunk) {
+      const tid = typeof r.trivia === 'string' ? r.trivia : (r.trivia as unknown as { $id?: string })?.$id
+      const uid = typeof r.user === 'string' ? r.user : (r.user as unknown as { $id?: string })?.$id
+      if (!uid || !tid) continue
+      const correctIndex = correctIndexByTriviaId.get(tid)
+      if (correctIndex === undefined) continue
+      if (r.answerIndex === correctIndex) {
+        countByUserId.set(uid, (countByUserId.get(uid) ?? 0) + 1)
+      }
+    }
+    offset += REPORT_LIST_PAGE_SIZE
+  } while (responseChunk.length === REPORT_LIST_PAGE_SIZE)
+
+  return countByUserId
 }
 
 // Export Service
@@ -241,17 +389,17 @@ export const exportService = {
         return await this.generateDashboardReport(dateRange)
       
       case 'event-list':
-        return await this.generateEventListReport()
+        return await this.generateEventListReport(dateRange)
       
       case 'clients-brands':
-        return await this.generateClientsBrandsReport()
+        return await this.generateClientsBrandsReport(dateRange)
       
       case 'app-users':
-        return await this.generateAppUsersReport()
+        return await this.generateAppUsersReport(dateRange)
       
       case 'points-earned-all':
-        return await this.generatePointsEarnedReport()
-      
+        return await this.generatePointsEarnedReport(dateRange)
+
       default:
         throw new Error(`Unknown report type: ${reportType}`)
     }
@@ -323,13 +471,24 @@ export const exportService = {
   },
 
   /**
-   * Generate Event List report
+   * Generate Event List report.
+   * When dateRange is provided, filters events by event date (single day or range; future dates allowed).
    */
-  async generateEventListReport(): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+  async generateEventListReport(
+    dateRange?: { start: Date | null; end: Date | null }
+  ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const queries: string[] = [
       Query.equal('isArchived', false),
       Query.orderDesc('date'),
     ]
+    if (dateRange?.start) {
+      queries.push(Query.greaterThanEqual('date', dateRange.start.toISOString()))
+    }
+    if (dateRange?.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999)
+      queries.push(Query.lessThanEqual('date', endDate.toISOString()))
+    }
 
     const eventsResult = await eventsService.list(queries)
     
@@ -406,18 +565,41 @@ export const exportService = {
   },
 
   /**
-   * Generate Clients & Brands report
+   * Generate Clients & Brands report.
+   * When dateRange is provided, filters clients by signup date ($createdAt).
+   * # of Favorites = count of users who have any of the client's events in their favorites.
    */
-  async generateClientsBrandsReport(): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
-    const clientsResult = await clientsService.list([Query.orderDesc('$createdAt')])
-    
-    const rows = clientsResult.documents.map((client: ClientDocument) => {
+  async generateClientsBrandsReport(
+    dateRange?: { start: Date | null; end: Date | null }
+  ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+    const queries: string[] = [Query.orderDesc('$createdAt')]
+    if (dateRange?.start) {
+      queries.push(Query.greaterThanEqual('$createdAt', dateRange.start.toISOString()))
+    }
+    if (dateRange?.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999)
+      queries.push(Query.lessThanEqual('$createdAt', endDate.toISOString()))
+    }
+
+    const clientsResult = await clientsService.list(queries)
+    const documents = (clientsResult?.documents ?? []) as ClientDocument[]
+    const clientIds = documents.map((c) => (c as { $id?: string }).$id).filter((id): id is string => !!id)
+
+    const statsMap = clientIds.length > 0
+      ? await clientsService.getClientsStats(clientIds)
+      : new Map<string, { totalEvents: number; totalFavorites: number; totalCheckIns: number; totalPoints: number }>()
+
+    const rows = documents.map((client: ClientDocument) => {
+      const clientId = (client as { $id?: string }).$id
+      const stats = clientId ? statsMap.get(clientId) : undefined
+      const totalFavorites = stats?.totalFavorites ?? 0
       return {
         name: client.name || '',
         logoFile: client.logoURL ? 'Yes' : 'No',
         signupDate: formatDate(client.$createdAt),
         productType: formatProducts(client.productType),
-        favorites: '0', // TODO: Implement favorites count from events/user favorites
+        favorites: String(totalFavorites),
       }
     })
 
@@ -428,15 +610,22 @@ export const exportService = {
   },
 
   /**
-   * Generate App Users report
-   * Fetches all users (paginated) so report total matches actual user count.
+   * Generate App Users report.
+   * When dateRange is provided, filters users by sign-up date ($createdAt); single day or range; future dates allowed.
    */
-  async generateAppUsersReport(): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
-    const usersResult = await fetchAllAppUsers()
+  async generateAppUsersReport(
+    dateRange?: { start: Date | null; end: Date | null }
+  ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+    const [usersResult, checkInReviewPointsByUser, triviasWonByUser] = await Promise.all([
+      fetchAllAppUsers(dateRange),
+      fetchCheckInReviewPointsByUser(), // all-time check-in pts + review pts per user
+      fetchTriviasWonCountByUser(),
+    ])
 
     const rows = usersResult.map((user: AppUser) => {
       const userRecord = user as Record<string, unknown>
-      
+      const userId = (user as { $id?: string }).$id
+
       // Map user_profiles fields to report columns
       // totalPoints = total points earned by user
       // totalReviews = number of reviews submitted
@@ -448,9 +637,14 @@ export const exportService = {
       const totalEvents = (userRecord.totalEvents as number) ?? (userRecord.checkIns as number) ?? 0
       const isAmbassador = (userRecord.isAmbassador as boolean) ?? (userRecord.baBadge as boolean) ?? false
       const isInfluencer = (userRecord.isInfluencer as boolean) ?? (userRecord.influencerBadge as boolean) ?? false
-      const checkInReviewPoints = (userRecord.checkInReviewPoints as number) ?? 0
-      const triviasWon = (userRecord.triviasWon as number) ?? 0
-      
+      // Check-in/Review Pts = sum of (event check-in points + review points) per user
+      const checkInReviewPoints =
+        (userId ? checkInReviewPointsByUser.get(userId) : undefined) ??
+        (userRecord.checkInReviewPoints as number) ??
+        0
+      // Trivias Won = actual count from trivia_responses (correct answers), fallback to stored value
+      const triviasWon = (userId ? triviasWonByUser.get(userId) : undefined) ?? (userRecord.triviasWon as number) ?? 0
+
       // Determine tier level based on totalPoints if not explicitly set
       let tierLevel = (userRecord.tierLevel as string) || ''
       if (!tierLevel && totalPoints > 0) {
@@ -460,7 +654,7 @@ export const exportService = {
       } else if (!tierLevel) {
         tierLevel = 'NewbieSampler'
       }
-      
+
       return {
         firstName: user.firstName || '',
         lastName: user.lastName || '',
@@ -490,17 +684,29 @@ export const exportService = {
   /**
    * Generate Points Earned report
    * Fetches all users (paginated) so report total matches actual user count.
+   * Check-in/Review Pts = events points + reviews points (check-in points from events + pointsEarned from reviews).
+   * When dateRange is provided, only points from reviews created within the range are included.
    */
-  async generatePointsEarnedReport(): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
-    const usersResult = await fetchAllAppUsers()
+  async generatePointsEarnedReport(
+    dateRange?: { start: Date | null; end: Date | null }
+  ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+    const [usersResult, checkInReviewPointsByUser] = await Promise.all([
+      fetchAllAppUsers(),
+      fetchCheckInReviewPointsByUser(dateRange),
+    ])
 
     const rows = usersResult.map((user: AppUser) => {
       const userRecord = user as Record<string, unknown>
-      
+      const userId = (user as { $id?: string }).$id
+
       // Map user_profiles fields - totalPoints is the main field for user points
       const totalPoints = (userRecord.totalPoints as number) ?? (userRecord.userPoints as number) ?? 0
-      const checkInReviewPoints = (userRecord.checkInReviewPoints as number) ?? 0
-      
+      // Check-in/Review Pts = sum of (event checkInPoints + review pointsEarned) for each of the user's reviews
+      const checkInReviewPoints =
+        (userId ? checkInReviewPointsByUser.get(userId) : undefined) ??
+        (userRecord.checkInReviewPoints as number) ??
+        0
+
       return {
         firstName: user.firstName || '',
         lastName: user.lastName || '',
@@ -510,12 +716,17 @@ export const exportService = {
       }
     })
 
-    // Sort by userPoints on the client side (descending order)
-    rows.sort((a, b) => {
+    // Sort by userPoints descending; stable tie-break by username then index
+    const withIndex = rows.map((row, i) => ({ row, i }))
+    withIndex.sort(({ row: a, i: aIdx }, { row: b, i: bIdx }) => {
       const aPoints = parseInt(a.userPoints as string) || 0
       const bPoints = parseInt(b.userPoints as string) || 0
-      return bPoints - aPoints
+      if (bPoints !== aPoints) return bPoints - aPoints
+      const nameCmp = String(a.username ?? '').localeCompare(String(b.username ?? ''))
+      return nameCmp !== 0 ? nameCmp : aIdx - bIdx
     })
+    rows.length = 0
+    rows.push(...withIndex.map(({ row }) => row))
 
     return {
       columns: pointsEarnedColumns,
@@ -524,17 +735,14 @@ export const exportService = {
   },
 
   /**
-   * Export data to CSV format
+   * Export data to CSV format.
+   * @param sortLabel - If provided, prepends a comment line "Sorted by: {sortLabel}" so the file documents sort order.
    */
-  exportToCSV(columns: ReportColumn[], rows: Record<string, string | number>[]): string {
-    // Create CSV header
+  exportToCSV(columns: ReportColumn[], rows: Record<string, string | number>[], sortLabel?: string): string {
     const header = columns.map(col => col.header).join(',')
-    
-    // Create CSV rows
     const csvRows = rows.map(row => {
       return columns.map(col => {
         const value = col.getValue ? col.getValue(row) : row[col.key]
-        // Escape quotes and wrap in quotes if contains comma or quotes
         const stringValue = String(value ?? '')
         if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
           return `"${stringValue.replace(/"/g, '""')}"`
@@ -542,8 +750,11 @@ export const exportService = {
         return stringValue
       }).join(',')
     })
-    
-    return [header, ...csvRows].join('\n')
+    const body = [header, ...csvRows].join('\n')
+    if (sortLabel) {
+      return `# Sorted by: ${sortLabel}\n${body}`
+    }
+    return body
   },
 
   /**
@@ -579,8 +790,8 @@ export const exportService = {
       const columnKeys = new Set(columns.map((c) => c.key))
       const effectiveSortKey = sortKey && columnKeys.has(sortKey) ? sortKey : columns[0]?.key
       const sortedRows = effectiveSortKey ? sortReportRows(rows, effectiveSortKey) : rows
-
-      const csvContent = this.exportToCSV(columns, sortedRows)
+      const sortLabel = effectiveSortKey ? (columns.find(c => c.key === effectiveSortKey)?.header ?? effectiveSortKey) : undefined
+      const csvContent = this.exportToCSV(columns, sortedRows, sortLabel)
       this.downloadCSV(filename, csvContent)
     } catch (error) {
       console.error('Error exporting report:', error)
@@ -603,9 +814,11 @@ export const exportService = {
       const effectiveSortKey = sortKey && columnKeys.has(sortKey) ? sortKey : columns[0]?.key
       const sortedRows = effectiveSortKey ? sortReportRows(rows, effectiveSortKey) : rows
 
-      // Create PDF document
+      // Use landscape when 5+ columns so all columns fit on page without being cut off
+      const colCount = columns.length
+      const useLandscape = colCount >= 5
       const doc = new jsPDF({
-        orientation: columns.length > 8 ? 'landscape' : 'portrait',
+        orientation: useLandscape ? 'landscape' : 'portrait',
         unit: 'mm',
         format: 'a4',
       })
@@ -620,13 +833,18 @@ export const exportService = {
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
       doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22)
-      
-      // Add date range if applicable
+      let startY = 28
       if (dateRange && (dateRange.start || dateRange.end)) {
         const rangeText = `Date Range: ${dateRange.start ? formatDate(dateRange.start.toISOString()) : 'N/A'} - ${dateRange.end ? formatDate(dateRange.end.toISOString()) : 'N/A'}`
         doc.text(rangeText, 14, 28)
+        startY = 32
       }
-      
+      if (effectiveSortKey) {
+        const sortHeader = columns.find(c => c.key === effectiveSortKey)?.header ?? effectiveSortKey
+        doc.text(`Sorted by: ${sortHeader}`, 14, startY)
+        startY += 6
+      }
+
       // Prepare table data (use sorted rows); wrap long cell text so PDF does not crop
       const headers = columns.map(col => col.header)
       const tableRows = sortedRows.map(row =>
@@ -636,28 +854,30 @@ export const exportService = {
         })
       )
       
-      // Table width and column widths: explicit widths so text wraps instead of cropping
+      // Table width and column widths: explicit widths so all columns fit on page and text wraps
       const pageWidth = doc.internal.pageSize.getWidth ? doc.internal.pageSize.getWidth() : doc.internal.pageSize.width
-      const marginLeft = 14
-      const marginRight = 14
-      const tableWidth = pageWidth - marginLeft - marginRight
-      const colCount = headers.length
-      const colWidth = tableWidth / colCount
+      const marginLeft = 10
+      const marginRight = 10
+      const tableWidth = Math.min(pageWidth - marginLeft - marginRight, pageWidth * 0.98)
+      const numCols = headers.length
+      const colWidth = tableWidth / numCols
       const columnStyles: Record<string, { cellWidth: number; overflow: 'linebreak' }> = {}
-      for (let i = 0; i < colCount; i++) {
+      for (let i = 0; i < numCols; i++) {
         columnStyles[String(i)] = { cellWidth: colWidth, overflow: 'linebreak' }
       }
+      // Smaller font when many columns so all columns remain visible
+      const tableFontSize = numCols > 8 ? 6 : 7
 
       autoTable(doc, {
         head: [headers],
         body: tableRows,
-        startY: dateRange && (dateRange.start || dateRange.end) ? 32 : 28,
+        startY,
         theme: 'grid',
         tableWidth,
         margin: { left: marginLeft, right: marginRight },
         columnStyles,
         styles: {
-          fontSize: 7,
+          fontSize: tableFontSize,
           cellPadding: 2,
           overflow: 'linebreak',
         },
