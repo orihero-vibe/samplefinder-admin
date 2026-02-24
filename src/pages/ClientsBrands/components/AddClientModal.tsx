@@ -307,8 +307,10 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
               value={formData.description}
               onChange={(e) => handleInputChange('description', e.target.value)}
               rows={4}
+              maxLength={300}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent resize-none"
             />
+            <p className="text-xs text-gray-500 mt-1">This description will be shown in the Favorites section.</p>
           </div>
 
           {/* Product Type Multi-select */}
