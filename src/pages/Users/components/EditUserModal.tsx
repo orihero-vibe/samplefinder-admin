@@ -303,6 +303,14 @@ const EditUserModal = ({
       setFormData((prev) => ({ ...prev, [field]: formatted }))
       return
     }
+
+    // First/Last name: alphabets only, auto-capitalize
+    if (field === 'firstName' || field === 'lastName') {
+      const filtered = value.replace(/[^a-zA-Z]/g, '')
+      const capitalized = filtered.charAt(0).toUpperCase() + filtered.slice(1).toLowerCase()
+      setFormData((prev) => ({ ...prev, [field]: capitalized }))
+      return
+    }
     
     // Only allow numbers for specific fields
     if (['userPoints', 'checkIns', 'reviews', 'triviasWon', 'checkInReviewPoints'].includes(field)) {

@@ -40,6 +40,14 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
   if (!isOpen) return null
 
   const handleInputChange = (field: string, value: string) => {
+    // First/Last name: alphabets only, auto-capitalize
+    if (field === 'firstName' || field === 'lastName') {
+      const filtered = value.replace(/[^a-zA-Z]/g, '')
+      const capitalized = filtered.charAt(0).toUpperCase() + filtered.slice(1).toLowerCase()
+      setFormData((prev) => ({ ...prev, [field]: capitalized }))
+      return
+    }
+
     setFormData((prev) => ({ ...prev, [field]: value }))
     
     if (field === 'password') {

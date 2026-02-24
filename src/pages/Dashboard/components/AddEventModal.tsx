@@ -544,21 +544,6 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             </div>
           </div>
 
-          {/* Brand Description */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Brand Description
-            </label>
-            <textarea
-              placeholder="Enter brand description (products, services, etc.)"
-              value={formData.brandDescription}
-              onChange={(e) => handleInputChange('brandDescription', e.target.value)}
-              rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent resize-none"
-            />
-            <p className="text-xs text-gray-500 mt-1">This description will be shown in the Favorites section.</p>
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {/* Check in Code */}
             <div>

@@ -19,6 +19,21 @@ export function getEffectiveDateRange(
   return { start, end }
 }
 
+/**
+ * Returns the current month as a date range (first day 00:00:00 through last day 23:59:59).
+ * Used as the default range for Reports when nothing is selected.
+ */
+export function getCurrentMonthRange(): { start: Date; end: Date } {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  const start = new Date(year, month, 1)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(year, month + 1, 0)
+  end.setHours(23, 59, 59, 999)
+  return { start, end }
+}
+
 // Report type definitions matching the requirements from the image
 export type ReportType = 
   | 'dashboard-all'
@@ -119,6 +134,28 @@ const formatDate = (dateStr?: string): string => {
   const day = String(date.getDate()).padStart(2, '0')
   const year = date.getFullYear()
   return `${month}/${day}/${year}`
+}
+
+/**
+ * Format a date-only string (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss...) as MM/DD/YYYY using local calendar date.
+ * Avoids UTC-midnight parsing so DOB and other date-only values display and sort correctly in all timezones.
+ */
+const formatDateOnly = (dateStr?: string): string => {
+  if (!dateStr) return ''
+  const match = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (match) {
+    const [, y, m, d] = match
+    const year = parseInt(y!, 10)
+    const month = parseInt(m!, 10) - 1
+    const day = parseInt(d!, 10)
+    const date = new Date(year, month, day)
+    if (isNaN(date.getTime())) return ''
+    const monthStr = String(date.getMonth() + 1).padStart(2, '0')
+    const dayStr = String(date.getDate()).padStart(2, '0')
+    const yearStr = String(date.getFullYear())
+    return `${monthStr}/${dayStr}/${yearStr}`
+  }
+  return formatDate(dateStr)
 }
 
 // Helper function to format date for CSV upload (YYYY-MM-DD)
@@ -660,7 +697,7 @@ export const exportService = {
         lastName: user.lastName || '',
         username: (userRecord.username as string) || '',
         email: user.email || '',
-        dob: formatDate(userRecord.dob as string | undefined),
+        dob: formatDateOnly(userRecord.dob as string | undefined),
         signUpDate: formatDate(user.$createdAt),
         lastLoginDate: formatDate(user.lastLoginDate),
         referralCode: (userRecord.referralCode as string) || '',

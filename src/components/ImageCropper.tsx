@@ -21,6 +21,10 @@ interface Area {
   height: number
 }
 
+const MIN_ZOOM = 0.1
+const MAX_ZOOM = 3
+const ZOOM_STEP = 0.1
+
 const ImageCropper = ({
   image,
   onCropComplete,
@@ -81,20 +85,23 @@ const ImageCropper = ({
       ctx.fillRect(0, 0, canvas.width, canvas.height)
     }
 
-    // Draw the cropped image
-    ctx.drawImage(
-      image,
-      pixelCrop.x,
-      pixelCrop.y,
-      pixelCrop.width,
-      pixelCrop.height,
-      0,
-      0,
-      pixelCrop.width,
-      pixelCrop.height
-    )
+    // When zoomed out, pixelCrop can extend beyond image bounds (negative x/y
+    // or width/height larger than the image). Compute the intersection between
+    // the crop rectangle and the actual image so drawImage only reads valid pixels.
+    const sx = Math.max(0, pixelCrop.x)
+    const sy = Math.max(0, pixelCrop.y)
+    const sx2 = Math.min(image.naturalWidth, pixelCrop.x + pixelCrop.width)
+    const sy2 = Math.min(image.naturalHeight, pixelCrop.y + pixelCrop.height)
+    const sWidth = sx2 - sx
+    const sHeight = sy2 - sy
 
-    // Return as blob - use PNG format for PNG images to preserve transparency
+    const dx = sx - pixelCrop.x
+    const dy = sy - pixelCrop.y
+
+    if (sWidth > 0 && sHeight > 0) {
+      ctx.drawImage(image, sx, sy, sWidth, sHeight, dx, dy, sWidth, sHeight)
+    }
+
     return new Promise((resolve, reject) => {
       const outputFormat = isPng ? 'image/png' : 'image/jpeg'
       const quality = isPng ? undefined : 0.95
@@ -135,7 +142,9 @@ const ImageCropper = ({
           <div>
             <h2 className="text-xl font-bold text-gray-900">Crop Image</h2>
             <p className="text-sm text-gray-600 mt-1">
-              Adjust the image to fit a 1:1 square ratio
+              {aspectRatio === 1
+                ? 'Adjust the image to fit a 1:1 square ratio'
+                : `Adjust the image to fit a ${aspectRatio}:1 wide ratio`}
             </p>
           </div>
           <button
@@ -157,7 +166,10 @@ const ImageCropper = ({
             image={image}
             crop={crop}
             zoom={zoom}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
             aspect={aspectRatio}
+            restrictPosition={false}
             onCropChange={onCropChange}
             onZoomChange={onZoomChange}
             onCropComplete={onCropAreaComplete}
@@ -172,9 +184,9 @@ const ImageCropper = ({
             </label>
             <input
               type="range"
-              min={1}
-              max={3}
-              step={0.1}
+              min={MIN_ZOOM}
+              max={MAX_ZOOM}
+              step={ZOOM_STEP}
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"

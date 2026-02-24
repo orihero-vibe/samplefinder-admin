@@ -1496,6 +1496,8 @@ const Dashboard = () => {
         }}
         onSave={handleUpdateEvent}
         eventId={selectedEventDoc?.$id}
+        isArchived={selectedEventDoc?.isArchived === true}
+        isHidden={selectedEventDoc?.isHidden === true}
         onDuplicate={() => {
           // Close edit modal
           setIsEditModalOpen(false)

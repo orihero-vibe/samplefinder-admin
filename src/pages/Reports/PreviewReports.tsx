@@ -3,25 +3,13 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { DashboardLayout, DownloadModal } from '../../components'
 import type { DownloadFormat } from '../../components'
-import { exportService, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
+import { exportService, getCurrentMonthRange, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
 
 const REPORT_PAGE_SIZE = 50
-const REPORTS_DATE_RANGE_KEY = 'reports-date-range'
 
-function loadDateRangeFromStorage(): { start: Date | null; end: Date | null } {
-  try {
-    const raw = localStorage.getItem(REPORTS_DATE_RANGE_KEY)
-    if (!raw) return { start: null, end: null }
-    const parsed = JSON.parse(raw) as { start: string; end: string }
-    const start = parsed?.start ? new Date(parsed.start) : null
-    const end = parsed?.end ? new Date(parsed.end) : null
-    if ((start && isNaN(start.getTime())) || (end && isNaN(end.getTime()))) return { start: null, end: null }
-    return { start, end }
-  } catch {
-    return { start: null, end: null }
-  }
-}
+// Column keys that should wrap long text (e.g. Brand Description, Event Info) to avoid overflow
+const WRAP_COLUMN_KEYS = new Set(['brandDescription', 'eventInfo'])
 
 const PreviewReports = () => {
   const navigate = useNavigate()
@@ -35,7 +23,7 @@ const PreviewReports = () => {
   const [reportData, setReportData] = useState<{ columns: { header: string; key: string; getValue?: (row: Record<string, string | number>) => string | number }[]; rows: Record<string, string | number>[] } | null>(null)
   const { addNotification } = useNotificationStore()
 
-  // Date filter: URL params (from Reports) take precedence; else use last persisted range so filter is retained
+  // Date filter: URL params (from Reports) take precedence; else default to current month range
   const dateRange = useMemo(() => {
     const startStr = searchParams.get('start')
     const endStr = searchParams.get('end')
@@ -44,7 +32,7 @@ const PreviewReports = () => {
       const end = new Date(endStr)
       if (!isNaN(start.getTime()) && !isNaN(end.getTime())) return { start, end }
     }
-    return loadDateRangeFromStorage()
+    return getCurrentMonthRange()
   }, [searchParams])
 
   // Map reportId to ReportType
@@ -177,6 +165,13 @@ const PreviewReports = () => {
     if (mmddyy) {
       const [, month, day, year] = mmddyy
       const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10))
+      return isNaN(d.getTime()) ? NaN : d.getTime()
+    }
+    // Support YYYY-MM-DD (optionally with time) as local calendar date for consistent DOB sort
+    const yyyymmdd = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+    if (yyyymmdd) {
+      const [, year, month, day] = yyyymmdd
+      const d = new Date(parseInt(year!, 10), parseInt(month!, 10) - 1, parseInt(day!, 10))
       return isNaN(d.getTime()) ? NaN : d.getTime()
     }
     const d = new Date(str)
@@ -377,7 +372,11 @@ const PreviewReports = () => {
                             {reportData.columns.map((col) => (
                               <td
                                 key={col.key}
-                                className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
+                                className={
+                                  WRAP_COLUMN_KEYS.has(col.key)
+                                    ? 'px-6 py-4 min-w-0 max-w-[320px] whitespace-normal wrap-break-word text-sm text-gray-900'
+                                    : 'px-6 py-4 whitespace-nowrap text-sm text-gray-900'
+                                }
                               >
                                 {col.getValue ? col.getValue(row) : (row[col.key] !== undefined && row[col.key] !== null ? String(row[col.key]) : '')}
                               </td>
