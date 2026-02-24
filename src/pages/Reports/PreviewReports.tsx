@@ -9,6 +9,9 @@ import { useNotificationStore } from '../../stores/notificationStore'
 const REPORT_PAGE_SIZE = 50
 const REPORTS_DATE_RANGE_KEY = 'reports-date-range'
 
+// Column keys that should wrap long text (e.g. Brand Description, Event Info) to avoid overflow
+const WRAP_COLUMN_KEYS = new Set(['brandDescription', 'eventInfo'])
+
 function loadDateRangeFromStorage(): { start: Date | null; end: Date | null } {
   try {
     const raw = localStorage.getItem(REPORTS_DATE_RANGE_KEY)
@@ -377,7 +380,11 @@ const PreviewReports = () => {
                             {reportData.columns.map((col) => (
                               <td
                                 key={col.key}
-                                className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
+                                className={
+                                  WRAP_COLUMN_KEYS.has(col.key)
+                                    ? 'px-6 py-4 min-w-0 max-w-[320px] whitespace-normal wrap-break-word text-sm text-gray-900'
+                                    : 'px-6 py-4 whitespace-nowrap text-sm text-gray-900'
+                                }
                               >
                                 {col.getValue ? col.getValue(row) : (row[col.key] !== undefined && row[col.key] !== null ? String(row[col.key]) : '')}
                               </td>
