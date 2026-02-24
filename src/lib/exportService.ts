@@ -121,6 +121,7 @@ const pointsEarnedColumns: ReportColumn[] = [
   { header: 'First Name', key: 'firstName' },
   { header: 'Last Name', key: 'lastName' },
   { header: 'Username', key: 'username' },
+  { header: 'Tier Level', key: 'tierLevel' },
   { header: 'User Points', key: 'userPoints' },
   { header: 'Check-in/Review Pts', key: 'checkInReviewPoints' },
 ]
@@ -744,10 +745,21 @@ export const exportService = {
         (userRecord.checkInReviewPoints as number) ??
         0
 
+      // Tier Level from user_profiles; fallback from totalPoints if not set
+      let tierLevel = (userRecord.tierLevel as string) || ''
+      if (!tierLevel && totalPoints > 0) {
+        if (totalPoints >= 1000) tierLevel = 'ProSampler'
+        else if (totalPoints >= 500) tierLevel = 'Sampler'
+        else tierLevel = 'NewbieSampler'
+      } else if (!tierLevel) {
+        tierLevel = 'NewbieSampler'
+      }
+
       return {
         firstName: user.firstName || '',
         lastName: user.lastName || '',
         username: (userRecord.username as string) || '',
+        tierLevel,
         userPoints: totalPoints.toString(),
         checkInReviewPoints: checkInReviewPoints.toString(),
       }
