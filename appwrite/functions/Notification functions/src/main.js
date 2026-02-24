@@ -38,38 +38,34 @@ async function getTargetUsers(databases, targetAudience, log) {
     }
 }
 /**
- * Send push notification using Appwrite Messaging
- * This uses the Appwrite Messaging API to send push notifications
- * to users via configured providers (FCM, APNS, etc.)
+ * Send push notification using Appwrite Messaging.
+ * Uses the object API and sends one push per user to avoid known multi-user delivery issues.
+ * users: array of Appwrite Auth user IDs (each user must have a push target registered).
  */
 async function sendPushNotificationToUsers(messaging, userIds, title, body, log, data) {
-    try {
-        log(`Sending push notification to ${userIds.length} users: "${title}"`);
-        // Create and send push notification using Appwrite Messaging
-        // Parameters: messageId, title, body, topics, users, targets, data, action, image, icon, sound, color, tag, badge, draft, scheduledAt
-        const result = await messaging.createPush(ID.unique(), // messageId
-        title, // title
-        body, // body
-        [], // topics (optional - empty array)
-        userIds, // users - Send to specific users by their auth IDs
-        [], // targets (optional - empty array)
-        data || {}, // data - Custom data payload
-        undefined, // action (optional)
-        undefined, // image (optional)
-        undefined, // icon (optional)
-        undefined, // sound (optional)
-        undefined, // color (optional)
-        undefined, // tag (optional)
-        undefined, // badge (optional)
-        false);
-        log(`Push notification created with ID: ${result.$id}, status: ${result.status}`);
-        return result;
+    if (userIds.length === 0) {
+        log('No user IDs provided for push');
+        return { $id: null, status: 'skipped', sentCount: 0 };
     }
-    catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        log(`Error sending push notification: ${errorMessage}`);
-        throw new Error(`Failed to send push notification: ${errorMessage}`);
+    const payload = data ?? {};
+    let lastResult = null;
+    let sentCount = 0;
+    for (const userId of userIds) {
+        try {
+            const result = await messaging.createPush(ID.unique(), title, body, [], [userId], [], payload, undefined, undefined, undefined, undefined, undefined, undefined, undefined, false);
+            lastResult = result;
+            sentCount += 1;
+            log(`Push created for user ${userId}: messageId=${result.$id}, status=${result.status}`);
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log(`Failed to send push to user ${userId}: ${errorMessage}`);
+        }
     }
+    log(`Push notification summary: ${sentCount}/${userIds.length} users, last messageId: ${lastResult?.$id}, status: ${lastResult?.status}`);
+    return lastResult
+        ? { ...lastResult, sentCount }
+        : { $id: null, status: 'failed', sentCount: 0 };
 }
 /**
  * Send notification to all target users using Appwrite Messaging
@@ -123,19 +119,20 @@ async function sendNotification(databases, messaging, notificationId, log) {
             notificationId: notification.$id,
             type: notification.type,
         });
-        log(`Push result: ID=${pushResult.$id}, status=${pushResult.status}`);
+        const recipientCount = pushResult.sentCount ?? userAuthIds.length;
+        log(`Push result: ID=${pushResult.$id}, status=${pushResult.status}, sentCount=${recipientCount}`);
         // Update notification status
         const now = new Date().toISOString();
         await databases.updateDocument(DATABASE_ID, NOTIFICATIONS_TABLE_ID, notificationId, {
             status: 'Sent',
             sentAt: now,
-            recipients: userAuthIds.length,
+            recipients: recipientCount,
         });
-        log(`Notification sent successfully. Recipients: ${userAuthIds.length}, Message ID: ${pushResult.$id}`);
+        log(`Notification sent successfully. Recipients: ${recipientCount}, Message ID: ${pushResult.$id}`);
         return {
             success: true,
-            recipients: userAuthIds.length,
-            messageId: pushResult.$id,
+            recipients: recipientCount,
+            messageId: pushResult.$id ?? undefined,
         };
     }
     catch (error) {
@@ -333,59 +330,6 @@ export default async function handler({ req, res, log, error }) {
             return res.json({
                 ...result,
             });
-        }
-        // Handle send system push to single user (e.g. badge earned)
-        if (req.path === '/send-system-push' && req.method === 'POST') {
-            log('Processing send-system-push request');
-            let body;
-            try {
-                if (!req.body || typeof req.body !== 'object') {
-                    throw new Error('Request body is required');
-                }
-                const b = req.body;
-                if (!b.userId || typeof b.userId !== 'string') {
-                    throw new Error('userId is required and must be a string');
-                }
-                if (!b.templateId || typeof b.templateId !== 'string') {
-                    throw new Error('templateId is required and must be a string');
-                }
-                body = { userId: b.userId, templateId: b.templateId };
-            }
-            catch (validationError) {
-                const msg = validationError instanceof Error ? validationError.message : String(validationError);
-                error(`Validation error: ${msg}`);
-                return res.json({ success: false, error: msg }, 400);
-            }
-            const SYSTEM_TEMPLATES = {
-                brand_ambassador_badge: {
-                    title: 'BRAND AMBASSADOR BADGE EARNED!',
-                    body: "Congratulations, you're an official SampleFinder Brand Ambassador!",
-                },
-                influencer_badge: {
-                    title: "INFLUENCER BADGE EARNED!",
-                    body: "Congratulations on earning your SampleFinder Influencer badge!",
-                },
-            };
-            const template = SYSTEM_TEMPLATES[body.templateId];
-            if (!template) {
-                error(`Unknown templateId: ${body.templateId}`);
-                return res.json({ success: false, error: `Unknown templateId. Valid: ${Object.keys(SYSTEM_TEMPLATES).join(', ')}` }, 400);
-            }
-            try {
-                const userDoc = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, body.userId);
-                if (!userDoc.authID) {
-                    error('User has no authID');
-                    return res.json({ success: false, error: 'User has no auth ID for push' }, 400);
-                }
-                await sendPushNotificationToUsers(messaging, [userDoc.authID], template.title, template.body, log, { templateId: body.templateId, type: 'System' });
-                log(`System push sent to user ${body.userId}: ${body.templateId}`);
-                return res.json({ success: true, templateId: body.templateId });
-            }
-            catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                error(`Error sending system push: ${msg}`);
-                return res.json({ success: false, error: msg }, 500);
-            }
         }
         // Handle check event reminders endpoint (for scheduled execution)
         if (req.path === '/check-event-reminders' || req.method === 'GET') {

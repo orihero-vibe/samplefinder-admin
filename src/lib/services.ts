@@ -1294,14 +1294,29 @@ export interface NotificationFormData {
   scheduledTime?: string // Time string (HH:mm)
 }
 
+const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = ['Event Reminder', 'Promotional', 'Engagement']
+const VALID_TARGET_AUDIENCES: Array<NotificationFormData['targetAudience']> = ['All', 'Targeted', 'Specific Segment']
+
+/** Normalize type and targetAudience to valid enum values for form display and API payloads. */
+export function normalizeNotificationFormData(doc: { type?: string; targetAudience?: string }): { type: NotificationFormData['type']; targetAudience: NotificationFormData['targetAudience'] } {
+  const type: NotificationFormData['type'] = (doc.type && VALID_NOTIFICATION_TYPES.includes(doc.type as NotificationFormData['type'])) ? (doc.type as NotificationFormData['type']) : 'Event Reminder'
+  const targetAudience: NotificationFormData['targetAudience'] = (doc.targetAudience && VALID_TARGET_AUDIENCES.includes(doc.targetAudience as NotificationFormData['targetAudience'])) ? (doc.targetAudience as NotificationFormData['targetAudience']) : 'All'
+  return { type, targetAudience }
+}
+
+function normalizeNotificationPayload(data: Partial<NotificationFormData>): { type: NotificationFormData['type']; targetAudience: NotificationFormData['targetAudience'] } {
+  return normalizeNotificationFormData(data)
+}
+
 // Notifications service
 export const notificationsService = {
   create: async (data: NotificationFormData): Promise<NotificationDocument> => {
+    const { type, targetAudience } = normalizeNotificationPayload(data)
     const dbData: Record<string, unknown> = {
       title: data.title,
       message: data.message,
-      type: data.type,
-      targetAudience: data.targetAudience,
+      type,
+      targetAudience,
       // Always start with 'Draft' status - function will update to 'Sent' after sending
       status: data.schedule === 'Schedule for Later' ? 'Scheduled' : 'Draft',
       recipients: 0, // Will be updated when notification is sent
@@ -1343,12 +1358,13 @@ export const notificationsService = {
     DatabaseService.list<NotificationDocument>(appwriteConfig.collections.notifications, queries),
 
   update: async (id: string, data: Partial<NotificationFormData>): Promise<NotificationDocument> => {
+    const { type, targetAudience } = normalizeNotificationPayload(data)
     // Only include actual database fields
     const dbData: Record<string, unknown> = {
       title: data.title,
       message: data.message,
-      type: data.type,
-      targetAudience: data.targetAudience,
+      type,
+      targetAudience,
     }
     
     // Handle scheduling updates
@@ -1462,8 +1478,8 @@ export const notificationsService = {
     }
   },
 
-  // Send system push notification to a specific user
-  sendSystemPush: async (userId: string, notificationType: string): Promise<void> => {
+  // Send system push notification to a specific user (templateId matches SYSTEM_TEMPLATES keys in Notification function)
+  sendSystemPush: async (userId: string, templateId: string): Promise<void> => {
     try {
       if (!appwriteConfig.functions.notificationFunctionId) {
         throw new Error('Notification function ID is not configured')
@@ -1473,7 +1489,7 @@ export const notificationsService = {
         functionId: appwriteConfig.functions.notificationFunctionId,
         xpath: '/send-system-push',
         method: ExecutionMethod.POST,
-        body: JSON.stringify({ userId, notificationType }),
+        body: JSON.stringify({ userId, templateId }),
         headers: {
           'Content-Type': 'application/json',
         },

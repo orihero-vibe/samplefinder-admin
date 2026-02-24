@@ -286,10 +286,11 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
           {/* Client Name Input */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Client Name
+              Client Name <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
+              required
               placeholder="Enter Client Name"
               value={formData.clientName}
               onChange={(e) => handleInputChange('clientName', e.target.value)}
@@ -366,6 +367,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
               type="submit"
               disabled={
                 isSubmitting ||
+                !formData.clientName.trim() ||
                 formData.productTypes.length === 0
               }
               className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"

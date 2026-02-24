@@ -43,15 +43,24 @@ const defaultFormData: NotificationFormData = {
   scheduledTime: '',
 }
 
-// Validation constants
+// App Push templates for manual send only. Automatic notifications (Welcome on signup, Trivia Tuesday,
+// Sampling Today from savedEventIds, New Sampling Event Near You from favorite brands) are sent by the system.
+const APP_PUSH_TEMPLATES: Array<{ id: string; label: string; title: string; body: string }> = [
+  { id: '', label: 'No template', title: '', body: '' },
+  { id: 'monthly_winner_first', label: 'Monthly Winner: First Place', title: 'MONTHLY WINNER: FIRST PLACE!', body: 'Congratulations, you scored the most points of all SampleFinder users this month! Our team will be in touch with prize details!' },
+  { id: 'monthly_winner_second', label: 'Monthly Winner: Second Place', title: 'MONTHLY WINNER: SECOND PLACE!', body: 'Congratulations, you scored the most points of all SampleFinder check-ins and reviews this month! Our team will be in touch with prize details!' },
+  { id: 'monthly_winner_promo_loot', label: 'Monthly Winner: Promo Loot Crate', title: 'MONTHLY WINNER: PROMO LOOT CRATE!', body: "Congratulations, you're the lucky winner of our promo loot crate! Our team will be in touch with prize details!" },
+]
+
+// Validation constants (stricter limits for cross-platform push: iOS ~50 title/150 body, Android ~65/240)
 const VALIDATION_RULES = {
   title: {
     minLength: 3,
-    maxLength: 100,
+    maxLength: 50,
   },
   message: {
     minLength: 3,
-    maxLength: 500,
+    maxLength: 150,
   },
 }
 
@@ -68,6 +77,8 @@ const CreateNotificationModal = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
+  const [segment, setSegment] = useState<string>('All segments')
+  const [selectedAppTemplateId, setSelectedAppTemplateId] = useState<string>('')
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
 
@@ -83,6 +94,8 @@ const CreateNotificationModal = ({
       }
       setValidationErrors({})
       setTouchedFields(new Set())
+      setSegment('All segments')
+      setSelectedAppTemplateId('')
     }
   }, [initialData, isOpen])
 
@@ -363,7 +376,7 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters
+                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters (iOS ~50, Android ~65 for title)
                 </p>
               </div>
 
@@ -391,7 +404,7 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters
+                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters (iOS ~150, Android ~240 for body)
                 </p>
               </div>
 
@@ -403,17 +416,52 @@ const CreateNotificationModal = ({
                 <div className="relative">
                   <select
                     value={formData.type}
-                    onChange={(e) => handleInputChange('type', e.target.value as 'Event Reminder')}
+                    onChange={(e) => handleInputChange('type', e.target.value as 'Event Reminder' | 'Promotional' | 'Engagement')}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
-                    disabled
                   >
                     <option value="Event Reminder">Event Reminder</option>
+                    <option value="Promotional">Promotional</option>
+                    <option value="Engagement">Engagement</option>
                   </select>
                   <Icon
                     icon="mdi:chevron-down"
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
                   />
                 </div>
+              </div>
+
+              {/* App Push template picker */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Template (optional)
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedAppTemplateId}
+                    onChange={(e) => {
+                      const id = e.target.value
+                      setSelectedAppTemplateId(id)
+                      const t = APP_PUSH_TEMPLATES.find((x) => x.id === id)
+                      if (t && t.title) {
+                        setFormData((prev) => ({ ...prev, title: t.title, message: t.body }))
+                      }
+                    }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
+                  >
+                    {APP_PUSH_TEMPLATES.map((t) => (
+                      <option key={t.id || 'none'} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Icon
+                    icon="mdi:chevron-down"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Prefills title and message. You can edit placeholders (e.g. Store Name, Time, Brand) after selecting.
+                </p>
               </div>
             </div>
           </div>
@@ -426,7 +474,7 @@ const CreateNotificationModal = ({
               </div>
               <h3 className="text-lg font-semibold text-gray-900">Audience</h3>
             </div>
-            <div className="ml-11">
+            <div className="ml-11 space-y-4">
               {/* Target Audience */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -448,6 +496,30 @@ const CreateNotificationModal = ({
                   />
                 </div>
               </div>
+              {/* Segment selector when Targeted or Specific Segment (placeholder until segment list/source is defined) */}
+              {(formData.targetAudience === 'Targeted' || formData.targetAudience === 'Specific Segment') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Segment
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={segment}
+                      onChange={(e) => setSegment(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
+                    >
+                      <option value="All segments">All segments</option>
+                    </select>
+                    <Icon
+                      icon="mdi:chevron-down"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Filtering by segment will be applied when segment data is configured. Currently all users are included.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

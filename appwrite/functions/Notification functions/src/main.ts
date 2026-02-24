@@ -43,8 +43,9 @@ interface SavedEventData {
 }
 
 interface PushResult {
-  $id: string;
+  $id: string | null;
   status: string;
+  sentCount?: number;
   [key: string]: unknown;
 }
 
@@ -107,9 +108,9 @@ async function getTargetUsers(
 }
 
 /**
- * Send push notification using Appwrite Messaging
- * This uses the Appwrite Messaging API to send push notifications
- * to users via configured providers (FCM, APNS, etc.)
+ * Send push notification using Appwrite Messaging.
+ * Uses the object API and sends one push per user to avoid known multi-user delivery issues.
+ * users: array of Appwrite Auth user IDs (each user must have a push target registered).
  */
 async function sendPushNotificationToUsers(
   messaging: Messaging,
@@ -119,37 +120,44 @@ async function sendPushNotificationToUsers(
   log: (message: string) => void,
   data?: Record<string, string>
 ): Promise<PushResult> {
-  try {
-    log(`Sending push notification to ${userIds.length} users: "${title}"`);
-    
-    // Create and send push notification using Appwrite Messaging
-    // Parameters: messageId, title, body, topics, users, targets, data, action, image, icon, sound, color, tag, badge, draft, scheduledAt
-    const result = await messaging.createPush(
-      ID.unique(),           // messageId
-      title,                 // title
-      body,                  // body
-      [],                    // topics (optional - empty array)
-      userIds,               // users - Send to specific users by their auth IDs
-      [],                    // targets (optional - empty array)
-      data || {},            // data - Custom data payload
-      undefined,             // action (optional)
-      undefined,             // image (optional)
-      undefined,             // icon (optional)
-      undefined,             // sound (optional)
-      undefined,             // color (optional)
-      undefined,             // tag (optional)
-      undefined,             // badge (optional)
-      false,                 // draft - false to send immediately
-    );
-
-    log(`Push notification created with ID: ${result.$id}, status: ${result.status}`);
-    
-    return result as PushResult;
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log(`Error sending push notification: ${errorMessage}`);
-    throw new Error(`Failed to send push notification: ${errorMessage}`);
+  if (userIds.length === 0) {
+    log('No user IDs provided for push');
+    return { $id: null, status: 'skipped', sentCount: 0 };
   }
+  const payload = data ?? {};
+  let lastResult: PushResult | null = null;
+  let sentCount = 0;
+  for (const userId of userIds) {
+    try {
+      const result = await messaging.createPush(
+        ID.unique(),
+        title,
+        body,
+        [],
+        [userId],
+        [],
+        payload,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false
+      );
+      lastResult = result as PushResult;
+      sentCount += 1;
+      log(`Push created for user ${userId}: messageId=${result.$id}, status=${result.status}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`Failed to send push to user ${userId}: ${errorMessage}`);
+    }
+  }
+  log(`Push notification summary: ${sentCount}/${userIds.length} users, last messageId: ${lastResult?.$id}, status: ${lastResult?.status}`);
+  return lastResult
+    ? { ...lastResult, sentCount }
+    : { $id: null, status: 'failed', sentCount: 0 };
 }
 
 /**
@@ -237,7 +245,8 @@ async function sendNotification(
       }
     );
     
-    log(`Push result: ID=${pushResult.$id}, status=${pushResult.status}`);
+    const recipientCount = pushResult.sentCount ?? userAuthIds.length;
+    log(`Push result: ID=${pushResult.$id}, status=${pushResult.status}, sentCount=${recipientCount}`);
 
     // Update notification status
     const now = new Date().toISOString();
@@ -248,16 +257,16 @@ async function sendNotification(
       {
         status: 'Sent',
         sentAt: now,
-        recipients: userAuthIds.length,
+        recipients: recipientCount,
       }
     );
 
-    log(`Notification sent successfully. Recipients: ${userAuthIds.length}, Message ID: ${pushResult.$id}`);
+    log(`Notification sent successfully. Recipients: ${recipientCount}, Message ID: ${pushResult.$id}`);
 
     return {
       success: true,
-      recipients: userAuthIds.length,
-      messageId: pushResult.$id,
+      recipients: recipientCount,
+      messageId: pushResult.$id ?? undefined,
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);

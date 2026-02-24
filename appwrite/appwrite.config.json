@@ -392,6 +392,15 @@
                     "size": 100,
                     "default": "NewbieSampler",
                     "encrypt": false
+                },
+                {
+                    "key": "triviasWon",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 0,
+                    "max": 1000000000,
+                    "default": 0
                 }
             ],
             "indexes": []

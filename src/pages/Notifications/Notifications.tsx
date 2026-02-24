@@ -8,7 +8,7 @@ import {
   NotificationsTable,
   CreateNotificationModal,
 } from './components'
-import { statisticsService, notificationsService, type NotificationsStats, type NotificationDocument, type NotificationFormData } from '../../lib/services'
+import { statisticsService, notificationsService, normalizeNotificationFormData, type NotificationsStats, type NotificationDocument, type NotificationFormData } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { Query } from '../../lib/appwrite'
 
@@ -307,14 +307,16 @@ const Notifications = () => {
       } else if (fullNotification.status === 'Sent') {
         schedule = 'Send Immediately'
       }
-      
+
+      const { type, targetAudience } = normalizeNotificationFormData(fullNotification)
+
       setEditingNotification({
         id: notification.id,
         data: {
           title: fullNotification.title,
           message: fullNotification.message,
-          type: fullNotification.type,
-          targetAudience: fullNotification.targetAudience,
+          type,
+          targetAudience,
           schedule,
           scheduledAt,
           scheduledTime,
@@ -336,13 +338,14 @@ const Notifications = () => {
     try {
       // Fetch full notification document to get all fields including message
       const fullNotification = await notificationsService.getById(notification.id)
-      
+      const { type, targetAudience } = normalizeNotificationFormData(fullNotification)
+
       // Set duplicating data (not edit mode - will create a new notification)
       setDuplicatingData({
         title: fullNotification.title,
         message: fullNotification.message,
-        type: fullNotification.type,
-        targetAudience: fullNotification.targetAudience,
+        type,
+        targetAudience,
         schedule: 'Send Immediately', // Default to send immediately for duplicates
         scheduledAt: '',
         scheduledTime: '',
