@@ -3,28 +3,13 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { DashboardLayout, DownloadModal } from '../../components'
 import type { DownloadFormat } from '../../components'
-import { exportService, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
+import { exportService, getCurrentMonthRange, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
 
 const REPORT_PAGE_SIZE = 50
-const REPORTS_DATE_RANGE_KEY = 'reports-date-range'
 
 // Column keys that should wrap long text (e.g. Brand Description, Event Info) to avoid overflow
 const WRAP_COLUMN_KEYS = new Set(['brandDescription', 'eventInfo'])
-
-function loadDateRangeFromStorage(): { start: Date | null; end: Date | null } {
-  try {
-    const raw = localStorage.getItem(REPORTS_DATE_RANGE_KEY)
-    if (!raw) return { start: null, end: null }
-    const parsed = JSON.parse(raw) as { start: string; end: string }
-    const start = parsed?.start ? new Date(parsed.start) : null
-    const end = parsed?.end ? new Date(parsed.end) : null
-    if ((start && isNaN(start.getTime())) || (end && isNaN(end.getTime()))) return { start: null, end: null }
-    return { start, end }
-  } catch {
-    return { start: null, end: null }
-  }
-}
 
 const PreviewReports = () => {
   const navigate = useNavigate()
@@ -38,7 +23,7 @@ const PreviewReports = () => {
   const [reportData, setReportData] = useState<{ columns: { header: string; key: string; getValue?: (row: Record<string, string | number>) => string | number }[]; rows: Record<string, string | number>[] } | null>(null)
   const { addNotification } = useNotificationStore()
 
-  // Date filter: URL params (from Reports) take precedence; else use last persisted range so filter is retained
+  // Date filter: URL params (from Reports) take precedence; else default to current month range
   const dateRange = useMemo(() => {
     const startStr = searchParams.get('start')
     const endStr = searchParams.get('end')
@@ -47,7 +32,7 @@ const PreviewReports = () => {
       const end = new Date(endStr)
       if (!isNaN(start.getTime()) && !isNaN(end.getTime())) return { start, end }
     }
-    return loadDateRangeFromStorage()
+    return getCurrentMonthRange()
   }, [searchParams])
 
   // Map reportId to ReportType

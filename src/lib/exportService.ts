@@ -19,6 +19,21 @@ export function getEffectiveDateRange(
   return { start, end }
 }
 
+/**
+ * Returns the current month as a date range (first day 00:00:00 through last day 23:59:59).
+ * Used as the default range for Reports when nothing is selected.
+ */
+export function getCurrentMonthRange(): { start: Date; end: Date } {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  const start = new Date(year, month, 1)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(year, month + 1, 0)
+  end.setHours(23, 59, 59, 999)
+  return { start, end }
+}
+
 // Report type definitions matching the requirements from the image
 export type ReportType = 
   | 'dashboard-all'
