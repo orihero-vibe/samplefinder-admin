@@ -658,7 +658,7 @@ const Users = () => {
                 lastLogin: u.$updatedAt ? new Date(u.$updatedAt).toISOString().split('T')[0] : '',
                 referralCode: String(u.referralCode ?? ''),
                 reviews: String(u.totalReviews ?? u.reviews ?? '0'),
-                triviasWon: String(u.triviasWon ?? editModalTriviasWon ?? 0),
+                triviasWon: String(editModalTriviasWon ?? u.triviasWon ?? 0),
                 isBlocked: (u as { isBlocked?: boolean }).isBlocked || false,
               }
             : undefined
