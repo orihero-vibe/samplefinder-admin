@@ -136,6 +136,28 @@ const formatDate = (dateStr?: string): string => {
   return `${month}/${day}/${year}`
 }
 
+/**
+ * Format a date-only string (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss...) as MM/DD/YYYY using local calendar date.
+ * Avoids UTC-midnight parsing so DOB and other date-only values display and sort correctly in all timezones.
+ */
+const formatDateOnly = (dateStr?: string): string => {
+  if (!dateStr) return ''
+  const match = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (match) {
+    const [, y, m, d] = match
+    const year = parseInt(y!, 10)
+    const month = parseInt(m!, 10) - 1
+    const day = parseInt(d!, 10)
+    const date = new Date(year, month, day)
+    if (isNaN(date.getTime())) return ''
+    const monthStr = String(date.getMonth() + 1).padStart(2, '0')
+    const dayStr = String(date.getDate()).padStart(2, '0')
+    const yearStr = String(date.getFullYear())
+    return `${monthStr}/${dayStr}/${yearStr}`
+  }
+  return formatDate(dateStr)
+}
+
 // Helper function to format date for CSV upload (YYYY-MM-DD)
 const formatDateForUpload = (dateStr?: string): string => {
   if (!dateStr) return ''
@@ -675,7 +697,7 @@ export const exportService = {
         lastName: user.lastName || '',
         username: (userRecord.username as string) || '',
         email: user.email || '',
-        dob: formatDate(userRecord.dob as string | undefined),
+        dob: formatDateOnly(userRecord.dob as string | undefined),
         signUpDate: formatDate(user.$createdAt),
         lastLoginDate: formatDate(user.lastLoginDate),
         referralCode: (userRecord.referralCode as string) || '',

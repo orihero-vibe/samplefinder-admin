@@ -167,6 +167,13 @@ const PreviewReports = () => {
       const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10))
       return isNaN(d.getTime()) ? NaN : d.getTime()
     }
+    // Support YYYY-MM-DD (optionally with time) as local calendar date for consistent DOB sort
+    const yyyymmdd = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+    if (yyyymmdd) {
+      const [, year, month, day] = yyyymmdd
+      const d = new Date(parseInt(year!, 10), parseInt(month!, 10) - 1, parseInt(day!, 10))
+      return isNaN(d.getTime()) ? NaN : d.getTime()
+    }
     const d = new Date(str)
     return isNaN(d.getTime()) ? NaN : d.getTime()
   }
