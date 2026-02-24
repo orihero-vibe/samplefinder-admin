@@ -56,6 +56,8 @@ interface EditEventModalProps {
   eventId?: string // Event ID for uniqueness checking
   categories?: Category[]
   brands?: Brand[]
+  isArchived?: boolean
+  isHidden?: boolean
 }
 
 const EditEventModal = ({
@@ -70,6 +72,8 @@ const EditEventModal = ({
   eventId,
   categories = [],
   brands = [],
+  isArchived = false,
+  isHidden = false,
 }: EditEventModalProps) => {
   const { addNotification } = useNotificationStore()
   const [formData, setFormData] = useState({
@@ -921,8 +925,10 @@ const EditEventModal = ({
             {onShowArchiveConfirm && (
               <button
                 type="button"
-                onClick={onShowArchiveConfirm}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-semibold flex items-center gap-2"
+                disabled={isArchived}
+                onClick={isArchived ? undefined : onShowArchiveConfirm}
+                title={isArchived ? 'Event is already archived' : undefined}
+                className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-orange-500"
               >
                 <Icon icon="mdi:folder" className="w-5 h-5" />
                 Archive
@@ -931,8 +937,10 @@ const EditEventModal = ({
             {onShowHideConfirm && (
               <button
                 type="button"
-                onClick={onShowHideConfirm}
-                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center gap-2"
+                disabled={isArchived || isHidden}
+                onClick={isArchived || isHidden ? undefined : onShowHideConfirm}
+                title={isHidden ? 'Event is already hidden' : isArchived ? 'Event is already archived' : undefined}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-500"
               >
                 <Icon icon="mdi:eye-off" className="w-5 h-5" />
                 Hide
