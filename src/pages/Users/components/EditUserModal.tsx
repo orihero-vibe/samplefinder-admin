@@ -893,7 +893,7 @@ const EditUserModal = ({
                 />
               </div>
 
-              {/* Trivias Won (read-only: computed from trivia responses or stored value) */}
+              {/* Trivias Won (editable; synced with user profile) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Trivias Won <span className="text-red-500">*</span>
@@ -902,9 +902,9 @@ const EditUserModal = ({
                   type="text"
                   placeholder="Enter Trivias Won"
                   value={formData.triviasWon}
-                  disabled
-                  readOnly
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
+                  onChange={(e) => handleInputChange('triviasWon', e.target.value)}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
                 />
               </div>
             </div>

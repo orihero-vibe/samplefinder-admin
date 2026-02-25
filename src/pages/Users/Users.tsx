@@ -683,31 +683,35 @@ const Users = () => {
         }}
         initialData={(() => {
           const u = userForEdit ?? selectedUser
-          return u
-            ? {
-                image: u.avatarURL || null,
-                firstName: String(u.firstname ?? u.firstName ?? ''),
-                lastName: String(u.lastname ?? u.lastName ?? ''),
-                zipCode: String(u.zipCode ?? ''),
-                phoneNumber: String(u.phoneNumber ?? ''),
-                userPoints: String(u.totalPoints ?? u.userPoints ?? '0'),
-                baBadge: (u.isAmbassador ?? u.baBadge) ? 'Yes' : 'No',
-                signUpDate: u.$createdAt ? new Date(u.$createdAt).toISOString().split('T')[0] : '',
-                password: '**********',
-                checkIns: String(u.totalEvents ?? u.checkIns ?? '0'),
-                tierLevel: String(u.tierLevel ?? ''),
-                username: String(u.username ?? ''),
-                email: u.email,
-                checkInReviewPoints: String(u.checkInReviewPoints ?? '0'),
-                influencerBadge: (u.isInfluencer ?? u.influencerBadge) ? 'Yes' : 'No',
-                lastLogin: u.$updatedAt ? new Date(u.$updatedAt).toISOString().split('T')[0] : '',
-                referralCode: String(u.referralCode ?? ''),
-                reviews: String(u.totalReviews ?? u.reviews ?? '0'),
-                triviasWon: String(editModalTriviasWon ?? u.triviasWon ?? 0),
-                isBlocked: (u as { isBlocked?: boolean }).isBlocked || false,
-                dob: u.dob ? new Date(u.dob).toISOString().split('T')[0] : '',
-              }
-            : undefined
+          if (!u) return undefined
+          const profileTrivias =
+            u.triviasWon != null && !Number.isNaN(Number(u.triviasWon))
+              ? Number(u.triviasWon)
+              : null
+          const triviasWonDisplay = profileTrivias ?? editModalTriviasWon ?? 0
+          return {
+            image: u.avatarURL || null,
+            firstName: String(u.firstname ?? u.firstName ?? ''),
+            lastName: String(u.lastname ?? u.lastName ?? ''),
+            zipCode: String(u.zipCode ?? ''),
+            phoneNumber: String(u.phoneNumber ?? ''),
+            userPoints: String(u.totalPoints ?? u.userPoints ?? '0'),
+            baBadge: (u.isAmbassador ?? u.baBadge) ? 'Yes' : 'No',
+            signUpDate: u.$createdAt ? new Date(u.$createdAt).toISOString().split('T')[0] : '',
+            password: '**********',
+            checkIns: String(u.totalEvents ?? u.checkIns ?? '0'),
+            tierLevel: String(u.tierLevel ?? ''),
+            username: String(u.username ?? ''),
+            email: u.email,
+            checkInReviewPoints: String(u.checkInReviewPoints ?? '0'),
+            influencerBadge: (u.isInfluencer ?? u.influencerBadge) ? 'Yes' : 'No',
+            lastLogin: u.$updatedAt ? new Date(u.$updatedAt).toISOString().split('T')[0] : '',
+            referralCode: String(u.referralCode ?? ''),
+            reviews: String(u.totalReviews ?? u.reviews ?? '0'),
+            triviasWon: String(triviasWonDisplay),
+            isBlocked: (u as { isBlocked?: boolean }).isBlocked || false,
+            dob: u.dob ? new Date(u.dob).toISOString().split('T')[0] : '',
+          }
         })()}
       />
 
