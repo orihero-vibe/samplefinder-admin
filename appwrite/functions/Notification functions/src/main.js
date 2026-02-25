@@ -330,6 +330,41 @@ async function checkAndSendScheduledNotifications(databases, messaging, log) {
         throw error instanceof Error ? error : new Error(errorMessage);
     }
 }
+/**
+ * Archive events that completed more than 7 days ago (endTime < now - 7 days).
+ */
+async function archiveEventsCompletedOver7DaysAgo(databases, log) {
+    try {
+        const now = new Date();
+        const sevenDaysAgo = new Date(now);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+        log(`Checking for events to auto-archive (endTime < ${sevenDaysAgoISO})`);
+        const response = await databases.listDocuments(DATABASE_ID, EVENTS_TABLE_ID, [
+            Query.equal('isArchived', false),
+            Query.lessThan('endTime', sevenDaysAgoISO),
+        ]);
+        let archived = 0;
+        for (const doc of response.documents) {
+            try {
+                await databases.updateDocument(DATABASE_ID, EVENTS_TABLE_ID, doc.$id, { isArchived: true });
+                archived += 1;
+                log(`Archived event: ${doc.$id}`);
+            }
+            catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                log(`Failed to archive event ${doc.$id}: ${errMsg}`);
+            }
+        }
+        log(`Auto-archive complete. Archived: ${archived}`);
+        return { archived };
+    }
+    catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log(`Error auto-archiving events: ${errorMessage}`);
+        return { archived: 0 };
+    }
+}
 export default async function handler({ req, res, log, error }) {
     try {
         // Initialize Appwrite client
@@ -403,6 +438,9 @@ export default async function handler({ req, res, log, error }) {
             // 2. Check and send event reminders (24h / 1h)
             const remindersResult = await checkAndSendEventReminders(databases, messaging, log);
             log(`Event reminders: 24h=${remindersResult.reminders24h}, 1h=${remindersResult.reminders1h}`);
+            // 3. Auto-archive events that completed more than 7 days ago
+            const archiveResult = await archiveEventsCompletedOver7DaysAgo(databases, log);
+            log(`Auto-archive events: ${archiveResult.archived}`);
             return res.json({
                 success: true,
                 scheduledNotifications: {
@@ -412,6 +450,9 @@ export default async function handler({ req, res, log, error }) {
                 eventReminders: {
                     reminders24h: remindersResult.reminders24h,
                     reminders1h: remindersResult.reminders1h,
+                },
+                eventAutoArchive: {
+                    archived: archiveResult.archived,
                 },
             });
         }

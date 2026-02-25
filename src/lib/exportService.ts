@@ -201,6 +201,18 @@ const formatProducts = (products?: string[]): string => {
   return products.join(', ')
 }
 
+/**
+ * Normalize event products from API (array, comma-separated string, or alternate key).
+ * DB may store as string or array; ensures Products column has data in report rows.
+ */
+function normalizeEventProducts(event: EventDocument & Record<string, unknown>): string[] {
+  const raw = event.products ?? event['products']
+  if (raw == null) return []
+  if (Array.isArray(raw)) return raw.filter((p): p is string => typeof p === 'string').map((p) => p.trim()).filter(Boolean)
+  if (typeof raw === 'string') return (raw as string).split(',').map((p) => p.trim()).filter((p) => p.length > 0)
+  return [String(raw)]
+}
+
 // Wrap long text at word boundaries so PDF table cells don't crop (max chars per line)
 const wrapTextForPdf = (text: string, maxCharsPerLine = 35): string => {
   if (!text || text.length <= maxCharsPerLine) return text
@@ -457,26 +469,36 @@ export const exportService = {
   async generateDashboardReport(
     dateRange?: { start: Date | null; end: Date | null }
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
-    const queries: string[] = [
+    const baseQueries: string[] = [
       Query.equal('isArchived', false), // Only active events
       Query.orderDesc('date'),
     ]
 
     // Apply date range filter if provided
     if (dateRange?.start) {
-      queries.push(Query.greaterThanEqual('date', dateRange.start.toISOString()))
+      baseQueries.push(Query.greaterThanEqual('date', dateRange.start.toISOString()))
     }
     if (dateRange?.end) {
       const endDate = new Date(dateRange.end)
       endDate.setHours(23, 59, 59, 999)
-      queries.push(Query.lessThanEqual('date', endDate.toISOString()))
+      baseQueries.push(Query.lessThanEqual('date', endDate.toISOString()))
     }
 
-    const eventsResult = await eventsService.list(queries)
-    
-    // Map events to report rows
+    // Paginate to fetch all events in range (Appwrite default limit is 25)
+    const allDocuments: EventDocument[] = []
+    let offset = 0
+    let chunk: EventDocument[]
+    do {
+      const queries = [...baseQueries, Query.limit(REPORT_LIST_PAGE_SIZE), Query.offset(offset)]
+      const eventsResult = await eventsService.list(queries)
+      chunk = (eventsResult.documents ?? []) as EventDocument[]
+      allDocuments.push(...chunk)
+      offset += REPORT_LIST_PAGE_SIZE
+    } while (chunk.length === REPORT_LIST_PAGE_SIZE)
+
+    // Map events to report rows (Products column populated via normalizeEventProducts)
     const rows = await Promise.all(
-      eventsResult.documents.map(async (event: EventDocument) => {
+      allDocuments.map(async (event: EventDocument & Record<string, unknown>) => {
         let brandName = ''
         if (event.client) {
           try {
@@ -487,15 +509,7 @@ export const exportService = {
           }
         }
 
-        // Normalize products: DB may store array or comma-separated string (same as Event List / Dashboard UI)
-        const productsArray = Array.isArray(event.products)
-          ? event.products
-          : event.products
-            ? typeof event.products === 'string'
-              ? (event.products as string).split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
-              : [event.products as unknown as string]
-            : []
-
+        const productsArray = normalizeEventProducts(event)
         const hasDiscount = (event.discount != null && String(event.discount).trim() !== '') ||
           (event.discountImageURL != null && String(event.discountImageURL).trim() !== '')
         return {
@@ -955,7 +969,8 @@ export const exportService = {
   },
 
   /**
-   * Export report to CSV and download
+   * Export report to CSV and download.
+   * Exported data is sorted by effectiveSortKey (provided sortKey or first column) so order matches Preview.
    */
   async exportReport(
     reportType: ReportType,
@@ -978,7 +993,8 @@ export const exportService = {
   },
 
   /**
-   * Export report to PDF
+   * Export report to PDF.
+   * Exported data is sorted by effectiveSortKey (provided sortKey or first column) so order matches Preview.
    */
   async exportReportToPDF(
     reportType: ReportType,
