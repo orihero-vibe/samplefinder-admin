@@ -1280,6 +1280,7 @@ export interface NotificationDocument extends Models.Document {
   recipients?: number // Number of recipients
   openRate?: number // Percentage of users who opened
   clickRate?: number // Percentage of users who clicked
+  selectedUserIds?: string[] // Array of user IDs for targeted notifications
   [key: string]: unknown
 }
 
@@ -1292,6 +1293,7 @@ export interface NotificationFormData {
   schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring'
   scheduledAt?: string // ISO date string
   scheduledTime?: string // Time string (HH:mm)
+  selectedUserIds?: string[] // Array of user IDs for targeted notifications
 }
 
 const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = ['Event Reminder', 'Promotional', 'Engagement']
@@ -1320,6 +1322,11 @@ export const notificationsService = {
       // Always start with 'Draft' status - function will update to 'Sent' after sending
       status: data.schedule === 'Schedule for Later' ? 'Scheduled' : 'Draft',
       recipients: 0, // Will be updated when notification is sent
+    }
+
+    // Add selected user IDs if targeting specific users
+    if (data.selectedUserIds && data.selectedUserIds.length > 0) {
+      dbData.selectedUserIds = data.selectedUserIds
     }
 
     // Handle scheduling
@@ -1365,6 +1372,11 @@ export const notificationsService = {
       message: data.message,
       type,
       targetAudience,
+    }
+    
+    // Add selected user IDs if targeting specific users
+    if (data.selectedUserIds && data.selectedUserIds.length > 0) {
+      dbData.selectedUserIds = data.selectedUserIds
     }
     
     // Handle scheduling updates

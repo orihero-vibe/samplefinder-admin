@@ -184,19 +184,27 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
  * Get active trivia questions for a user
  * Returns trivia questions that are currently active and not yet answered by the user
  */
+/** Max documents to fetch in getActiveTrivia to stay within function timeout */
+const GET_ACTIVE_TRIVIA_LIMIT = 100;
+const GET_ACTIVE_TRIVIA_RESPONSES_LIMIT = 500;
 async function getActiveTrivia(databases, userId, log) {
     const now = new Date().toISOString();
-    // Get all currently active trivia (startDate <= now AND endDate >= now)
-    const activeTriviaResponse = await databases.listDocuments(DATABASE_ID, TRIVIA_TABLE_ID, [
-        Query.lessThanEqual('startDate', now),
-        Query.greaterThanEqual('endDate', now),
+    // Fetch active trivia and user's responses in parallel to minimize execution time
+    const [activeTriviaResponse, userResponsesResult] = await Promise.all([
+        databases.listDocuments(DATABASE_ID, TRIVIA_TABLE_ID, [
+            Query.lessThanEqual('startDate', now),
+            Query.greaterThanEqual('endDate', now),
+            Query.limit(GET_ACTIVE_TRIVIA_LIMIT),
+        ]),
+        databases.listDocuments(DATABASE_ID, TRIVIA_RESPONSES_TABLE_ID, [
+            Query.equal('user', userId),
+            Query.limit(GET_ACTIVE_TRIVIA_RESPONSES_LIMIT),
+        ]),
     ]);
     log(`Found ${activeTriviaResponse.total} active trivia questions`);
     if (activeTriviaResponse.total === 0) {
         return [];
     }
-    // Get all trivia responses for this user
-    const userResponsesResult = await databases.listDocuments(DATABASE_ID, TRIVIA_RESPONSES_TABLE_ID, [Query.equal('user', userId)]);
     // Create a set of trivia IDs that the user has already answered
     const answeredTriviaIds = new Set();
     for (const response of userResponsesResult.documents) {
@@ -207,13 +215,11 @@ async function getActiveTrivia(databases, userId, log) {
         }
     }
     log(`User has answered ${answeredTriviaIds.size} trivia questions`);
-    // Filter out trivia that the user has already answered or skipped
+    // Filter out trivia that the user has already answered
     // Also remove correctOptionIndex from the response for security
     const unansweredTrivia = [];
     for (const trivia of activeTriviaResponse.documents) {
-        const wasAnswered = answeredTriviaIds.has(trivia.$id);
-        const wasSkipped = (trivia.skippedUsers || []).includes(userId);
-        if (!wasAnswered && !wasSkipped) {
+        if (!answeredTriviaIds.has(trivia.$id)) {
             unansweredTrivia.push({
                 $id: trivia.$id,
                 question: trivia.question,

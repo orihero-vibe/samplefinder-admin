@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
-import type { NotificationFormData } from '../../../lib/services'
+import type { NotificationFormData, AppUser } from '../../../lib/services'
+import { appUsersService } from '../../../lib/services'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
 
@@ -41,6 +42,7 @@ const defaultFormData: NotificationFormData = {
   schedule: 'Send Immediately',
   scheduledAt: '',
   scheduledTime: '',
+  selectedUserIds: [],
 }
 
 // App Push templates for manual send only. Automatic notifications (Welcome on signup, Trivia Tuesday,
@@ -79,8 +81,46 @@ const CreateNotificationModal = ({
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
   const [segment, setSegment] = useState<string>('All segments')
   const [selectedAppTemplateId, setSelectedAppTemplateId] = useState<string>('')
+  const [users, setUsers] = useState<AppUser[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+  const [userSearchQuery, setUserSearchQuery] = useState('')
+  const [showUserDropdown, setShowUserDropdown] = useState(false)
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
+
+  // Fetch users when modal opens
+  useEffect(() => {
+    const fetchUsers = async () => {
+      setLoadingUsers(true)
+      try {
+        const usersList = await appUsersService.list()
+        setUsers(usersList)
+      } catch (error) {
+        console.error('Error fetching users:', error)
+      } finally {
+        setLoadingUsers(false)
+      }
+    }
+
+    if (isOpen) {
+      fetchUsers()
+    }
+  }, [isOpen])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (showUserDropdown && !target.closest('.user-dropdown-container')) {
+        setShowUserDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showUserDropdown])
 
   // Update form data when initialData changes (for edit mode)
   useEffect(() => {
@@ -96,6 +136,8 @@ const CreateNotificationModal = ({
       setTouchedFields(new Set())
       setSegment('All segments')
       setSelectedAppTemplateId('')
+      setUserSearchQuery('')
+      setShowUserDropdown(false)
     }
   }, [initialData, isOpen])
 
@@ -287,6 +329,35 @@ const CreateNotificationModal = ({
       form.requestSubmit()
     }
   }
+
+  const handleUserSelect = (userId: string) => {
+    setFormData((prev) => {
+      const selectedUserIds = prev.selectedUserIds || []
+      if (selectedUserIds.includes(userId)) {
+        return { ...prev, selectedUserIds: selectedUserIds.filter((id) => id !== userId) }
+      } else {
+        return { ...prev, selectedUserIds: [...selectedUserIds, userId] }
+      }
+    })
+  }
+
+  const handleRemoveUser = (userId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      selectedUserIds: (prev.selectedUserIds || []).filter((id) => id !== userId),
+    }))
+  }
+
+  const filteredUsers = users.filter((user) => {
+    if (!userSearchQuery) return true
+    const searchLower = userSearchQuery.toLowerCase()
+    return (
+      user.firstName?.toLowerCase().includes(searchLower) ||
+      user.lastName?.toLowerCase().includes(searchLower) ||
+      user.email?.toLowerCase().includes(searchLower) ||
+      user.username?.toLowerCase().includes(searchLower)
+    )
+  })
 
   return (
     <>
@@ -517,6 +588,108 @@ const CreateNotificationModal = ({
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
                     Filtering by segment will be applied when segment data is configured. Currently all users are included.
+                  </p>
+                </div>
+              )}
+
+              {/* User Selection for Targeted audience */}
+              {formData.targetAudience === 'Targeted' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Users
+                  </label>
+                  
+                  {/* Selected users display */}
+                  {formData.selectedUserIds && formData.selectedUserIds.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {formData.selectedUserIds.map((userId) => {
+                        const user = users.find((u) => u.$id === userId)
+                        if (!user) return null
+                        const displayName = user.firstName && user.lastName 
+                          ? `${user.firstName} ${user.lastName}` 
+                          : user.username || user.email || 'Unknown User'
+                        return (
+                          <div
+                            key={userId}
+                            className="inline-flex items-center gap-2 px-3 py-1 bg-[#1D0A74] text-white rounded-full text-sm"
+                          >
+                            <span>{displayName}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveUser(userId)}
+                              className="hover:bg-white/20 rounded-full p-0.5"
+                            >
+                              <Icon icon="mdi:close" className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* User search and selection dropdown */}
+                  <div className="relative user-dropdown-container">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search users by name, email or username..."
+                        value={userSearchQuery}
+                        onChange={(e) => setUserSearchQuery(e.target.value)}
+                        onFocus={() => setShowUserDropdown(true)}
+                        className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                      />
+                      <Icon
+                        icon="mdi:magnify"
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
+                      />
+                    </div>
+
+                    {/* Dropdown list */}
+                    {showUserDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {loadingUsers ? (
+                          <div className="px-4 py-3 text-center text-gray-500">
+                            <Icon icon="mdi:loading" className="w-5 h-5 animate-spin mx-auto" />
+                          </div>
+                        ) : filteredUsers.length === 0 ? (
+                          <div className="px-4 py-3 text-center text-gray-500">
+                            No users found
+                          </div>
+                        ) : (
+                          <>
+                            {filteredUsers.map((user) => {
+                              const isSelected = formData.selectedUserIds?.includes(user.$id)
+                              const displayName = user.firstName && user.lastName 
+                                ? `${user.firstName} ${user.lastName}` 
+                                : user.username || 'Unknown User'
+                              return (
+                                <div
+                                  key={user.$id}
+                                  onClick={() => handleUserSelect(user.$id)}
+                                  className={`px-4 py-2 cursor-pointer hover:bg-gray-100 flex items-center justify-between ${
+                                    isSelected ? 'bg-blue-50' : ''
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-medium text-gray-900">{displayName}</div>
+                                    {user.email && (
+                                      <div className="text-xs text-gray-500">{user.email}</div>
+                                    )}
+                                  </div>
+                                  {isSelected && (
+                                    <Icon icon="mdi:check" className="w-5 h-5 text-[#1D0A74]" />
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-gray-500 mt-1">
+                    Selected {formData.selectedUserIds?.length || 0} user(s)
                   </p>
                 </div>
               )}
