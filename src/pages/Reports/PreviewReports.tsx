@@ -237,7 +237,7 @@ const PreviewReports = () => {
         {/* Breadcrumbs */}
         <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
           <button
-            onClick={() => navigate('/reports')}
+            onClick={() => navigate('/reports', { state: { dateRange } })}
             className="hover:text-gray-900 transition-colors"
           >
             Reports
