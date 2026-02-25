@@ -1,4 +1,4 @@
-import { Client, Databases, Messaging, ID } from 'node-appwrite';
+import { Client, Databases, Messaging, ID, Query } from 'node-appwrite';
 
 // Type definitions
 interface SendNotificationRequest {
@@ -15,6 +15,7 @@ interface NotificationData {
   scheduledAt?: string;
   sentAt?: string;
   recipients?: number;
+  selectedUserIds?: string[]; // Array of user profile IDs for targeted notifications
   [key: string]: unknown;
 }
 
@@ -78,18 +79,44 @@ async function getNotification(
 }
 
 /**
- * Get target users based on audience type
+ * Get target users based on audience type and selected user IDs
  */
 async function getTargetUsers(
   databases: Databases,
   targetAudience: 'All' | 'Targeted' | 'Specific Segment',
+  selectedUserIds: string[] | undefined,
   log: (message: string) => void
 ): Promise<UserProfile[]> {
   try {
+    // If specific users are selected (for Targeted audience), fetch only those users
+    if (targetAudience === 'Targeted' && selectedUserIds && selectedUserIds.length > 0) {
+      log(`Fetching ${selectedUserIds.length} specifically selected users`);
+      
+      const users: UserProfile[] = [];
+      
+      // Fetch each selected user by ID
+      for (const userId of selectedUserIds) {
+        try {
+          const user = await databases.getDocument(
+            DATABASE_ID,
+            USER_PROFILES_TABLE_ID,
+            userId
+          );
+          users.push(user as unknown as UserProfile);
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          log(`Warning: Could not fetch user ${userId}: ${errorMessage}`);
+          // Continue with other users even if one fails
+        }
+      }
+      
+      log(`Successfully fetched ${users.length} of ${selectedUserIds.length} selected users`);
+      return users;
+    }
+    
+    // For "All" or if no specific users selected, fetch all users
     const queries: string[] = [];
     
-    // For now, we'll fetch all users
-    // In production, you might want to add filtering based on segments, preferences, etc.
     const usersResponse = await databases.listDocuments(
       DATABASE_ID,
       USER_PROFILES_TABLE_ID,
@@ -179,6 +206,10 @@ async function sendNotification(
     }
 
     log(`Notification found: title="${notification.title}", status="${notification.status}", targetAudience="${notification.targetAudience}"`);
+    
+    if (notification.selectedUserIds && notification.selectedUserIds.length > 0) {
+      log(`Selected users: ${notification.selectedUserIds.length} user(s)`);
+    }
 
     if (notification.status === 'Sent') {
       log('Notification already sent - skipping');
@@ -192,6 +223,7 @@ async function sendNotification(
     const users = await getTargetUsers(
       databases,
       notification.targetAudience,
+      notification.selectedUserIds,
       log
     );
 
@@ -464,6 +496,56 @@ async function checkAndSendEventReminders(
   }
 }
 
+/**
+ * Check for scheduled notifications that are due and send them.
+ * Runs on the same cron schedule as event reminders (every 15 minutes).
+ * Notifications with status 'Scheduled' and scheduledAt <= now are sent to their target users.
+ */
+async function checkAndSendScheduledNotifications(
+  databases: Databases,
+  messaging: Messaging,
+  log: (message: string) => void
+): Promise<{ success: boolean; sent: number; failed: number }> {
+  try {
+    const nowISO = new Date().toISOString();
+    log(`Checking for due scheduled notifications (scheduledAt <= ${nowISO})`);
+
+    const response = await databases.listDocuments(
+      DATABASE_ID,
+      NOTIFICATIONS_TABLE_ID,
+      [
+        Query.equal('status', 'Scheduled'),
+        Query.lessThanEqual('scheduledAt', nowISO),
+      ]
+    );
+
+    const dueNotifications = response.documents as unknown as NotificationData[];
+    log(`Found ${dueNotifications.length} scheduled notification(s) due to send`);
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const notification of dueNotifications) {
+      try {
+        log(`Sending scheduled notification: ${notification.$id} "${notification.title}"`);
+        await sendNotification(databases, messaging, notification.$id, log);
+        sent += 1;
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        log(`Failed to send scheduled notification ${notification.$id}: ${errMsg}`);
+        failed += 1;
+      }
+    }
+
+    log(`Scheduled notifications check complete. Sent: ${sent}, Failed: ${failed}`);
+    return { success: true, sent, failed };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Error checking scheduled notifications: ${errorMessage}`);
+    throw error instanceof Error ? error : new Error(errorMessage);
+  }
+}
+
 // Main function handler
 interface HandlerRequest {
   path: string;
@@ -569,23 +651,41 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       });
     }
 
-    // Handle check event reminders endpoint (for scheduled execution)
-    if (req.path === '/check-event-reminders' || req.method === 'GET') {
-      log('Processing check-event-reminders request');
+    // Handle scheduled execution: event reminders + due scheduled notifications
+    // Triggered by: Appwrite cron (path / or empty) or manual GET /check-event-reminders
+    const isScheduledRun =
+      req.path === '/check-event-reminders' ||
+      req.path === '/' ||
+      req.path === '';
+    if (isScheduledRun) {
+      log('Processing scheduled run: event reminders + scheduled notifications');
 
-      // This endpoint can be triggered by:
-      // 1. Appwrite's scheduled execution
-      // 2. Manual trigger for testing
-      const result = await checkAndSendEventReminders(
+      // 1. Send due scheduled notifications (status=Scheduled, scheduledAt <= now)
+      const scheduledResult = await checkAndSendScheduledNotifications(
         databases,
         messaging,
         log
       );
+      log(`Scheduled notifications: sent=${scheduledResult.sent}, failed=${scheduledResult.failed}`);
 
-      log(`Event reminders check complete. 24h: ${result.reminders24h}, 1h: ${result.reminders1h}`);
+      // 2. Check and send event reminders (24h / 1h)
+      const remindersResult = await checkAndSendEventReminders(
+        databases,
+        messaging,
+        log
+      );
+      log(`Event reminders: 24h=${remindersResult.reminders24h}, 1h=${remindersResult.reminders1h}`);
 
       return res.json({
-        ...result,
+        success: true,
+        scheduledNotifications: {
+          sent: scheduledResult.sent,
+          failed: scheduledResult.failed,
+        },
+        eventReminders: {
+          reminders24h: remindersResult.reminders24h,
+          reminders1h: remindersResult.reminders1h,
+        },
       });
     }
 

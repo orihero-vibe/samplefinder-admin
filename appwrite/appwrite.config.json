@@ -108,7 +108,7 @@
             "schedule": "",
             "timeout": 15,
             "entrypoint": "src/main.js",
-            "commands": "npm install",
+            "commands": "npm install && npm run build",
             "specification": "s-0.5vcpu-512mb",
             "path": "functions/Mobile API"
         },

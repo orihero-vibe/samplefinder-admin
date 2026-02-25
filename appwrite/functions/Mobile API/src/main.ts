@@ -78,6 +78,11 @@ interface SubmitAnswerRequest {
   answerIndex: number;
 }
 
+interface DismissTriviaRequest {
+  userId: string;
+  triviaId: string;
+}
+
 // Account deletion types
 interface DeleteAccountRequest {
   userId: string;
@@ -87,6 +92,18 @@ interface DeleteAccountRequest {
 interface UpdateUserStatusRequest {
   userId: string;
   block: boolean;
+}
+
+// Get user by email (for password recovery)
+interface GetUserByEmailRequest {
+  email: string;
+}
+
+// Reset password after OTP verification
+interface ResetPasswordAfterOTPRequest {
+  userId: string;
+  otp: string;
+  newPassword: string;
 }
 
 // Create user request (Auth + user profile)
@@ -118,6 +135,9 @@ interface TriviaDocument {
   endDate: string;
   points: number;
   client?: TriviaClientDocument;
+  /** User profile IDs that skipped/dismissed this trivia; they will not see it again */
+  skippedUsers?: string[];
+  skips?: number;
 }
 
 interface ActiveTriviaResponse {
@@ -399,6 +419,10 @@ async function getEventsByLocation(
  * Get active trivia questions for a user
  * Returns trivia questions that are currently active and not yet answered by the user
  */
+/** Max documents to fetch in getActiveTrivia to stay within function timeout */
+const GET_ACTIVE_TRIVIA_LIMIT = 100;
+const GET_ACTIVE_TRIVIA_RESPONSES_LIMIT = 500;
+
 async function getActiveTrivia(
   databases: Databases,
   userId: string,
@@ -406,28 +430,24 @@ async function getActiveTrivia(
 ): Promise<ActiveTriviaResponse[]> {
   const now = new Date().toISOString();
 
-  // Get all currently active trivia (startDate <= now AND endDate >= now)
-  const activeTriviaResponse = await databases.listDocuments(
-    DATABASE_ID,
-    TRIVIA_TABLE_ID,
-    [
+  // Fetch active trivia and user's responses in parallel to minimize execution time
+  const [activeTriviaResponse, userResponsesResult] = await Promise.all([
+    databases.listDocuments(DATABASE_ID, TRIVIA_TABLE_ID, [
       Query.lessThanEqual('startDate', now),
       Query.greaterThanEqual('endDate', now),
-    ]
-  );
+      Query.limit(GET_ACTIVE_TRIVIA_LIMIT),
+    ]),
+    databases.listDocuments(DATABASE_ID, TRIVIA_RESPONSES_TABLE_ID, [
+      Query.equal('user', userId),
+      Query.limit(GET_ACTIVE_TRIVIA_RESPONSES_LIMIT),
+    ]),
+  ]);
 
   log(`Found ${activeTriviaResponse.total} active trivia questions`);
 
   if (activeTriviaResponse.total === 0) {
     return [];
   }
-
-  // Get all trivia responses for this user
-  const userResponsesResult = await databases.listDocuments(
-    DATABASE_ID,
-    TRIVIA_RESPONSES_TABLE_ID,
-    [Query.equal('user', userId)]
-  );
 
   // Create a set of trivia IDs that the user has already answered
   const answeredTriviaIds = new Set<string>();
@@ -442,12 +462,14 @@ async function getActiveTrivia(
 
   log(`User has answered ${answeredTriviaIds.size} trivia questions`);
 
-  // Filter out trivia that the user has already answered
+  // Filter out trivia that the user has already answered or skipped
   // Also remove correctOptionIndex from the response for security
   const unansweredTrivia: ActiveTriviaResponse[] = [];
 
   for (const trivia of activeTriviaResponse.documents as unknown as TriviaDocument[]) {
-    if (!answeredTriviaIds.has(trivia.$id)) {
+    const wasSkippedByUser =
+      Array.isArray(trivia.skippedUsers) && trivia.skippedUsers.includes(userId);
+    if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser) {
       unansweredTrivia.push({
         $id: trivia.$id,
         question: trivia.question,
@@ -585,6 +607,54 @@ async function submitTriviaAnswer(
       ? `Correct! You earned ${pointsAwarded} points.`
       : 'Incorrect answer. Better luck next time!',
   };
+}
+
+/**
+ * Record that a user skipped/dismissed a trivia question (no answer submitted).
+ * Adds the user's profile ID to the trivia's skippedUsers array so it won't be shown again.
+ */
+async function dismissTrivia(
+  databases: Databases,
+  userId: string,
+  triviaId: string,
+  log: (message: string) => void
+): Promise<void> {
+  try {
+    await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
+  } catch {
+    throw { code: 404, message: 'User not found' };
+  }
+  let trivia: TriviaDocument;
+  try {
+    trivia = (await databases.getDocument(
+      DATABASE_ID,
+      TRIVIA_TABLE_ID,
+      triviaId
+    )) as unknown as TriviaDocument;
+  } catch {
+    throw { code: 404, message: 'Trivia question not found' };
+  }
+  const skippedUsers = Array.isArray(trivia.skippedUsers)
+    ? [...trivia.skippedUsers]
+    : [];
+  if (skippedUsers.includes(userId)) {
+    log(`User ${userId} already in skippedUsers for trivia ${triviaId}, no update`);
+    return;
+  }
+  skippedUsers.push(userId);
+  const updatePayload: { skippedUsers: string[]; skips?: number } = {
+    skippedUsers,
+  };
+  if (typeof trivia.skips === 'number') {
+    updatePayload.skips = trivia.skips + 1;
+  }
+  await databases.updateDocument(
+    DATABASE_ID,
+    TRIVIA_TABLE_ID,
+    triviaId,
+    updatePayload
+  );
+  log(`Added user ${userId} to skippedUsers for trivia ${triviaId}`);
 }
 
 // ============================================================================
@@ -870,6 +940,100 @@ async function deleteUserAccount(
 }
 
 // ============================================================================
+// USER LOOKUP (for password recovery)
+// ============================================================================
+
+/**
+ * Get user ID by email address.
+ * Searches Appwrite Auth for a user with the specified email address.
+ */
+async function getUserByEmail(
+  users: Users,
+  email: string,
+  log: (message: string) => void
+): Promise<{ userId: string; name?: string; emailVerification?: boolean }> {
+  log(`Searching for user with email: ${email}`);
+  try {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      throw { code: 400, message: 'Email is required' };
+    }
+    log(`Querying users with email: ${trimmedEmail}`);
+    const result = await users.list([Query.equal('email', trimmedEmail)]);
+    log(`Query completed. Total users found: ${result.total}`);
+    if (result.total === 0) {
+      throw { code: 404, message: 'User not found with this email address' };
+    }
+    const user = result.users[0];
+    log(`User found: ${user.$id}`);
+    return {
+      userId: user.$id,
+      name: user.name,
+      emailVerification: user.emailVerification,
+    };
+  } catch (err: unknown) {
+    const typedErr = err as { code?: number; message?: string };
+    log(`Error during user lookup: ${typedErr.message || 'Unknown error'}`);
+    throw typedErr;
+  }
+}
+
+// ============================================================================
+// PASSWORD RESET AFTER OTP
+// ============================================================================
+
+/**
+ * Reset user password after OTP verification.
+ * Updates the password using server-side permissions.
+ * Validates that the new password is not the same as the user's username.
+ */
+async function resetPasswordAfterOTP(
+  users: Users,
+  databases: Databases,
+  userId: string,
+  _otp: string,
+  newPassword: string,
+  log: (message: string) => void
+): Promise<void> {
+  log(`Resetting password for user: ${userId}`);
+  if (!userId || !newPassword) {
+    throw { code: 400, message: 'userId and newPassword are required' };
+  }
+  if (newPassword.length < 8) {
+    throw { code: 400, message: 'Password must be at least 8 characters long' };
+  }
+  try {
+    const profileQuery = await databases.listDocuments(
+      DATABASE_ID,
+      USER_PROFILES_TABLE_ID,
+      [Query.equal('authID', userId)]
+    );
+    if (profileQuery.total > 0) {
+      const username = (profileQuery.documents[0] as { username?: string }).username ?? '';
+      if (
+        username &&
+        newPassword.trim().toLowerCase() === username.trim().toLowerCase()
+      ) {
+        throw { code: 400, message: 'Password Cannot be same as Username' };
+      }
+    }
+    log(`Updating password with server-side permissions`);
+    await users.updatePassword(userId, newPassword);
+    log(`Password updated successfully for user: ${userId}`);
+  } catch (err: unknown) {
+    const typedErr = err as { code?: number; message?: string };
+    if (typedErr.code === 400 && typedErr.message) {
+      throw typedErr;
+    }
+    log(`Error updating password: ${typedErr.message || 'Unknown error'}`);
+    throw {
+      code: 400,
+      message: 'Failed to update password. Please try again.',
+    };
+  }
+}
+
+// ============================================================================
 // MAIN HANDLER
 // ============================================================================
 
@@ -1067,6 +1231,39 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       }
     }
 
+    // DISMISS trivia (user skipped / closed without answering)
+    if (req.path === '/dismiss-trivia' && req.method === 'POST') {
+      log('Processing dismiss-trivia request');
+
+      const body = req.body as DismissTriviaRequest;
+
+      if (!body || !body.userId) {
+        return res.json(
+          { success: false, error: 'userId is required' },
+          400
+        );
+      }
+      if (!body.triviaId) {
+        return res.json(
+          { success: false, error: 'triviaId is required' },
+          400
+        );
+      }
+      try {
+        await dismissTrivia(databases, body.userId, body.triviaId, log);
+        return res.json({ success: true });
+      } catch (err: unknown) {
+        const typedErr = err as { code?: number; message?: string };
+        if (typedErr.code != null && typedErr.message) {
+          return res.json(
+            { success: false, error: typedErr.message },
+            typedErr.code
+          );
+        }
+        throw err;
+      }
+    }
+
     // ========================================================================
     // ACCOUNT DELETION ENDPOINT
     // ========================================================================
@@ -1209,12 +1406,97 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     }
 
     // ========================================================================
+    // USER LOOKUP (password recovery)
+    // ========================================================================
+    if (req.path === '/get-user-by-email' && req.method === 'POST') {
+      log('Processing get-user-by-email request');
+
+      const body = req.body as GetUserByEmailRequest;
+
+      if (!body || !body.email) {
+        return res.json(
+          {
+            success: false,
+            error: 'email is required',
+          },
+          400
+        );
+      }
+
+      try {
+        const result = await getUserByEmail(users, body.email, log);
+        return res.json({
+          success: true,
+          ...result,
+        });
+      } catch (err: unknown) {
+        const typedErr = err as { code?: number; message?: string };
+        if (typedErr.code && typedErr.message) {
+          return res.json(
+            {
+              success: false,
+              error: typedErr.message,
+            },
+            typedErr.code
+          );
+        }
+        throw err;
+      }
+    }
+
+    // ========================================================================
+    // PASSWORD RESET AFTER OTP
+    // ========================================================================
+    if (req.path === '/reset-password-after-otp' && req.method === 'POST') {
+      log('Processing reset-password-after-otp request');
+
+      const body = req.body as ResetPasswordAfterOTPRequest;
+
+      if (!body || !body.userId || !body.newPassword) {
+        return res.json(
+          {
+            success: false,
+            error: 'userId and newPassword are required',
+          },
+          400
+        );
+      }
+
+      try {
+        await resetPasswordAfterOTP(
+          users,
+          databases,
+          body.userId,
+          body.otp || '',
+          body.newPassword,
+          log
+        );
+        return res.json({
+          success: true,
+          message: 'Password reset successfully',
+        });
+      } catch (err: unknown) {
+        const typedErr = err as { code?: number; message?: string };
+        if (typedErr.code && typedErr.message) {
+          return res.json(
+            {
+              success: false,
+              error: typedErr.message,
+            },
+            typedErr.code
+          );
+        }
+        throw err;
+      }
+    }
+
+    // ========================================================================
     // DEFAULT RESPONSE
     // ========================================================================
     return res.json({
       success: false,
       error:
-        'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /create-user, POST /delete-account, POST /update-user-status, GET /ping',
+        'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, GET /ping',
     });
   } catch (err: unknown) {
     const errorMessage =

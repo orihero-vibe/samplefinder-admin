@@ -13,6 +13,7 @@
     "node-appwrite": "^14.1.0"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "prettier": "^3.2.5",
     "typescript": "^5.0.0"
   }

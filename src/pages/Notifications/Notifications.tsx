@@ -320,6 +320,7 @@ const Notifications = () => {
           schedule,
           scheduledAt,
           scheduledTime,
+          selectedUserIds: fullNotification.selectedUserIds || [],
         }
       })
       setIsCreateModalOpen(true)
@@ -349,6 +350,7 @@ const Notifications = () => {
         schedule: 'Send Immediately', // Default to send immediately for duplicates
         scheduledAt: '',
         scheduledTime: '',
+        selectedUserIds: fullNotification.selectedUserIds || [],
       })
       setIsCreateModalOpen(true)
     } catch (error: unknown) {
