@@ -4,6 +4,7 @@ import { tiersService, type TierDocument, appUsersService } from '../../../lib/s
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
 import { Query } from '../../../lib/appwrite'
+import { trimFormStrings } from '../../../lib/formUtils'
 
 interface UserData {
   image?: string | File | null
@@ -369,18 +370,20 @@ const EditUserModal = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    const pwdError = validatePassword(formData.password || '')
+    const trimmed = trimFormStrings(formData)
+    
+    const pwdError = validatePassword(trimmed.password || '')
     setPasswordError(pwdError)
     if (pwdError) return
     
     // Prevent submission if username is not available
-    if (formData.username && usernameValidation.isAvailable === false) {
+    if (trimmed.username && usernameValidation.isAvailable === false) {
       return
     }
     
     setIsSubmitting(true)
     try {
-      await onSave(formData)
+      await onSave(trimmed)
       setShowUnsavedChangesModal(false)
       setPasswordError('')
       setUsernameValidation({

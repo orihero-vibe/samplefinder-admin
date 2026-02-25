@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { ImageCropper, UnsavedChangesModal } from '../../../components'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { useNotificationStore } from '../../../stores/notificationStore'
+import { trimFormStrings } from '../../../lib/formUtils'
 
 interface EditClientModalProps {
   isOpen: boolean
@@ -21,6 +23,7 @@ interface EditClientModalProps {
 }
 
 const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientModalProps) => {
+  const { addNotification } = useNotificationStore()
   const [formData, setFormData] = useState({
     logo: null as File | null,
     clientName: '',
@@ -116,13 +119,31 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const trimmed = trimFormStrings(formData)
+
+    if (!trimmed.clientName) {
+      addNotification({
+        type: 'error',
+        title: 'Client Name Required',
+        message: 'Please enter a client name.',
+      })
+      return
+    }
+    if (!trimmed.productTypes || trimmed.productTypes.length === 0) {
+      addNotification({
+        type: 'error',
+        title: 'Product Types Required',
+        message: 'Please add at least one product type.',
+      })
+      return
+    }
     setIsSubmitting(true)
     try {
       await onSave({
-        logo: formData.logo,
-        clientName: formData.clientName,
-        productTypes: formData.productTypes,
-        description: formData.description,
+        logo: trimmed.logo,
+        clientName: trimmed.clientName,
+        productTypes: trimmed.productTypes,
+        description: trimmed.description,
       })
       setShowUnsavedChangesModal(false)
       onClose()

@@ -3,6 +3,7 @@ import { Icon } from '@iconify/react'
 import { clientsService } from '../../../lib/services'
 import type { ClientDocument } from '../../../lib/services'
 import { formatDateWithTimezone } from '../../../lib/dateUtils'
+import { trimFormStrings } from '../../../lib/formUtils'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
 
@@ -104,27 +105,38 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    const trimmed = trimFormStrings(formData)
+
+    if (!trimmed.client) {
+      alert('Please select a client/brand.')
+      return
+    }
+    if (!trimmed.question) {
+      alert('Please enter a question.')
+      return
+    }
+
     // Validate that all answers have text
-    const allAnswersFilled = formData.answers.every((answer) => answer.trim() !== '')
+    const allAnswersFilled = trimmed.answers.every((answer) => answer !== '')
     if (!allAnswersFilled) {
       alert('Please fill in all answer options')
       return
     }
 
     // Validate correct option index is valid
-    if (formData.correctOptionIndex < 0 || formData.correctOptionIndex >= formData.answers.length) {
+    if (trimmed.correctOptionIndex < 0 || trimmed.correctOptionIndex >= trimmed.answers.length) {
       alert('Please select a valid correct answer')
       return
     }
 
     // Validate dates
-    if (!formData.startDate || !formData.endDate) {
+    if (!trimmed.startDate || !trimmed.endDate) {
       alert('Please provide both start date and end date')
       return
     }
 
-    const startDate = new Date(formData.startDate)
-    const endDate = new Date(formData.endDate)
+    const startDate = new Date(trimmed.startDate)
+    const endDate = new Date(trimmed.endDate)
 
     if (endDate <= startDate) {
       alert('End date must be after start date')
@@ -132,7 +144,7 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     }
 
     // Validate points
-    if (formData.points < 0 || formData.points > 1000) {
+    if (trimmed.points < 0 || trimmed.points > 1000) {
       alert('Points must be between 0 and 1000')
       return
     }
@@ -141,13 +153,13 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
       setError(null)
       // Convert dates to ISO 8601 format with timezone preservation
       const triviaData = {
-        client: formData.client,
-        question: formData.question,
-        answers: formData.answers,
-        correctOptionIndex: formData.correctOptionIndex,
+        client: trimmed.client,
+        question: trimmed.question,
+        answers: trimmed.answers,
+        correctOptionIndex: trimmed.correctOptionIndex,
         startDate: formatDateWithTimezone(startDate),
         endDate: formatDateWithTimezone(endDate),
-        points: formData.points,
+        points: trimmed.points,
       }
       setIsSubmitting(true)
       await onSave(triviaData)

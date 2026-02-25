@@ -4,6 +4,7 @@ import type { Models } from 'appwrite'
 import LocationAutocomplete from '../../../components/LocationAutocomplete'
 import LocationPicker from '../../../components/LocationPicker'
 import { ImageCropper, UnsavedChangesModal } from '../../../components'
+import { trimFormStrings } from '../../../lib/formUtils'
 import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
 import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
 import { useNotificationStore } from '../../../stores/notificationStore'
@@ -361,9 +362,20 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
       return
     }
 
+    const trimmed = trimFormStrings(formData)
+
+    if (!trimmed.eventName) {
+      addNotification({
+        type: 'error',
+        title: 'Event Name Required',
+        message: 'Please enter an event name.',
+      })
+      return
+    }
+
     // Validate that event date is not in the past
-    if (formData.eventDate) {
-      const eventDate = new Date(formData.eventDate)
+    if (trimmed.eventDate) {
+      const eventDate = new Date(trimmed.eventDate)
       const today = new Date()
       today.setHours(0, 0, 0, 0) // Reset time to start of day for comparison
       eventDate.setHours(0, 0, 0, 0)
@@ -379,9 +391,9 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     }
 
     // Validate that start time is before end time
-    if (formData.startTime && formData.endTime) {
-      const [startHour, startMinute] = formData.startTime.split(':').map(Number)
-      const [endHour, endMinute] = formData.endTime.split(':').map(Number)
+    if (trimmed.startTime && trimmed.endTime) {
+      const [startHour, startMinute] = trimmed.startTime.split(':').map(Number)
+      const [endHour, endMinute] = trimmed.endTime.split(':').map(Number)
       
       const startTimeInMinutes = startHour * 60 + startMinute
       const endTimeInMinutes = endHour * 60 + endMinute
@@ -397,7 +409,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     }
 
     // Validate that products are not blank
-    if (!formData.products || formData.products.length === 0) {
+    if (!trimmed.products || trimmed.products.length === 0) {
       addNotification({
         type: 'error',
         title: 'Products Required',
@@ -407,8 +419,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     }
 
     // Validate that all selected products are valid for the selected brand
-    if (formData.brandName && availableProducts.length > 0) {
-      const invalidProducts = formData.products.filter(
+    if (trimmed.brandName && availableProducts.length > 0) {
+      const invalidProducts = trimmed.products.filter(
         (product) => !availableProducts.includes(product)
       )
       if (invalidProducts.length > 0) {
@@ -424,18 +436,18 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     setIsSubmitting(true)
     try {
       // If location name is filled, create location first
-      if (showAddLocationFields && locationName.trim() && formData.address && formData.city && formData.state && formData.zipCode && formData.latitude && formData.longitude) {
+      if (showAddLocationFields && locationName.trim() && trimmed.address && trimmed.city && trimmed.state && trimmed.zipCode && trimmed.latitude && trimmed.longitude) {
         await locationsService.create({
-          name: locationName,
-          address: formData.address,
-          city: formData.city,
-          state: formData.state,
-          zipCode: formData.zipCode,
-          location: [parseFloat(formData.longitude), parseFloat(formData.latitude)],
+          name: locationName.trim(),
+          address: trimmed.address,
+          city: trimmed.city,
+          state: trimmed.state,
+          zipCode: trimmed.zipCode,
+          location: [parseFloat(trimmed.longitude), parseFloat(trimmed.latitude)],
         })
       }
       
-      await onSave(formData)
+      await onSave(trimmed)
       // Close unsaved changes modal if it's open
       setShowUnsavedChangesModal(false)
       // Only close on success - parent will handle closing

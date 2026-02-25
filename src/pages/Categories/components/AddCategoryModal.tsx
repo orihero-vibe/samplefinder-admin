@@ -3,6 +3,7 @@ import { Icon } from '@iconify/react'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
 import { categoriesService } from '../../../lib/services'
+import { trimFormStrings } from '../../../lib/formUtils'
 
 interface AddCategoryModalProps {
   isOpen: boolean
@@ -41,23 +42,23 @@ const AddCategoryModal = ({ isOpen, onClose, onSave }: AddCategoryModalProps) =>
     e.preventDefault()
     setError(null)
 
-    if (!title.trim()) {
+    const trimmed = trimFormStrings({ title, isAdult })
+    if (!trimmed.title) {
       setError('Category title is required')
       return
     }
 
     // Check for duplicate title
-    const trimmedTitle = title.trim()
     setIsSubmitting(true)
     try {
-      const existingCategory = await categoriesService.findByTitle(trimmedTitle)
+      const existingCategory = await categoriesService.findByTitle(trimmed.title)
       if (existingCategory) {
         setError('A category with this title already exists. Please use a different title.')
         setIsSubmitting(false)
         return
       }
 
-      await onSave({ title: trimmedTitle, isAdult })
+      await onSave({ title: trimmed.title, isAdult: trimmed.isAdult })
       setShowUnsavedChangesModal(false)
       onClose()
     } catch (err) {

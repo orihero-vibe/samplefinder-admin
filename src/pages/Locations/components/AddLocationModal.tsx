@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import LocationPicker from '../../../components/LocationPicker'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { useNotificationStore } from '../../../stores/notificationStore'
 import { UnsavedChangesModal } from '../../../components'
+import { trimFormStrings } from '../../../lib/formUtils'
 
 interface AddLocationModalProps {
   isOpen: boolean
@@ -19,6 +21,7 @@ interface AddLocationModalProps {
 }
 
 const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) => {
+  const { addNotification } = useNotificationStore()
   const initialFormData = {
     name: '',
     address: '',
@@ -63,18 +66,29 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
       return
     }
 
+    const trimmed = trimFormStrings(formData)
+
+    if (!trimmed.name) {
+      addNotification({
+        type: 'error',
+        title: 'Location Name Required',
+        message: 'Please enter a location name.',
+      })
+      return
+    }
+
     // Set loading state immediately for instant UI feedback
     setIsSubmitting(true)
 
     try {
       await onSave({
-        name: formData.name,
-        address: formData.address,
-        city: formData.city,
-        state: formData.state,
-        zipCode: formData.zipCode,
-        latitude: formData.latitude,
-        longitude: formData.longitude,
+        name: trimmed.name,
+        address: trimmed.address,
+        city: trimmed.city,
+        state: trimmed.state,
+        zipCode: trimmed.zipCode,
+        latitude: trimmed.latitude,
+        longitude: trimmed.longitude,
       })
       
       // Success - close modal and reset form

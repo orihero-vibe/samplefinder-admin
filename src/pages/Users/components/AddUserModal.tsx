@@ -4,6 +4,7 @@ import { tiersService, type TierDocument, appUsersService } from '../../../lib/s
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
 import { Query } from '../../../lib/appwrite'
+import { trimFormStrings } from '../../../lib/formUtils'
 
 interface AddUserModalProps {
   isOpen: boolean
@@ -245,10 +246,12 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    const pwdError = validatePassword(formData.password)
-    const fnError = validateName(formData.firstName, 'First Name')
-    const lnError = formData.lastName.trim() ? validateName(formData.lastName, 'Last Name') : ''
-    const unError = validateUsername(formData.username)
+    const trimmed = trimFormStrings(formData)
+    
+    const pwdError = validatePassword(trimmed.password)
+    const fnError = validateName(trimmed.firstName, 'First Name')
+    const lnError = trimmed.lastName ? validateName(trimmed.lastName, 'Last Name') : ''
+    const unError = validateUsername(trimmed.username)
     
     setPasswordError(pwdError)
     setFirstNameError(fnError)
@@ -258,15 +261,15 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     if (pwdError || fnError || lnError || unError) return
 
     // Prevent submission if username is required but not available
-    if (formData.username.trim() && usernameValidation.isAvailable === false) {
+    if (trimmed.username && usernameValidation.isAvailable === false) {
       return
     }
     
     setIsSubmitting(true)
     try {
-      const selectedTier = tiers.find((t) => t.name === formData.tierLevel)
+      const selectedTier = tiers.find((t) => t.name === trimmed.tierLevel)
       const totalPoints = selectedTier?.requiredPoints ?? 100
-      await onSave({ ...formData, totalPoints })
+      await onSave({ ...trimmed, totalPoints })
       // Close unsaved changes modal if it's open
       setShowUnsavedChangesModal(false)
       // Reset form and validation state
