@@ -44,7 +44,7 @@ const PreviewReports = () => {
       '4': 'clients-brands',
       '5': 'app-users',
       '6': 'points-earned-all',
-      '7': 'points-earned-all', // Points Earned with Date Range - same as all for now
+      '7': 'points-earned-date-range',
     }
     return reportTypeMap[reportId || '1'] || 'dashboard-all'
   }
@@ -237,7 +237,7 @@ const PreviewReports = () => {
         {/* Breadcrumbs */}
         <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
           <button
-            onClick={() => navigate('/reports')}
+            onClick={() => navigate('/reports', { state: { dateRange } })}
             className="hover:text-gray-900 transition-colors"
           >
             Reports

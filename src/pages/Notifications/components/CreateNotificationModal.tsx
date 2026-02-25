@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import type { NotificationFormData, AppUser } from '../../../lib/services'
+import { trimFormStrings } from '../../../lib/formUtils'
 import { appUsersService } from '../../../lib/services'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
@@ -196,28 +197,29 @@ const CreateNotificationModal = ({
     return null
   }
 
-  // Validate entire form
-  const validateForm = (): { isValid: boolean; errors: StructuredError[] } => {
+  // Validate entire form (optionally against provided data, e.g. trimmed form data)
+  const validateForm = (dataToValidate?: NotificationFormData): { isValid: boolean; errors: StructuredError[] } => {
+    const data = dataToValidate ?? formData
     const errors: StructuredError[] = []
     const newValidationErrors: ValidationErrors = {}
 
     // Validate title
-    const titleError = validateField('title', formData.title)
+    const titleError = validateField('title', data.title)
     if (titleError) {
       errors.push(titleError)
       newValidationErrors.title = getErrorMessage(titleError)
     }
 
     // Validate message
-    const messageError = validateField('message', formData.message)
+    const messageError = validateField('message', data.message)
     if (messageError) {
       errors.push(messageError)
       newValidationErrors.message = getErrorMessage(messageError)
     }
 
     // Validate scheduled date/time if scheduling for later
-    if (formData.schedule === 'Schedule for Later') {
-      if (!formData.scheduledAt || !formData.scheduledTime) {
+    if (data.schedule === 'Schedule for Later') {
+      if (!data.scheduledAt || !data.scheduledTime) {
         const error: StructuredError = { 
           code: 'INVALID_DATE', 
           field: 'Scheduled Date/Time',
@@ -228,7 +230,7 @@ const CreateNotificationModal = ({
         newValidationErrors.scheduledAt = getErrorMessage(error)
       } else {
         // Validate that scheduled time is in the future
-        const scheduledDate = new Date(`${formData.scheduledAt}T${formData.scheduledTime}`)
+        const scheduledDate = new Date(`${data.scheduledAt}T${data.scheduledTime}`)
         if (scheduledDate <= new Date()) {
           const error: StructuredError = { 
             code: 'PAST_DATE', 
@@ -282,11 +284,13 @@ const CreateNotificationModal = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    const trimmed = trimFormStrings(formData)
+
     // Mark all fields as touched to show validation errors
     setTouchedFields(new Set(['title', 'message', 'scheduledAt', 'scheduledTime']))
     
-    // Validate form
-    const { isValid, errors } = validateForm()
+    // Validate form using trimmed data
+    const { isValid, errors } = validateForm(trimmed)
     
     if (!isValid) {
       console.error('Validation failed:', errors)
@@ -295,7 +299,7 @@ const CreateNotificationModal = ({
     
     setIsSubmitting(true)
     try {
-      await onSave(formData)
+      await onSave(trimmed)
       setShowUnsavedChangesModal(false)
       setFormData(defaultFormData)
       setValidationErrors({})
@@ -321,13 +325,6 @@ const CreateNotificationModal = ({
     setShowUnsavedChangesModal(false)
     setFormData(defaultFormData)
     onClose()
-  }
-
-  const handleSaveFromUnsavedModal = async () => {
-    const form = document.querySelector('form[data-notification-form]') as HTMLFormElement
-    if (form) {
-      form.requestSubmit()
-    }
   }
 
   const handleUserSelect = (userId: string) => {
@@ -365,8 +362,6 @@ const CreateNotificationModal = ({
         isOpen={showUnsavedChangesModal}
         onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
-        onSave={handleSaveFromUnsavedModal}
-        isSaving={isSubmitting}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">

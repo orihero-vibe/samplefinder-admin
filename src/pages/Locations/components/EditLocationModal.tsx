@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import LocationPicker from '../../../components/LocationPicker'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { useNotificationStore } from '../../../stores/notificationStore'
 import { UnsavedChangesModal } from '../../../components'
+import { trimFormStrings } from '../../../lib/formUtils'
 
 interface EditLocationModalProps {
   isOpen: boolean
@@ -28,6 +30,7 @@ interface EditLocationModalProps {
 }
 
 const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocationModalProps) => {
+  const { addNotification } = useNotificationStore()
   const [formData, setFormData] = useState({
     name: '',
     address: '',
@@ -69,9 +72,20 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     // Prevent double submission
     if (isSubmitting) {
+      return
+    }
+
+    const trimmed = trimFormStrings(formData)
+
+    if (!trimmed.name) {
+      addNotification({
+        type: 'error',
+        title: 'Location Name Required',
+        message: 'Please enter a location name.',
+      })
       return
     }
 
@@ -80,13 +94,13 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
 
     try {
       await onSave({
-        name: formData.name,
-        address: formData.address,
-        city: formData.city,
-        state: formData.state,
-        zipCode: formData.zipCode,
-        latitude: formData.latitude,
-        longitude: formData.longitude,
+        name: trimmed.name,
+        address: trimmed.address,
+        city: trimmed.city,
+        state: trimmed.state,
+        zipCode: trimmed.zipCode,
+        latitude: trimmed.latitude,
+        longitude: trimmed.longitude,
       })
       
       // Success - close modal
@@ -111,21 +125,12 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
     onClose()
   }
 
-  const handleSaveFromUnsavedModal = () => {
-    const form = document.querySelector('form[data-location-form]') as HTMLFormElement
-    if (form) {
-      form.requestSubmit()
-    }
-  }
-
   return (
     <>
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
         onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
-        onSave={handleSaveFromUnsavedModal}
-        isSaving={isSubmitting}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">

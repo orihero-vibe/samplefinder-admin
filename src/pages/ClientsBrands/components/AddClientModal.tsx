@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { ImageCropper, UnsavedChangesModal } from '../../../components'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { useNotificationStore } from '../../../stores/notificationStore'
+import { trimFormStrings } from '../../../lib/formUtils'
 
 interface AddClientModalProps {
   isOpen: boolean
@@ -15,6 +17,7 @@ interface AddClientModalProps {
 }
 
 const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
+  const { addNotification } = useNotificationStore()
   const initialFormData = {
     logo: null as File | null,
     clientName: '',
@@ -149,13 +152,6 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
     onClose()
   }
 
-  const handleSaveFromUnsavedModal = async () => {
-    const form = document.querySelector('form[data-client-form]') as HTMLFormElement
-    if (form) {
-      form.requestSubmit()
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -164,15 +160,34 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
       return
     }
 
+    const trimmed = trimFormStrings(formData)
+
+    if (!trimmed.clientName) {
+      addNotification({
+        type: 'error',
+        title: 'Client Name Required',
+        message: 'Please enter a client name.',
+      })
+      return
+    }
+    if (!trimmed.productTypes || trimmed.productTypes.length === 0) {
+      addNotification({
+        type: 'error',
+        title: 'Product Types Required',
+        message: 'Please add at least one product type.',
+      })
+      return
+    }
+
     // Set loading state immediately for instant UI feedback
     setIsSubmitting(true)
 
     try {
       await onSave({
-        logo: formData.logo,
-        clientName: formData.clientName,
-        productTypes: formData.productTypes,
-        description: formData.description,
+        logo: trimmed.logo,
+        clientName: trimmed.clientName,
+        productTypes: trimmed.productTypes,
+        description: trimmed.description,
       })
       
       // Success - close modals and reset form
@@ -199,8 +214,6 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
         isOpen={showUnsavedChangesModal}
         onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
-        onSave={handleSaveFromUnsavedModal}
-        isSaving={isSubmitting}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">

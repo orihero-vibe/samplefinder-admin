@@ -99,6 +99,12 @@ const UsersTable = ({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
+                  Tier Level
+                </div>
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <div className="flex items-center gap-2">
+                  <Icon icon="mdi:filter" className="w-4 h-4" />
                   Total Points
                 </div>
               </th>
@@ -128,7 +134,7 @@ const UsersTable = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {users.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-6 py-8 text-center text-sm text-gray-500">
+                <td colSpan={11} className="px-6 py-8 text-center text-sm text-gray-500">
                   No users found
                 </td>
               </tr>
@@ -153,6 +159,9 @@ const UsersTable = ({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {user.email || '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {user.tierLevel || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {user.totalPoints?.toLocaleString() || '0'}

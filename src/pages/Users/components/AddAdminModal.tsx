@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Icon } from '@iconify/react'
+import { trimFormStrings } from '../../../lib/formUtils'
 
 interface AddAdminModalProps {
   isOpen: boolean
@@ -25,6 +26,7 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
   const [showPassword, setShowPassword] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState('')
+  const [formError, setFormError] = useState('')
 
   // Password validation: no spaces, min 8 chars, at least one letter, one number, and one uppercase
   const validatePassword = (password: string): string => {
@@ -40,6 +42,7 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
   if (!isOpen) return null
 
   const handleInputChange = (field: string, value: string) => {
+    setFormError('')
     // First/Last name: alphabets only, auto-capitalize
     if (field === 'firstName' || field === 'lastName') {
       const filtered = value.replace(/[^a-zA-Z]/g, '')
@@ -71,11 +74,26 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     
-    const pwdError = validatePassword(formData.password)
+    const trimmed = trimFormStrings(formData)
+
+    setFormError('')
+    if (!trimmed.firstName) {
+      setFormError('First name is required.')
+      return
+    }
+    if (!trimmed.lastName) {
+      setFormError('Last name is required.')
+      return
+    }
+    if (!trimmed.email) {
+      setFormError('Email is required.')
+      return
+    }
+    const pwdError = validatePassword(trimmed.password)
     setPasswordError(pwdError)
     if (pwdError) return
-    
-    onSave(formData)
+
+    onSave(trimmed)
     // Reset form
     setFormData({
       image: null,
@@ -87,6 +105,7 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
     setImagePreview(null)
     setShowPassword(false)
     setPasswordError('')
+    setFormError('')
     onClose()
   }
 
@@ -102,6 +121,7 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
     setImagePreview(null)
     setShowPassword(false)
     setPasswordError('')
+    setFormError('')
     onClose()
   }
 
@@ -133,6 +153,9 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6">
+          {formError && (
+            <p className="mb-4 text-sm text-red-500">{formError}</p>
+          )}
           {/* Image Upload Section */}
           <div className="mb-6">
             <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">

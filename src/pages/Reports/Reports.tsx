@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { DashboardLayout, ShimmerPage } from '../../components'
 import type { DownloadFormat } from '../../components'
 import { ReportsHeader, SearchAndFilter, ReportsList } from './components'
@@ -21,10 +22,20 @@ interface ReportMetadata {
 }
 
 const Reports = () => {
+  const location = useLocation()
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null)
-  const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>(() => getCurrentMonthRange())
+  const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>(() => {
+    const state = location.state as { dateRange?: { start: Date; end: Date } } | undefined
+    const s = state?.dateRange
+    if (s?.start && s?.end) {
+      const start = s.start instanceof Date ? s.start : new Date(s.start)
+      const end = s.end instanceof Date ? s.end : new Date(s.end)
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) return { start, end }
+    }
+    return getCurrentMonthRange()
+  })
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize] = useState(25)
   const [reportMetadata, setReportMetadata] = useState<ReportMetadata | null>(null)
@@ -148,7 +159,7 @@ const Reports = () => {
       '4': 'clients-brands',
       '5': 'app-users',
       '6': 'points-earned-all',
-      '7': 'points-earned-all', // Points Earned with Date Range - same as all for now
+      '7': 'points-earned-date-range',
     }
     return reportTypeMap[reportId] || 'dashboard-all'
   }

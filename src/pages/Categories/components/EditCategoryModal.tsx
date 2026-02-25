@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import { categoriesService } from '../../../lib/services'
+import { trimFormStrings } from '../../../lib/formUtils'
 
 interface EditCategoryModalProps {
   isOpen: boolean
@@ -37,23 +38,23 @@ const EditCategoryModal = ({ isOpen, onClose, onSave, initialData, categoryId }:
     e.preventDefault()
     setError(null)
 
-    if (!title.trim()) {
+    const trimmed = trimFormStrings({ title, isAdult })
+    if (!trimmed.title) {
       setError('Category title is required')
       return
     }
 
     // Check for duplicate title (excluding current category)
-    const trimmedTitle = title.trim()
     setIsSubmitting(true)
     try {
-      const existingCategory = await categoriesService.findByTitle(trimmedTitle)
+      const existingCategory = await categoriesService.findByTitle(trimmed.title)
       if (existingCategory && existingCategory.$id !== categoryId) {
         setError('A category with this title already exists. Please use a different title.')
         setIsSubmitting(false)
         return
       }
 
-      await onSave({ title: trimmedTitle, isAdult })
+      await onSave({ title: trimmed.title, isAdult: trimmed.isAdult })
     } catch (err) {
       // Error is handled by parent component via notification
       // Only set local error if it's not already set (duplicate check sets it before this)
