@@ -1,5 +1,5 @@
 import { eventsService, clientsService, appUsersService, categoriesService, reviewsService, triviaService, triviaResponsesService } from './services'
-import type { EventDocument, ClientDocument, AppUser, TriviaDocument, TriviaResponseDocument } from './services'
+import type { EventDocument, ClientDocument, AppUser, TriviaDocument, TriviaResponseDocument, ReviewDocument } from './services'
 import { Query } from './appwrite'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -792,6 +792,123 @@ export const exportService = {
     return {
       columns: pointsEarnedColumns,
       rows,
+    }
+  },
+
+  /**
+   * Generate Event Reviews report for a single event (for Download on event-reviews/:eventId page).
+   */
+  async generateEventReviewsReport(eventId: string): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+    const eventReviewColumns: ReportColumn[] = [
+      { header: 'Reviewer Name', key: 'reviewerName' },
+      { header: 'Email', key: 'email' },
+      { header: 'Rating', key: 'rating' },
+      { header: 'Review', key: 'review' },
+      { header: 'Reviewed At', key: 'reviewedAt' },
+      { header: 'Answers', key: 'answers' },
+    ]
+    const rows: Record<string, string | number>[] = []
+    let offset = 0
+    const limit = 100
+    let documents: ReviewDocument[] = []
+
+    do {
+      const result = await reviewsService.list([
+        Query.equal('event', eventId),
+        Query.orderDesc('$createdAt'),
+        Query.limit(limit),
+        Query.offset(offset),
+      ])
+      documents = result.documents ?? []
+      for (const doc of documents) {
+        let reviewerName = 'Anonymous'
+        let email = ''
+        if (doc.user) {
+          try {
+            const user = await appUsersService.getById(doc.user as string)
+            reviewerName = [user?.firstname, user?.lastname].filter(Boolean).join(' ') || (user?.username as string) || 'Anonymous'
+            email = (user as { email?: string }).email ?? ''
+          } catch {
+            // keep defaults
+          }
+        }
+        const liked = doc.liked as string | undefined
+        const answersDisplay = liked
+          ? String(liked)
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+              .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+              .join(', ')
+          : ''
+        const createdAt = doc.$createdAt
+        const reviewedAt = createdAt
+          ? `${formatDate(createdAt)} ${formatTime(createdAt)}`
+          : ''
+        rows.push({
+          reviewerName,
+          email,
+          rating: doc.rating ?? 0,
+          review: doc.review ?? '',
+          reviewedAt,
+          answers: answersDisplay,
+        })
+      }
+      offset += limit
+    } while (documents.length === limit)
+
+    return {
+      columns: eventReviewColumns,
+      rows,
+    }
+  },
+
+  /**
+   * Export Event Reviews report (CSV or PDF) for a single event.
+   */
+  async exportEventReviewsReport(
+    eventId: string,
+    eventName: string,
+    filename: string,
+    format: 'csv' | 'pdf'
+  ): Promise<void> {
+    const { columns, rows } = await this.generateEventReviewsReport(eventId)
+    if (format === 'csv') {
+      const csvContent = this.exportToCSV(columns, rows)
+      this.downloadCSV(filename, csvContent)
+    } else {
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      doc.setFontSize(16)
+      doc.setFont('helvetica', 'bold')
+      doc.text(`Event Reviews: ${eventName || 'Event'}`, 14, 15)
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22)
+      const headers = columns.map((c) => c.header)
+      const tableRows = rows.map((row) =>
+        columns.map((col) => wrapTextForPdf(String(row[col.key] ?? '')))
+      )
+      const pageWidth = doc.internal.pageSize.getWidth ? doc.internal.pageSize.getWidth() : doc.internal.pageSize.width
+      const tableWidth = Math.min(pageWidth - 20, pageWidth * 0.98)
+      const colWidth = tableWidth / columns.length
+      const columnStyles: Record<string, { cellWidth: number; overflow: 'linebreak' }> = {}
+      columns.forEach((_, i) => {
+        columnStyles[String(i)] = { cellWidth: colWidth, overflow: 'linebreak' }
+      })
+      autoTable(doc, {
+        head: [headers],
+        body: tableRows,
+        startY: 28,
+        theme: 'grid',
+        tableWidth,
+        margin: { left: 10, right: 10 },
+        columnStyles,
+        styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+        headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold', halign: 'left' },
+        bodyStyles: { valign: 'top' },
+        alternateRowStyles: { fillColor: [249, 250, 251] },
+      })
+      doc.save(filename)
     }
   },
 

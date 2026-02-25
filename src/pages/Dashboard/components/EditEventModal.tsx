@@ -387,6 +387,8 @@ const EditEventModal = ({
   const handleCropCancel = () => {
     setShowCropper(false)
     setTempImageForCrop(null)
+    const input = document.getElementById('discount-image-upload-edit') as HTMLInputElement
+    if (input) input.value = ''
   }
 
   const handleRemoveDiscountImage = () => {
@@ -703,6 +705,7 @@ const EditEventModal = ({
                   </div>
                 )}
                 <input
+                  id="discount-image-upload-edit"
                   type="file"
                   accept="image/*"
                   onChange={handleFileChange}

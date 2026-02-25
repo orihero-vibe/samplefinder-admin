@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { DashboardLayout, ShimmerPage } from '../../components'
+import { DashboardLayout, ShimmerPage, DownloadModal } from '../../components'
+import type { DownloadFormat } from '../../components'
 import { EventReviewsHeader, SearchAndFilter, ReviewsList } from './components'
 import { reviewsService, eventsService, clientsService, appUsersService, type ReviewDocument, type EventDocument, type ClientDocument } from '../../lib/services'
+import { exportService } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { Query } from '../../lib/appwrite'
 
@@ -10,6 +12,7 @@ import { Query } from '../../lib/appwrite'
 interface UIReview {
   id: string
   reviewer: {
+    id?: string // user_profiles $id for link to profile
     name: string
     initials: string
     email: string
@@ -30,6 +33,8 @@ interface UIReview {
   reviewText: string
   helpfulCount: number
   isHidden: boolean
+  reviewedAt: string // when the review was submitted
+  answers?: string // e.g. liked (staff, swag, sample, etc.)
 }
 
 const EventReviews = () => {
@@ -46,6 +51,9 @@ const EventReviews = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [ratingFilter, setRatingFilter] = useState('all')
   const [sentimentFilter, setSentimentFilter] = useState('all')
+  const [eventName, setEventName] = useState<string>('')
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false)
 
   // Helper function to get initials from name
   const getInitials = (firstName?: string, lastName?: string, username?: string): string => {
@@ -221,9 +229,21 @@ const EventReviews = () => {
 
           const sentimentData = getSentiment(reviewDoc.rating || 0)
 
+          // Format "liked" (answers) for display
+          const liked = reviewDoc.liked as string | undefined
+          const answersDisplay = liked
+            ? String(liked)
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+                .join(', ')
+            : undefined
+
           return {
             id: reviewDoc.$id,
             reviewer: {
+              id: reviewDoc.user as string | undefined,
               name: reviewerName,
               initials: reviewerInitials,
               email: reviewerEmail,
@@ -244,6 +264,8 @@ const EventReviews = () => {
             reviewText: reviewDoc.review || 'No review text provided.',
             helpfulCount: reviewDoc.helpfulCount || 0,
             isHidden: reviewDoc.isHidden || false,
+            reviewedAt: `${formatDate(reviewDoc.$createdAt)} ${formatTime(reviewDoc.$createdAt)}`,
+            answers: answersDisplay,
           } as UIReview
         })
       )
@@ -352,10 +374,59 @@ const EventReviews = () => {
   }
 
   useEffect(() => {
-    setCurrentPage(1) // Reset to first page when eventId changes
+    setCurrentPage(1)
     fetchReviews(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId])
+
+  // Fetch event name when viewing a single event (for header and download filename)
+  useEffect(() => {
+    if (!eventId) {
+      setEventName('')
+      return
+    }
+    let cancelled = false
+    eventsService
+      .getById(eventId)
+      .then((event) => {
+        if (!cancelled && event) {
+          setEventName((event as EventDocument).name || '')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEventName('')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [eventId])
+
+  const handleDownloadEventReport = async (format: DownloadFormat) => {
+    if (!eventId) return
+    setIsDownloading(true)
+    try {
+      const timestamp = new Date().toISOString().split('T')[0]
+      const safeName = (eventName || 'event').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)
+      const ext = format === 'csv' ? 'csv' : 'pdf'
+      const filename = `event_reviews_${safeName}_${timestamp}.${ext}`
+      await exportService.exportEventReviewsReport(eventId, eventName || 'Event', filename, format)
+      addNotification({
+        type: 'success',
+        title: 'Download complete',
+        message: `Event report has been downloaded as ${ext.toUpperCase()}.`,
+      })
+      setIsDownloadModalOpen(false)
+    } catch (err) {
+      console.error('Error downloading event report:', err)
+      addNotification({
+        type: 'error',
+        title: 'Download failed',
+        message: err instanceof Error ? err.message : 'Failed to download event report.',
+      })
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -411,7 +482,12 @@ const EventReviews = () => {
   return (
     <DashboardLayout>
       <div className="p-8">
-        <EventReviewsHeader />
+        <EventReviewsHeader
+          eventId={eventId}
+          eventName={eventName}
+          onDownloadClick={() => setIsDownloadModalOpen(true)}
+          isDownloading={isDownloading}
+        />
         <SearchAndFilter
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
@@ -455,6 +531,16 @@ const EventReviews = () => {
           onDeleteReview={handleDeleteReview}
         />
       </div>
+
+      {/* Download Event Report Modal (CSV / PDF) */}
+      <DownloadModal
+        isOpen={isDownloadModalOpen}
+        onClose={() => !isDownloading && setIsDownloadModalOpen(false)}
+        onDownload={handleDownloadEventReport}
+        isLoading={isDownloading}
+        title="Download Event Report"
+        description="Choose a file format to download the event reviews report."
+      />
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (

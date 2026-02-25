@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   DashboardLayout,
   ShimmerPage,
@@ -17,6 +18,7 @@ import { appUsersService, notificationsService, triviaResponsesService, type App
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { addNotification } = useNotificationStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [tierFilter, setTierFilter] = useState('All Tiers')
@@ -228,6 +230,44 @@ const Users = () => {
     fetchStatistics()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Open user profile (Edit modal) when navigating with ?userId= (e.g. from Event Reviews)
+  useEffect(() => {
+    const userId = searchParams.get('userId')
+    if (!userId) return
+    let cancelled = false
+    appUsersService
+      .getById(userId)
+      .then((user) => {
+        if (cancelled || !user) return
+        const appUser = user as AppUser
+        setSelectedUser(appUser)
+        setUserForEdit(appUser)
+        setEditModalTriviasWon(null)
+        setIsEditUserModalOpen(true)
+        triviaResponsesService.getTriviasWonCountByUserId(userId).then((n) => {
+          if (!cancelled) setEditModalTriviasWon(n)
+        }).catch(() => { if (!cancelled) setEditModalTriviasWon(0) })
+        setSearchParams((prev) => {
+          prev.delete('userId')
+          return prev
+        }, { replace: true })
+      })
+      .catch(() => {
+        if (!cancelled) {
+          addNotification({
+            type: 'error',
+            title: 'User not found',
+            message: 'The requested user profile could not be loaded.',
+          })
+          setSearchParams((prev) => {
+            prev.delete('userId')
+            return prev
+          }, { replace: true })
+        }
+      })
+    return () => { cancelled = true }
+  }, [searchParams, setSearchParams, addNotification])
 
   // Refetch users when search query changes. When search is cleared, refetch immediately so the list resets; otherwise debounce.
   useEffect(() => {

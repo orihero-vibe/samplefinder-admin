@@ -3,6 +3,7 @@ import { Icon } from '@iconify/react'
 import StarRating from './StarRating'
 
 interface Reviewer {
+  id?: string // user_profiles $id for link to profile
   name: string
   initials: string
   email: string
@@ -29,6 +30,8 @@ interface Review {
   reviewText: string
   helpfulCount: number
   isHidden?: boolean
+  reviewedAt?: string
+  answers?: string
 }
 
 interface ReviewCardProps {
@@ -51,8 +54,14 @@ const ReviewCard = ({ review, onHide, onUnhide, onDelete }: ReviewCardProps) => 
   const handleBrandClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (review.event.brandId) {
-      // Navigate to clients-brands page - if there's a details page later, we can update this
       navigate('/clients-brands')
+    }
+  }
+
+  const handleUserClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (review.reviewer.id) {
+      navigate(`/app-users?userId=${encodeURIComponent(review.reviewer.id)}`)
     }
   }
 
@@ -69,12 +78,22 @@ const ReviewCard = ({ review, onHide, onUnhide, onDelete }: ReviewCardProps) => 
       <div className="flex items-start justify-between mb-4">
         {/* Reviewer Info */}
         <div className="flex items-start gap-4 flex-1">
-          <div className="w-12 h-12 rounded-full bg-[#1D0A74] flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+          <div className="w-12 h-12 rounded-full bg-[#1D0A74] flex items-center justify-center text-white font-semibold text-sm shrink-0">
             {review.reviewer.initials}
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-gray-900">{review.reviewer.name}</h3>
+              {review.reviewer.id ? (
+                <button
+                  type="button"
+                  onClick={handleUserClick}
+                  className="font-semibold text-gray-900 text-left hover:text-[#1D0A74] hover:underline transition-colors cursor-pointer"
+                >
+                  {review.reviewer.name}
+                </button>
+              ) : (
+                <h3 className="font-semibold text-gray-900">{review.reviewer.name}</h3>
+              )}
               {review.reviewer.verified && (
                 <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">
                   Verified
@@ -140,13 +159,26 @@ const ReviewCard = ({ review, onHide, onUnhide, onDelete }: ReviewCardProps) => 
           <Icon icon="mdi:map-marker" className="w-4 h-4" />
           <span>{review.event.location}</span>
         </div>
-        <span className="text-gray-400">
-          {review.event.date}, {review.event.time}
+        <span className="text-gray-500" title="Event date & time">
+          Event: {review.event.date}, {review.event.time}
         </span>
+        {review.reviewedAt && (
+          <span className="text-gray-500" title="Reviewed time">
+            Reviewed: {review.reviewedAt}
+          </span>
+        )}
       </div>
 
       {/* Divider */}
       <div className="border-t border-gray-200 mb-4"></div>
+
+      {/* Answers (e.g. what they liked) */}
+      {review.answers && (
+        <div className="mb-3">
+          <span className="text-sm font-medium text-gray-600">Answers: </span>
+          <span className="text-sm text-gray-700">{review.answers}</span>
+        </div>
+      )}
 
       {/* Review Text */}
       <p className="text-gray-700 mb-4 leading-relaxed">{review.reviewText}</p>

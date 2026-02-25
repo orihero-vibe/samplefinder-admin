@@ -325,6 +325,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
   const handleCropCancel = () => {
     setShowCropper(false)
     setTempImageForCrop(null)
+    const input = document.getElementById('discount-image-upload') as HTMLInputElement
+    if (input) input.value = ''
   }
 
   const handleRemoveDiscountImage = () => {
@@ -637,6 +639,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                   </div>
                 )}
                 <input
+                  id="discount-image-upload"
                   type="file"
                   accept="image/*"
                   onChange={handleFileChange}
