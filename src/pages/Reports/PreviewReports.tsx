@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { DashboardLayout, DownloadModal } from '../../components'
@@ -22,6 +22,10 @@ const PreviewReports = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [reportData, setReportData] = useState<{ columns: { header: string; key: string; getValue?: (row: Record<string, string | number>) => string | number }[]; rows: Record<string, string | number>[] } | null>(null)
   const { addNotification } = useNotificationStore()
+
+  // Ref so export always uses the current sort at click time (avoids stale closure when user changes sort then downloads)
+  const sortByRef = useRef(sortBy)
+  sortByRef.current = sortBy
 
   // Date filter: URL params (from Reports) take precedence; else default to current month range
   const dateRange = useMemo(() => {
@@ -114,6 +118,7 @@ const PreviewReports = () => {
   }
 
   const handleDownload = async (format: DownloadFormat) => {
+    const currentSortBy = sortByRef.current
     setIsDownloading(true)
     try {
       const reportType = getReportType()
@@ -123,14 +128,14 @@ const PreviewReports = () => {
       const useDateRange = getEffectiveDateRange(dateRange)
 
       if (format === 'csv') {
-        await exportService.exportReport(reportType, filename, useDateRange, sortBy)
+        await exportService.exportReport(reportType, filename, useDateRange, currentSortBy)
         addNotification({
           type: 'success',
           title: 'Export Successful',
           message: `Report has been exported to ${filename}`,
         })
       } else if (format === 'pdf') {
-        await exportService.exportReportToPDF(reportType, filename, useDateRange, sortBy)
+        await exportService.exportReportToPDF(reportType, filename, useDateRange, currentSortBy)
         addNotification({
           type: 'success',
           title: 'Export Successful',
