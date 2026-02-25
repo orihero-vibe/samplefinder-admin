@@ -11,11 +11,9 @@ Implemented unsaved changes detection and confirmation dialogs for all Add/Edit 
   - Returns boolean indicating if there are unsaved changes
   
 - **Component**: `/src/components/UnsavedChangesModal.tsx`
-  - Reusable confirmation modal with 3 options:
-    - Save Changes
+  - Reusable confirmation modal with 2 options:
     - Discard Changes
     - Continue Editing
-  - Shows loading state during save operation
   - Higher z-index (z-[60]) than main modals (z-50) to appear on top
 
 ### 2. Modals Fully Updated ✅
@@ -139,13 +137,6 @@ const handleDiscardChanges = () => {
   setShowUnsavedChangesModal(false)
   onClose()
 }
-
-const handleSaveFromUnsavedModal = () => {
-  const form = document.querySelector('form[data-[modal-name]-form]') as HTMLFormElement
-  if (form) {
-    form.requestSubmit()
-  }
-}
 ```
 
 ### Step 5: Update handleSubmit
@@ -173,8 +164,6 @@ return (
       isOpen={showUnsavedChangesModal}
       onClose={() => setShowUnsavedChangesModal(false)}
       onDiscard={handleDiscardChanges}
-      onSave={handleSaveFromUnsavedModal}
-      isSaving={isSubmitting}
     />
     
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -233,18 +222,17 @@ For each modal, verify:
 - [ ] Make changes → Click outside → See confirmation
 - [ ] Make changes → Click X button → See confirmation
 - [ ] Make changes → Click Cancel → See confirmation
-- [ ] In confirmation → Click "Discard" → Modal closes, changes lost
-- [ ] In confirmation → Click "Save" → Form validates, saves, closes
-- [ ] In confirmation → Click "Continue Editing" → Returns to form
+- [ ] In confirmation → Click "Discard Changes" → Modal closes, changes lost
+- [ ] In confirmation → Click "Continue Editing" → Returns to form (user can then use the form's Save button)
 - [ ] No changes made → Click outside/X/Cancel → Closes immediately
 - [ ] During save → All buttons disabled
 - [ ] Form validation errors → Shown before save attempt
-- [ ] Invalid data → Save button in confirmation shows error
+- [ ] Invalid data → Form's Save button shows error
 
 ## Benefits
 
 1. **Prevents Data Loss**: Users can't accidentally lose work by clicking outside
-2. **Clear Options**: Three clear choices when closing with changes
+2. **Clear Options**: Two choices when closing with changes (Discard or Continue Editing)
 3. **Consistent UX**: Same behavior across all modals
 4. **Loading States**: Visual feedback during save operations
 5. **Non-Intrusive**: Only appears when there are actual changes
@@ -263,8 +251,7 @@ For each modal, verify:
 - Image cropper: Default positioning (works on top)
 
 ### Form Submission
-- Uses `form.requestSubmit()` from unsaved modal
-- Triggers native validation
+- Save is only triggered from the form's primary Save button (no duplicate save in the unsaved-changes modal)
 - Maintains all existing validation logic
 - Handles async operations properly
 

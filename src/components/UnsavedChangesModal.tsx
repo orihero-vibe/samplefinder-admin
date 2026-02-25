@@ -4,16 +4,12 @@ interface UnsavedChangesModalProps {
   isOpen: boolean
   onClose: () => void
   onDiscard: () => void
-  onSave: () => void
-  isSaving?: boolean
 }
 
 const UnsavedChangesModal = ({
   isOpen,
   onClose,
   onDiscard,
-  onSave,
-  isSaving = false,
 }: UnsavedChangesModalProps) => {
   if (!isOpen) return null
 
@@ -22,7 +18,7 @@ const UnsavedChangesModal = ({
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={isSaving ? undefined : onClose}
+        onClick={onClose}
       />
 
       {/* Modal */}
@@ -33,11 +29,7 @@ const UnsavedChangesModal = ({
         <div className="p-6">
           {/* Icon */}
           <div className="flex justify-center mb-6">
-            {isSaving ? (
-              <Icon icon="mdi:loading" className="w-20 h-20 text-orange-500 animate-spin" />
-            ) : (
-              <Icon icon="mdi:alert-circle" className="w-20 h-20 text-orange-500" />
-            )}
+            <Icon icon="mdi:alert-circle" className="w-20 h-20 text-orange-500" />
           </div>
 
           {/* Title */}
@@ -54,26 +46,15 @@ const UnsavedChangesModal = ({
           <div className="flex flex-col gap-3">
             <button
               type="button"
-              onClick={onSave}
-              disabled={isSaving}
-              className="w-full px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isSaving && <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />}
-              {isSaving ? 'Saving...' : 'Save Changes'}
-            </button>
-            <button
-              type="button"
               onClick={onDiscard}
-              disabled={isSaving}
-              className="w-full px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold"
             >
               Discard Changes
             </button>
             <button
               type="button"
               onClick={onClose}
-              disabled={isSaving}
-              className="w-full px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
             >
               Continue Editing
             </button>

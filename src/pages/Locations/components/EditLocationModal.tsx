@@ -111,21 +111,12 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
     onClose()
   }
 
-  const handleSaveFromUnsavedModal = () => {
-    const form = document.querySelector('form[data-location-form]') as HTMLFormElement
-    if (form) {
-      form.requestSubmit()
-    }
-  }
-
   return (
     <>
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
         onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
-        onSave={handleSaveFromUnsavedModal}
-        isSaving={isSubmitting}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">

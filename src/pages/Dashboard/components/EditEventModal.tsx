@@ -415,14 +415,6 @@ const EditEventModal = ({
     onClose()
   }
 
-  const handleSaveFromUnsavedModal = async () => {
-    // Trigger form submission via ref
-    const form = document.querySelector('form[data-event-form]') as HTMLFormElement
-    if (form) {
-      form.requestSubmit()
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -521,8 +513,6 @@ const EditEventModal = ({
         isOpen={showUnsavedChangesModal}
         onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
-        onSave={handleSaveFromUnsavedModal}
-        isSaving={isSubmitting}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">

@@ -63,14 +63,6 @@ const handleDiscardChanges = () => {
   setShowUnsavedChangesModal(false)
   onClose()
 }
-
-const handleSaveFromUnsavedModal = async () => {
-  // Trigger form submission via ref
-  const form = document.querySelector('form[data-modal-form]') as HTMLFormElement
-  if (form) {
-    form.requestSubmit()
-  }
-}
 ```
 
 ### 5. Update Submit Handler
@@ -102,8 +94,6 @@ Add UnsavedChangesModal component:
     isOpen={showUnsavedChangesModal}
     onClose={() => setShowUnsavedChangesModal(false)}
     onDiscard={handleDiscardChanges}
-    onSave={handleSaveFromUnsavedModal}
-    isSaving={isSubmitting}
   />
   
   <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -166,7 +156,6 @@ For each modal:
 - [ ] Make changes and click close button → Should show confirmation
 - [ ] Make changes and click Cancel → Should show confirmation
 - [ ] Click "Discard Changes" → Modal closes without saving
-- [ ] Click "Save Changes" → Form validates and saves
-- [ ] Click "Continue Editing" → Returns to form
+- [ ] Click "Continue Editing" → Returns to form (user can then use the form's Save button)
 - [ ] Make no changes and close → No confirmation (closes immediately)
 - [ ] During save operation → All buttons disabled

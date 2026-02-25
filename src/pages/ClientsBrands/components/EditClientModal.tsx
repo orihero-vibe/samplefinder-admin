@@ -146,13 +146,6 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
     onClose()
   }
 
-  const handleSaveFromUnsavedModal = () => {
-    const form = document.querySelector('form[data-client-form]') as HTMLFormElement
-    if (form) {
-      form.requestSubmit()
-    }
-  }
-
   const handleRemoveImage = () => {
     setFormData((prev) => ({ ...prev, logo: null }))
     setLogoPreview(null)
@@ -176,8 +169,6 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
         isOpen={showUnsavedChangesModal}
         onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
-        onSave={handleSaveFromUnsavedModal}
-        isSaving={isSubmitting}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">
