@@ -101,3 +101,43 @@ export function validateCheckInCode(code: string): boolean {
   const pattern = /^[0-9][A-Z][0-9][A-Z][0-9][A-Z]$/
   return pattern.test(code)
 }
+
+/** Display status for an event (Archived/Hidden from DB; Active/In Active derived from date/time) */
+export type EventDisplayStatus = 'Archived' | 'Hidden' | 'Active' | 'In Active'
+
+/**
+ * Derives display status from event document.
+ * - Archived / Hidden come from DB flags.
+ * - "Active" = current time is within event start and end (live).
+ * - "In Active" = scheduled (not started) or completed (ended).
+ */
+export function getEventStatus(doc: {
+  startTime?: string
+  endTime?: string
+  isArchived?: boolean
+  isHidden?: boolean
+}): EventDisplayStatus {
+  if (doc.isArchived) return 'Archived'
+  if (doc.isHidden) return 'Hidden'
+  const now = new Date()
+  const eventStart = doc.startTime ? new Date(doc.startTime) : null
+  const eventEnd = doc.endTime ? new Date(doc.endTime) : null
+  if (!eventStart || !eventEnd || isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
+    return 'In Active'
+  }
+  if (now < eventStart) return 'In Active' // scheduled
+  if (now > eventEnd) return 'In Active' // completed
+  return 'Active' // live
+}
+
+/**
+ * Returns Tailwind badge class for an event display status.
+ */
+export function getEventStatusColor(status: EventDisplayStatus | string): string {
+  const s = status.toLowerCase().replace(/\s+/g, '')
+  if (s === 'active') return 'bg-green-100 text-green-800'
+  if (s === 'inactive') return 'bg-blue-100 text-blue-800'
+  if (s === 'hidden') return 'bg-red-100 text-red-800'
+  if (s === 'archived') return 'bg-gray-100 text-gray-800'
+  return 'bg-gray-100 text-gray-800'
+}

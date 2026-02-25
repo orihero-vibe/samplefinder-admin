@@ -7,6 +7,7 @@ import { eventsService, categoriesService, clientsService, statisticsService, ty
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { formatDateWithTimezone } from '../../lib/dateUtils'
+import { getEventStatus, getEventStatusColor } from '../../lib/eventUtils'
 import type { EventDocument } from '../../lib/services'
 import { Query } from '../../lib/appwrite'
 import {
@@ -173,35 +174,14 @@ const Dashboard = () => {
       return `${hour12}:${String(minutes).padStart(2, '0')} ${ampm}`
     }
 
-    // Derive status from isArchived and isHidden fields
-    const getStatus = (doc: LocalEventDocument): string => {
-      if (doc.isArchived) {
-        return 'Archived'
-      } else if (doc.isHidden) {
-        return 'Hidden'
-      }
-      return 'Active'
-    }
-
-    // Determine status color based on status value
-    const getStatusColor = (status: string): string => {
-      const statusLower = status.toLowerCase()
-      if (statusLower === 'active') {
-        return 'bg-green-100 text-green-800'
-      } else if (statusLower === 'hidden') {
-        return 'bg-red-100 text-red-800'
-      } else if (statusLower === 'archived') {
-        return 'bg-gray-100 text-gray-800'
-      }
-      return 'bg-gray-100 text-gray-800'
-    }
+    // Derive status from isArchived, isHidden, and event date/time (Active = live, In Active = scheduled or completed)
+    const status = getEventStatus(doc)
 
     // Show YES if event has any discount text or discount image
     const hasDiscount =
       (doc.discount != null && String(doc.discount).trim() !== '') ||
       (doc.discountImageURL != null && String(doc.discountImageURL).trim() !== '')
 
-    const status = getStatus(doc)
     
     return {
       id: doc.$id,
@@ -212,7 +192,7 @@ const Dashboard = () => {
       endTime: formatTime(doc.endTime),
       discount: hasDiscount ? 'YES' : 'NO',
       status: status,
-      statusColor: getStatusColor(status),
+      statusColor: getEventStatusColor(status),
     }
   }
 
@@ -224,8 +204,8 @@ const Dashboard = () => {
       // Build base queries
       const queries: string[] = []
       
-      // Apply status filter
-      if (statusFilter === 'active') {
+      // Apply status filter (for active/in_active we fetch non-archived, non-hidden then filter by derived status client-side)
+      if (statusFilter === 'active' || statusFilter === 'in_active') {
         queries.push(Query.equal('isArchived', false))
         queries.push(Query.equal('isHidden', false))
       } else if (statusFilter === 'hidden') {
@@ -270,16 +250,16 @@ const Dashboard = () => {
         queries.push(orderMethod('date'))
       }
       
-      // Determine if we're searching
+      // Determine if we're searching or filtering by derived status (Active / In Active)
       const isSearching = searchTerm.trim().length > 0
+      const needsClientSideStatusFilter = statusFilter === 'active' || statusFilter === 'in_active'
       
-      // When searching, fetch more records for client-side filtering, then paginate results
-      // When not searching, use server-side pagination
-      if (!isSearching) {
+      // When searching or filtering by Active/In Active, fetch more records for client-side filtering, then paginate
+      if (!isSearching && !needsClientSideStatusFilter) {
         queries.push(Query.limit(pageSize))
         queries.push(Query.offset((page - 1) * pageSize))
       } else {
-        // Fetch up to 500 records for search filtering
+        // Fetch up to 500 records for client-side filtering
         queries.push(Query.limit(500))
       }
       
@@ -333,8 +313,15 @@ const Dashboard = () => {
         mappedEvents = mappedEvents.filter((e) => e.id && matchingIds.has(e.id))
       }
 
-      // Pagination: when searching use filtered count; when not searching use result.total
-      const total = isSearching ? mappedEvents.length : result.total
+      // Filter by derived status when Active or In Active is selected
+      if (statusFilter === 'active') {
+        mappedEvents = mappedEvents.filter((e) => e.status === 'Active')
+      } else if (statusFilter === 'in_active') {
+        mappedEvents = mappedEvents.filter((e) => e.status === 'In Active')
+      }
+
+      // Pagination: when searching or status filter (Active/In Active) use filtered count; otherwise use result.total
+      const total = isSearching || needsClientSideStatusFilter ? mappedEvents.length : result.total
       const totalPagesCount = Math.ceil(total / pageSize)
       setTotalEvents(total)
       setTotalPages(totalPagesCount)
@@ -357,8 +344,8 @@ const Dashboard = () => {
         })
       }
 
-      // For search: paginate the filtered list; for non-search we already have one page of docs
-      const eventsToShow = isSearching
+      // For search or Active/In Active filter: paginate the filtered list; otherwise we already have one page of docs
+      const eventsToShow = isSearching || needsClientSideStatusFilter
         ? mappedEvents.slice((page - 1) * pageSize, page * pageSize)
         : mappedEvents
 
