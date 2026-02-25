@@ -44,7 +44,7 @@ const PreviewReports = () => {
       '4': 'clients-brands',
       '5': 'app-users',
       '6': 'points-earned-all',
-      '7': 'points-earned-all', // Points Earned with Date Range - same as all for now
+      '7': 'points-earned-date-range',
     }
     return reportTypeMap[reportId || '1'] || 'dashboard-all'
   }

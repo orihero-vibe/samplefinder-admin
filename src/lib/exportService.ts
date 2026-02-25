@@ -42,6 +42,7 @@ export type ReportType =
   | 'clients-brands'
   | 'app-users'
   | 'points-earned-all'
+  | 'points-earned-date-range'
 
 export interface ReportColumn {
   header: string
@@ -318,7 +319,9 @@ async function fetchCheckInReviewPointsByUser(
     offset += REPORT_REVIEWS_PAGE_SIZE
   } while (docs.length === REPORT_REVIEWS_PAGE_SIZE)
 
-  const eventIds = [...new Set(reviewRows.map((r) => r.event).filter(Boolean))] as string[]
+  const toId = (v: string | { $id?: string } | undefined): string | undefined =>
+    v == null ? undefined : typeof v === 'string' ? v : (v as { $id?: string }).$id
+  const eventIds = [...new Set(reviewRows.map((r) => toId(r.event)).filter(Boolean))] as string[]
   const eventPointsMap = new Map<string, number>()
 
   for (let i = 0; i < eventIds.length; i += EVENT_IDS_BATCH_SIZE) {
@@ -332,9 +335,10 @@ async function fetchCheckInReviewPointsByUser(
   }
 
   for (const r of reviewRows) {
-    const userId = r.user
+    const userId = toId(r.user)
     if (!userId) continue
-    const eventPts = (r.event ? eventPointsMap.get(r.event) : undefined) ?? 0
+    const eventId = toId(r.event)
+    const eventPts = (eventId ? eventPointsMap.get(eventId) : undefined) ?? 0
     const reviewPts = (typeof r.pointsEarned === 'number' ? r.pointsEarned : 0) ?? 0
     const add = eventPts + reviewPts
     userTotals.set(userId, (userTotals.get(userId) ?? 0) + add)
@@ -438,7 +442,9 @@ export const exportService = {
         return await this.generateAppUsersReport(dateRange)
       
       case 'points-earned-all':
-        return await this.generatePointsEarnedReport(dateRange)
+        return await this.generatePointsEarnedReport(dateRange, false)
+      case 'points-earned-date-range':
+        return await this.generatePointsEarnedReport(dateRange, true)
 
       default:
         throw new Error(`Unknown report type: ${reportType}`)
@@ -725,14 +731,16 @@ export const exportService = {
    * Generate Points Earned report
    * Fetches all users (paginated) so report total matches actual user count.
    * Check-in/Review Pts = events points + reviews points (check-in points from events + pointsEarned from reviews).
-   * When dateRange is provided, only points from reviews created within the range are included.
+   * When useDateRangeForPoints is true, only points from reviews created within dateRange are included.
    */
   async generatePointsEarnedReport(
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    useDateRangeForPoints = false
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+    const pointsDateRange = useDateRangeForPoints ? dateRange : undefined
     const [usersResult, checkInReviewPointsByUser] = await Promise.all([
       fetchAllAppUsers(),
-      fetchCheckInReviewPointsByUser(dateRange),
+      fetchCheckInReviewPointsByUser(pointsDateRange),
     ])
 
     const rows = usersResult.map((user: AppUser) => {
@@ -989,6 +997,8 @@ export const exportService = {
         return 'App Users Report'
       case 'points-earned-all':
         return 'Points Earned Report'
+      case 'points-earned-date-range':
+        return 'Points Earned Report (Date Range)'
       default:
         return 'Report'
     }
