@@ -811,6 +811,7 @@ export const appUsersService = {
         role: userData.role ?? 'user',
         tierLevel: userData.tierLevel ?? '',
         totalPoints: userData.totalPoints ?? 100,
+        dob: userData.dob ?? '',
       }
 
       const execution = await functions.createExecution({

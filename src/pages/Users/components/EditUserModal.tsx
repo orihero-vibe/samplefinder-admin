@@ -27,6 +27,7 @@ interface UserData {
   reviews?: string
   triviasWon?: string
   isBlocked?: boolean
+  dob?: string
 }
 
 interface EditUserModalProps {
@@ -69,6 +70,7 @@ const EditUserModal = ({
     reviews: '',
     triviasWon: '',
     isBlocked: false,
+    dob: '',
   })
 
   const [showPassword, setShowPassword] = useState(false)
@@ -135,6 +137,7 @@ const EditUserModal = ({
         reviews: initialData.reviews || '',
         triviasWon: initialData.triviasWon || '',
         isBlocked: initialData.isBlocked || false,
+        dob: initialData.dob ?? '',
       }
       
       if (isNewOpen) {
@@ -279,6 +282,11 @@ const EditUserModal = ({
 
   if (!isOpen) return null
 
+  // Check-in/Review Points = checkIns + reviews (readonly, calculated)
+  const checkInReviewPointsCalculated =
+    (parseInt(formData.checkIns || '0', 10) || 0) +
+    (parseInt(formData.reviews || '0', 10) || 0)
+
   // Format phone number to (XXX) XXX-XXXX
   const formatPhoneNumber = (value: string) => {
     // Remove all non-digits
@@ -371,7 +379,12 @@ const EditUserModal = ({
     e.preventDefault()
     
     const trimmed = trimFormStrings(formData)
-    
+    // Check-in/Review Points is calculated from checkIns + reviews
+    const calculatedPoints =
+      (parseInt(trimmed.checkIns || '0', 10) || 0) +
+      (parseInt(trimmed.reviews || '0', 10) || 0)
+    trimmed.checkInReviewPoints = String(calculatedPoints)
+
     const pwdError = validatePassword(trimmed.password || '')
     setPasswordError(pwdError)
     if (pwdError) return
@@ -620,6 +633,19 @@ const EditUserModal = ({
                 </div>
               </div>
 
+              {/* Date of Birth */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Date of Birth
+                </label>
+                <input
+                  type="date"
+                  value={formData.dob ?? ''}
+                  onChange={(e) => handleInputChange('dob', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                />
+              </div>
+
               {/* Password */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -789,18 +815,16 @@ const EditUserModal = ({
                 />
               </div>
 
-              {/* Check-in/Review Points */}
+              {/* Check-in/Review Points (readonly: check-ins + reviews) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Check-in/Review Points <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter Points"
-                  value={formData.checkInReviewPoints}
-                  onChange={(e) => handleInputChange('checkInReviewPoints', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  readOnly
+                  value={checkInReviewPointsCalculated}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
               </div>
 
@@ -877,7 +901,7 @@ const EditUserModal = ({
                 />
               </div>
 
-              {/* Trivias Won (read-only: computed from trivia responses or stored value) */}
+              {/* Trivias Won (editable; synced with user profile) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Trivias Won <span className="text-red-500">*</span>
@@ -886,9 +910,9 @@ const EditUserModal = ({
                   type="text"
                   placeholder="Enter Trivias Won"
                   value={formData.triviasWon}
-                  disabled
-                  readOnly
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
+                  onChange={(e) => handleInputChange('triviasWon', e.target.value)}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
                 />
               </div>
             </div>
