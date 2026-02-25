@@ -116,6 +116,7 @@ interface CreateUserRequest {
   phoneNumber?: string;
   role?: string;
   tierLevel?: string;
+  dob?: string;
 }
 
 interface TriviaClientDocument {
@@ -813,6 +814,7 @@ async function createUser(
       tierLevel: data.tierLevel || '',
       isBlocked: false,
       idAdult: true,
+      ...(data.dob?.trim() ? { dob: data.dob.trim().length === 10 ? `${data.dob.trim()}T00:00:00.000Z` : data.dob.trim() } : {}),
     };
 
     const profile = await databases.createDocument(

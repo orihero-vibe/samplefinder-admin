@@ -19,6 +19,7 @@ interface AddUserModalProps {
     role: string
     tierLevel?: string
     totalPoints?: number
+    dob?: string
   }) => void
 }
 
@@ -32,6 +33,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     phoneNumber: '',
     role: 'user', // Default role
     tierLevel: '',
+    dob: '',
   }
   
   const [formData, setFormData] = useState(initialFormData)
@@ -451,6 +453,19 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               {lastNameError && (
                 <p className="mt-1 text-xs text-red-500">{lastNameError}</p>
               )}
+            </div>
+
+            {/* Date of Birth */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Date of Birth
+              </label>
+              <input
+                type="date"
+                value={formData.dob}
+                onChange={(e) => handleInputChange('dob', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
             </div>
 
             {/* Username */}

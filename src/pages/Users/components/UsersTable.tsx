@@ -42,6 +42,22 @@ const UsersTable = ({
   onPageChange,
   isLoading = false,
 }: UsersTableProps) => {
+  // Format date-only (e.g. DOB) as local calendar date to avoid timezone shift (UTC midnight -> previous day)
+  const formatDateOnly = (dateStr: string | undefined): string => {
+    if (!dateStr) return '-'
+    const match = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+    if (match) {
+      const [, y, m, d] = match
+      const year = parseInt(y!, 10)
+      const month = parseInt(m!, 10) - 1
+      const day = parseInt(d!, 10)
+      const date = new Date(year, month, day)
+      if (isNaN(date.getTime())) return '-'
+      return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+    }
+    return new Date(dateStr).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+  }
+
   // Format phone number to (XXX) XXX-XXXX
   const formatPhoneNumber = (phoneNumber: string | undefined) => {
     if (!phoneNumber) return '-'
@@ -167,13 +183,7 @@ const UsersTable = ({
                     {user.totalPoints?.toLocaleString() || '0'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.dob
-                      ? new Date(user.dob).toLocaleDateString('en-US', { 
-                          month: '2-digit', 
-                          day: '2-digit', 
-                          year: 'numeric' 
-                        })
-                      : '-'}
+                    {formatDateOnly(user.dob)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {user.totalEvents?.toLocaleString() || '0'}
