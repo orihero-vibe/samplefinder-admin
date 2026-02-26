@@ -1,4 +1,4 @@
-import { eventsService, clientsService, appUsersService, categoriesService, reviewsService, triviaService, triviaResponsesService } from './services'
+import { eventsService, clientsService, appUsersService, categoriesService, reviewsService, triviaService, triviaResponsesService, isCorrectTriviaResponse } from './services'
 import type { EventDocument, ClientDocument, AppUser, TriviaDocument, TriviaResponseDocument, ReviewDocument } from './services'
 import { Query } from './appwrite'
 import jsPDF from 'jspdf'
@@ -397,7 +397,7 @@ async function fetchTriviasWonCountByUser(): Promise<Map<string, number>> {
     chunk = listResult.documents
     for (const t of chunk) {
       if (t.$id != null && t.correctOptionIndex != null) {
-        correctIndexByTriviaId.set(t.$id, t.correctOptionIndex)
+        correctIndexByTriviaId.set(t.$id, Number(t.correctOptionIndex))
       }
     }
     offset += REPORT_LIST_PAGE_SIZE
@@ -418,7 +418,7 @@ async function fetchTriviasWonCountByUser(): Promise<Map<string, number>> {
       if (!uid || !tid) continue
       const correctIndex = correctIndexByTriviaId.get(tid)
       if (correctIndex === undefined) continue
-      if (r.answerIndex === correctIndex) {
+      if (isCorrectTriviaResponse(r, correctIndex)) {
         countByUserId.set(uid, (countByUserId.get(uid) ?? 0) + 1)
       }
     }

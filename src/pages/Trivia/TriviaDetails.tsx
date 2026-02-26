@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { DashboardLayout, ShimmerPage } from '../../components'
 import TriviaDetailsHeader from './components/TriviaDetailsHeader'
 import TriviaDetailsContent from './components/TriviaDetailsContent'
-import { triviaService, userProfilesService, type TriviaResponseDocument, type UserProfile } from '../../lib/services'
+import { triviaService, userProfilesService, isCorrectTriviaResponse, type TriviaResponseDocument, type UserProfile } from '../../lib/services'
 import type { TriviaWinner } from './components/TriviaTable'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -87,20 +87,20 @@ const TriviaDetails = () => {
             })
           : 'N/A'
 
-        // Calculate response distribution per answer option
+        // Calculate response distribution per answer option (normalize to number; Appwrite may return integers as strings)
         const answers = triviaDoc.answers || []
         const answerStats = answers.map((answer: string, index: number) => {
-          const responseCount = responses.filter((r: TriviaResponseDocument) => r.answerIndex === index).length
+          const responseCount = responses.filter((r: TriviaResponseDocument) => Number(r.answerIndex) === index).length
           return {
             option: answer,
-            isCorrect: index === triviaDoc.correctOptionIndex,
+            isCorrect: Number(triviaDoc.correctOptionIndex) === index,
             responseCount,
           }
         })
 
         // Get unique users who answered correctly (winners)
-        const correctResponses = responses.filter(
-          (r: TriviaResponseDocument) => r.answerIndex === triviaDoc.correctOptionIndex
+        const correctResponses = responses.filter((r: TriviaResponseDocument) =>
+          isCorrectTriviaResponse(r, triviaDoc.correctOptionIndex)
         )
         // Handle both string IDs and expanded relationship objects
         const getUserId = (user: TriviaResponseDocument['user']): string | null => {
@@ -156,16 +156,16 @@ const TriviaDetails = () => {
                 firstname: profile?.firstname || undefined,
                 lastname: profile?.lastname || undefined,
                 avatarURL: profile?.avatarURL || undefined,
-                answerIndex: response.answerIndex,
-                isCorrect: response.answerIndex === triviaDoc.correctOptionIndex,
+                answerIndex: Number(response.answerIndex),
+                isCorrect: isCorrectTriviaResponse(response, triviaDoc.correctOptionIndex),
                 answeredAt: response.$createdAt,
               }
             } catch {
               // Profile fetch failed, continue with fallback
               return {
                 id: userId,
-                answerIndex: response.answerIndex,
-                isCorrect: response.answerIndex === triviaDoc.correctOptionIndex,
+                answerIndex: Number(response.answerIndex),
+                isCorrect: isCorrectTriviaResponse(response, triviaDoc.correctOptionIndex),
                 answeredAt: response.$createdAt,
               }
             }

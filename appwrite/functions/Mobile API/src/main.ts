@@ -139,6 +139,7 @@ interface TriviaDocument {
   /** User profile IDs that skipped/dismissed this trivia; they will not see it again */
   skippedUsers?: string[];
   skips?: number;
+  views?: number;
 }
 
 interface ActiveTriviaResponse {
@@ -466,6 +467,7 @@ async function getActiveTrivia(
   // Filter out trivia that the user has already answered or skipped
   // Also remove correctOptionIndex from the response for security
   const unansweredTrivia: ActiveTriviaResponse[] = [];
+  const triviaToIncrementViews: TriviaDocument[] = [];
 
   for (const trivia of activeTriviaResponse.documents as unknown as TriviaDocument[]) {
     const wasSkippedByUser =
@@ -480,7 +482,21 @@ async function getActiveTrivia(
         points: trivia.points,
         client: trivia.client,
       });
+      triviaToIncrementViews.push(trivia);
     }
+  }
+
+  // Increment views for each trivia returned (admin View column)
+  if (triviaToIncrementViews.length > 0) {
+    await Promise.all(
+      triviaToIncrementViews.map((trivia) =>
+        databases
+          .updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id, {
+            views: (trivia.views ?? 0) + 1,
+          })
+          .catch((err) => log(`Failed to increment views for trivia ${trivia.$id}: ${String(err)}`))
+      )
+    );
   }
 
   log(`Returning ${unansweredTrivia.length} unanswered trivia questions`);

@@ -218,6 +218,7 @@ async function getActiveTrivia(databases, userId, log) {
     // Filter out trivia that the user has already answered or skipped
     // Also remove correctOptionIndex from the response for security
     const unansweredTrivia = [];
+    const triviaToIncrementViews = [];
     for (const trivia of activeTriviaResponse.documents) {
         const wasSkippedByUser = Array.isArray(trivia.skippedUsers) && trivia.skippedUsers.includes(userId);
         if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser) {
@@ -230,7 +231,20 @@ async function getActiveTrivia(databases, userId, log) {
                 points: trivia.points,
                 client: trivia.client,
             });
+            triviaToIncrementViews.push(trivia);
         }
+    }
+    // Increment views for each trivia returned (admin View column)
+    if (triviaToIncrementViews.length > 0) {
+        await Promise.all(
+            triviaToIncrementViews.map((trivia) =>
+                databases
+                    .updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id, {
+                        views: (trivia.views ?? 0) + 1,
+                    })
+                    .catch((err) => log(`Failed to increment views for trivia ${trivia.$id}: ${String(err)}`))
+            )
+        );
     }
     log(`Returning ${unansweredTrivia.length} unanswered trivia questions`);
     return unansweredTrivia;
