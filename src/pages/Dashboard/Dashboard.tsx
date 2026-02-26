@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Models } from 'appwrite'
 import { DashboardLayout, ShimmerPage, ConfirmationModal } from '../../components'
 import type { ConfirmationType } from '../../components'
-import { eventsService, categoriesService, clientsService, statisticsService, type DashboardStats, type ClientDocument } from '../../lib/services'
+import { eventsService, categoriesService, clientsService, locationsService, statisticsService, type DashboardStats, type ClientDocument } from '../../lib/services'
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { formatDateWithTimezone } from '../../lib/dateUtils'
@@ -560,10 +560,11 @@ const Dashboard = () => {
         'brand name': 'Brand Name',
         'brandname': 'Brand Name',
         'brand': 'Brand Name',
-        'brand description': 'Brand Description',
-        'branddescription': 'Brand Description',
         'points': 'Points',
         'point': 'Points',
+        'location': 'Location',
+        'location name': 'Location',
+        'locationname': 'Location',
         // Optional columns
         'start time': 'Start Time',
         'starttime': 'Start Time',
@@ -595,25 +596,19 @@ const Dashboard = () => {
 
     const normalizedHeaders = headers.map(normalizeHeader)
     
-    // Required columns (aligned with CSVUploadModal: non-location first, then location)
+    // Required columns (aligned with CSVUploadModal)
     const requiredColumns = [
       'Brand Name',
       'Category',
-      'Check-in Code',
       'Date',
       'End Time',
       'Event Info',
       'Event Name',
+      'Location',
       'Points',
       'Products',
       'Review Points',
       'Start Time',
-      'Address',
-      'City',
-      'Latitude',
-      'Longitude',
-      'State',
-      'Zip Code',
     ]
     const missingColumns = requiredColumns.filter(col => !normalizedHeaders.includes(col))
     
@@ -685,10 +680,7 @@ const Dashboard = () => {
         'Event Name',
         'Date',
         'Brand Name',
-        'Address',
-        'City',
-        'State',
-        'Zip Code',
+        'Location',
         'Products',
       ] as const
 
@@ -795,6 +787,13 @@ const Dashboard = () => {
             }
           }
 
+          // Resolve Location by name (required)
+          const locationName = row['Location']?.trim() || ''
+          const locationDoc = await locationsService.findByName(locationName)
+          if (!locationDoc) {
+            throw new Error(`Location "${locationName}" not found. Use an existing Location name from the admin panel.`)
+          }
+
           // Parse products (comma-separated) and sync new products to brand's product list
           const productsString = row['Products']?.trim() || ''
           const productsFromCsv = productsString
@@ -810,65 +809,48 @@ const Dashboard = () => {
             }
           }
 
-          // Use check-in code from CSV or generate one
-          const checkInCode = row['Check-in Code']?.trim() || `CHK-${Date.now()}-${i}`
+          const checkInCode = `CHK-${Date.now()}-${i}`
 
           // Parse review points (use Points value as fallback)
           const checkInPoints = parseFloat(row['Points']) || 0
           const reviewPoints = row['Review Points']?.trim() 
             ? parseFloat(row['Review Points']) || 0
-            : checkInPoints // Use checkInPoints as default for review points
+            : checkInPoints
 
-          // Parse event info or generate default
-          const eventInfo = row['Event Info']?.trim() || `Event at ${row['Address'] || row['City'] || 'location'}`
+          const eventInfo = row['Event Info']?.trim() || `Event at ${locationDoc.name}`
 
-          // Parse brand description
-          const brandDescription = row['Brand Description']?.trim() || ''
-
-          // Parse discount (now text field)
           const discount = row['Discount']?.trim() || ''
-          
-          // Get discount image URL if provided
           const discountImageURL = row['Discount Image URL']?.trim() || ''
 
-          // Prepare event payload
+          // Prepare event payload: address/geo from Location document
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const eventPayload: any = {
             name: row['Event Name'],
             date: formatDateWithTimezone(eventDate),
             startTime: formatDateWithTimezone(startDateTime),
             endTime: formatDateWithTimezone(endDateTime),
-            city: row['City'] || '',
-            address: row['Address'] || '',
-            state: row['State'] || '',
-            zipCode: row['Zip Code'] || '',
+            city: locationDoc.city || '',
+            address: locationDoc.address || '',
+            state: locationDoc.state || '',
+            zipCode: locationDoc.zipCode || '',
             products: productsString,
-            checkInCode: checkInCode,
-            checkInPoints: checkInPoints,
-            reviewPoints: reviewPoints,
-            eventInfo: eventInfo,
-            brandDescription: brandDescription,
+            checkInCode,
+            checkInPoints,
+            reviewPoints,
+            eventInfo,
             isArchived: false,
             isHidden: false,
           }
 
-          // Discount: single string field
+          if (locationDoc.location && Array.isArray(locationDoc.location) && locationDoc.location.length === 2) {
+            eventPayload.location = locationDoc.location
+          }
+
           if (discount) {
             eventPayload.discount = discount.trim()
           }
-
-          // Add discount image URL if provided
           if (discountImageURL) {
             eventPayload.discountImageURL = discountImageURL
-          }
-
-          // Add location if latitude and longitude provided
-          if (row['Latitude']?.trim() && row['Longitude']?.trim()) {
-            const lat = parseFloat(row['Latitude'])
-            const lng = parseFloat(row['Longitude'])
-            if (!isNaN(lat) && !isNaN(lng)) {
-              eventPayload.location = [lng, lat] // Appwrite format: [longitude, latitude]
-            }
           }
 
           // Add client if found

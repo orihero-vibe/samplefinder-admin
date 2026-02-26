@@ -524,6 +524,7 @@ export interface EventDocument extends Models.Document {
   isHidden: boolean
   radius?: number
   location?: [number, number] // [longitude, latitude]
+  locationId?: string // Location document ID (relationship) - used when event is linked to a Location
   client?: string // Client ID (relationship)
   categories?: string // Category ID (relationship)
   [key: string]: unknown
@@ -1781,4 +1782,11 @@ export const locationsService = {
       ['name', 'address', 'city', 'state', 'zipCode'],
       queries
     ),
+  findByName: async (name: string): Promise<LocationDocument | null> => {
+    const result = await DatabaseService.list<LocationDocument>(
+      appwriteConfig.collections.locations,
+      [Query.equal('name', [name])]
+    )
+    return result.documents[0] || null
+  },
 }
