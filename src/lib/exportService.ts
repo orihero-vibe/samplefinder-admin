@@ -122,8 +122,6 @@ const pointsEarnedColumns: ReportColumn[] = [
   { header: 'First Name', key: 'firstName' },
   { header: 'Last Name', key: 'lastName' },
   { header: 'Username', key: 'username' },
-  { header: 'Email', key: 'email' },
-  { header: 'Last Login Date', key: 'lastLoginDate' },
   { header: 'Tier Level', key: 'tierLevel' },
   { header: 'User Points', key: 'userPoints' },
   { header: 'Check-in/Review Pts', key: 'checkInReviewPoints' },
