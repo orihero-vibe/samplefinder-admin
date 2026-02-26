@@ -342,6 +342,7 @@ const EditEventModal = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      e.target.value = ''
       const reader = new FileReader()
       reader.onloadend = () => {
         setTempImageForCrop(reader.result as string)
@@ -394,6 +395,8 @@ const EditEventModal = ({
   const handleRemoveDiscountImage = () => {
     setFormData((prev) => ({ ...prev, discountImage: null }))
     setDiscountImagePreview(null)
+    const input = document.getElementById('discount-image-upload-edit') as HTMLInputElement
+    if (input) input.value = ''
   }
 
   // Get today's date in YYYY-MM-DD format for date input min attribute

@@ -280,6 +280,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      e.target.value = ''
       const reader = new FileReader()
       reader.onloadend = () => {
         setTempImageForCrop(reader.result as string)
@@ -332,6 +333,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
   const handleRemoveDiscountImage = () => {
     setFormData((prev) => ({ ...prev, discountImage: null }))
     setDiscountImagePreview(null)
+    const input = document.getElementById('discount-image-upload') as HTMLInputElement
+    if (input) input.value = ''
   }
 
   // Get today's date in YYYY-MM-DD format for date input min attribute
