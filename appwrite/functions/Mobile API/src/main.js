@@ -215,11 +215,12 @@ async function getActiveTrivia(databases, userId, log) {
         }
     }
     log(`User has answered ${answeredTriviaIds.size} trivia questions`);
-    // Filter out trivia that the user has already answered
+    // Filter out trivia that the user has already answered or skipped
     // Also remove correctOptionIndex from the response for security
     const unansweredTrivia = [];
     for (const trivia of activeTriviaResponse.documents) {
-        if (!answeredTriviaIds.has(trivia.$id)) {
+        const wasSkippedByUser = Array.isArray(trivia.skippedUsers) && trivia.skippedUsers.includes(userId);
+        if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser) {
             unansweredTrivia.push({
                 $id: trivia.$id,
                 question: trivia.question,
@@ -307,7 +308,6 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
     return {
         isCorrect,
         pointsAwarded,
-        correctAnswerIndex: trivia.correctOptionIndex,
         message: isCorrect
             ? `Correct! You earned ${pointsAwarded} points.`
             : 'Incorrect answer. Better luck next time!',
@@ -331,87 +331,22 @@ async function dismissTrivia(databases, userId, triviaId, log) {
     catch {
         throw { code: 404, message: 'Trivia question not found' };
     }
-    const skippedUsers = Array.isArray(trivia.skippedUsers) ? [...trivia.skippedUsers] : [];
+    const skippedUsers = Array.isArray(trivia.skippedUsers)
+        ? [...trivia.skippedUsers]
+        : [];
     if (skippedUsers.includes(userId)) {
         log(`User ${userId} already in skippedUsers for trivia ${triviaId}, no update`);
         return;
     }
     skippedUsers.push(userId);
-    const updatePayload = { skippedUsers };
+    const updatePayload = {
+        skippedUsers,
+    };
     if (typeof trivia.skips === 'number') {
         updatePayload.skips = trivia.skips + 1;
     }
     await databases.updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, triviaId, updatePayload);
     log(`Added user ${userId} to skippedUsers for trivia ${triviaId}`);
-}
-// ============================================================================
-// USER LOOKUP FUNCTION
-// ============================================================================
-/**
- * Get user ID by email address.
- * Searches Appwrite Auth for a user with the specified email address.
- * Returns the user ID if found.
- */
-async function getUserByEmail(users, email, log) {
-    log(`Searching for user with email: ${email}`);
-    try {
-        const trimmedEmail = email.trim().toLowerCase();
-        if (!trimmedEmail) {
-            throw { code: 400, message: 'Email is required' };
-        }
-        log(`Querying users with email: ${trimmedEmail}`);
-        const result = await users.list([Query.equal('email', trimmedEmail)]);
-        log(`Query completed. Total users found: ${result.total}`);
-        if (result.total === 0) {
-            throw { code: 404, message: 'User not found with this email address' };
-        }
-        const user = result.users[0];
-        log(`User found: ${user.$id}`);
-        return {
-            userId: user.$id,
-            name: user.name,
-            emailVerification: user.emailVerification,
-        };
-    }
-    catch (err) {
-        const typedErr = err;
-        log(`Error during user lookup: ${typedErr.message || 'Unknown error'}`);
-        throw typedErr;
-    }
-}
-// ============================================================================
-// PASSWORD RESET FUNCTION
-// ============================================================================
-/**
- * Reset user password after OTP verification
- * This function verifies the OTP server-side and updates the password using server-side permissions
- */
-async function resetPasswordAfterOTP(users, userId, otp, newPassword, log) {
-    log(`Resetting password for user: ${userId}`);
-    try {
-        if (!userId || !otp || !newPassword) {
-            throw { code: 400, message: 'userId, otp, and newPassword are required' };
-        }
-        if (newPassword.length < 8) {
-            throw { code: 400, message: 'Password must be at least 8 characters long' };
-        }
-        log(`Verifying OTP for user: ${userId}`);
-        try {
-            log(`Updating password with server-side permissions`);
-            await users.updatePassword(userId, newPassword);
-            log(`Password updated successfully for user: ${userId}`);
-        }
-        catch (err) {
-            const typedErr = err;
-            log(`Error updating password: ${typedErr.message || 'Unknown error'}`);
-            throw { code: 400, message: 'Failed to update password. Please try again.' };
-        }
-    }
-    catch (err) {
-        const typedErr = err;
-        log(`Error resetting password: ${typedErr.message || 'Unknown error'}`);
-        throw typedErr;
-    }
 }
 // ============================================================================
 // USER STATUS MANAGEMENT FUNCTION
@@ -622,6 +557,107 @@ async function deleteUserAccount(users, databases, userId, log) {
     }
 }
 // ============================================================================
+// USER LOOKUP (for password recovery)
+// ============================================================================
+/**
+ * Get user ID by email address.
+ * Searches Appwrite Auth for a user with the specified email address.
+ */
+async function getUserByEmail(users, email, log) {
+    log(`Searching for user with email: ${email}`);
+    try {
+        const trimmedEmail = email.trim().toLowerCase();
+        if (!trimmedEmail) {
+            throw { code: 400, message: 'Email is required' };
+        }
+        log(`Querying users with email: ${trimmedEmail}`);
+        const result = await users.list([Query.equal('email', trimmedEmail)]);
+        log(`Query completed. Total users found: ${result.total}`);
+        if (result.total === 0) {
+            throw { code: 404, message: 'User not found with this email address' };
+        }
+        const user = result.users[0];
+        log(`User found: ${user.$id}`);
+        return {
+            userId: user.$id,
+            name: user.name,
+            emailVerification: user.emailVerification,
+        };
+    }
+    catch (err) {
+        const typedErr = err;
+        log(`Error during user lookup: ${typedErr.message || 'Unknown error'}`);
+        throw typedErr;
+    }
+}
+// ============================================================================
+// PASSWORD RESET AFTER OTP
+// ============================================================================
+/**
+ * Verify the OTP by creating a session with Appwrite's client API.
+ * This ensures only a valid, non-expired OTP is accepted (e.g. latest after Resend).
+ * Does not use API key so Appwrite validates the token and rejects expired/invalid.
+ */
+async function verifyEmailOTP(endpoint, projectId, userId, otp, log) {
+    const url = `${endpoint.replace(/\/v1\/?$/, '')}/v1/account/sessions/token`;
+    log(`Verifying OTP for user ${userId} via ${url}`);
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Appwrite-Project': projectId,
+        },
+        body: JSON.stringify({ userId, secret: otp }),
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        log(`OTP verification failed: ${res.status} ${text}`);
+        if (res.status === 401 || res.status === 400 || res.status === 404) {
+            throw { code: 400, message: 'Invalid or expired code. Please request a new password reset.' };
+        }
+        throw { code: 400, message: 'Invalid or expired code. Please request a new password reset.' };
+    }
+}
+/**
+ * Reset user password after OTP verification.
+ * Verifies the OTP with Appwrite (rejects expired/invalid); then updates the password using server-side permissions.
+ * Validates that the new password is not the same as the user's username.
+ */
+async function resetPasswordAfterOTP(users, databases, endpoint, projectId, userId, otp, newPassword, log) {
+    log(`Resetting password for user: ${userId}`);
+    if (!userId || !otp || !newPassword) {
+        throw { code: 400, message: 'userId, otp and newPassword are required' };
+    }
+    if (newPassword.length < 8) {
+        throw { code: 400, message: 'Password must be at least 8 characters long' };
+    }
+    await verifyEmailOTP(endpoint, projectId, userId, otp, log);
+    try {
+        const profileQuery = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId)]);
+        if (profileQuery.total > 0) {
+            const username = profileQuery.documents[0].username ?? '';
+            if (username &&
+                newPassword.trim().toLowerCase() === username.trim().toLowerCase()) {
+                throw { code: 400, message: 'Password Cannot be same as Username' };
+            }
+        }
+        log(`Updating password with server-side permissions`);
+        await users.updatePassword(userId, newPassword);
+        log(`Password updated successfully for user: ${userId}`);
+    }
+    catch (err) {
+        const typedErr = err;
+        if (typedErr.code === 400 && typedErr.message) {
+            throw typedErr;
+        }
+        log(`Error updating password: ${typedErr.message || 'Unknown error'}`);
+        throw {
+            code: 400,
+            message: 'Failed to update password. Please try again.',
+        };
+    }
+}
+// ============================================================================
 // MAIN HANDLER
 // ============================================================================
 export default async function handler({ req, res, log, error }) {
@@ -748,6 +784,28 @@ export default async function handler({ req, res, log, error }) {
                 throw err;
             }
         }
+        // DISMISS trivia (user skipped / closed without answering)
+        if (req.path === '/dismiss-trivia' && req.method === 'POST') {
+            log('Processing dismiss-trivia request');
+            const body = req.body;
+            if (!body || !body.userId) {
+                return res.json({ success: false, error: 'userId is required' }, 400);
+            }
+            if (!body.triviaId) {
+                return res.json({ success: false, error: 'triviaId is required' }, 400);
+            }
+            try {
+                await dismissTrivia(databases, body.userId, body.triviaId, log);
+                return res.json({ success: true });
+            }
+            catch (err) {
+                const typedErr = err;
+                if (typedErr.code != null && typedErr.message) {
+                    return res.json({ success: false, error: typedErr.message }, typedErr.code);
+                }
+                throw err;
+            }
+        }
         // ========================================================================
         // ACCOUNT DELETION ENDPOINT
         // ========================================================================
@@ -847,9 +905,8 @@ export default async function handler({ req, res, log, error }) {
             }
         }
         // ========================================================================
-        // USER LOOKUP
+        // USER LOOKUP (password recovery)
         // ========================================================================
-        // GET user ID by email
         if (req.path === '/get-user-by-email' && req.method === 'POST') {
             log('Processing get-user-by-email request');
             const body = req.body;
@@ -878,20 +935,19 @@ export default async function handler({ req, res, log, error }) {
             }
         }
         // ========================================================================
-        // PASSWORD RESET
+        // PASSWORD RESET AFTER OTP
         // ========================================================================
-        // POST reset password after OTP verification
         if (req.path === '/reset-password-after-otp' && req.method === 'POST') {
             log('Processing reset-password-after-otp request');
             const body = req.body;
             if (!body || !body.userId || !body.otp || !body.newPassword) {
                 return res.json({
                     success: false,
-                    error: 'userId, otp, and newPassword are required',
+                    error: 'userId, otp and newPassword are required',
                 }, 400);
             }
             try {
-                await resetPasswordAfterOTP(users, body.userId, body.otp, body.newPassword, log);
+                await resetPasswordAfterOTP(users, databases, endpoint, projectId, body.userId, body.otp, body.newPassword, log);
                 return res.json({
                     success: true,
                     message: 'Password reset successfully',
@@ -904,30 +960,6 @@ export default async function handler({ req, res, log, error }) {
                         success: false,
                         error: typedErr.message,
                     }, typedErr.code);
-                }
-                throw err;
-            }
-        }
-        // ========================================================================
-        // DISMISS TRIVIA
-        // ========================================================================
-        if (req.path === '/dismiss-trivia' && req.method === 'POST') {
-            log('Processing dismiss-trivia request');
-            const body = req.body;
-            if (!body || !body.userId) {
-                return res.json({ success: false, error: 'userId is required' }, 400);
-            }
-            if (!body.triviaId) {
-                return res.json({ success: false, error: 'triviaId is required' }, 400);
-            }
-            try {
-                await dismissTrivia(databases, body.userId, body.triviaId, log);
-                return res.json({ success: true });
-            }
-            catch (err) {
-                const typedErr = err;
-                if (typedErr.code && typedErr.message) {
-                    return res.json({ success: false, error: typedErr.message }, typedErr.code);
                 }
                 throw err;
             }

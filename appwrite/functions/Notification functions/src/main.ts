@@ -23,7 +23,19 @@ interface UserProfile {
   $id: string;
   authID: string;
   savedEventIds?: string; // JSON string with array of {eventId, addedAt}
+  notifications?: string[] | unknown[]; // Array of notification objects (stored as JSON strings or objects)
   [key: string]: unknown;
+}
+
+/** In-app notification entry stored on user profile */
+interface UserProfileNotificationEntry {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+  data?: Record<string, unknown>;
 }
 
 interface Event {
@@ -131,6 +143,76 @@ async function getTargetUsers(
     const errorMessage = error instanceof Error ? error.message : String(error);
     log(`Error fetching users: ${errorMessage}`);
     throw new Error(`Failed to fetch target users: ${errorMessage}`);
+  }
+}
+
+/**
+ * Append a notification entry to a user profile's notifications array.
+ * Handles both string (JSON array) and array storage formats.
+ */
+async function appendNotificationToUserProfile(
+  databases: Databases,
+  userProfileId: string,
+  entry: UserProfileNotificationEntry,
+  log: (message: string) => void
+): Promise<void> {
+  try {
+    const doc = await databases.getDocument(
+      DATABASE_ID,
+      USER_PROFILES_TABLE_ID,
+      userProfileId
+    );
+    const raw = (doc as unknown as UserProfile).notifications;
+    let list: unknown[] = [];
+    if (Array.isArray(raw)) {
+      list = raw.map((item) =>
+        typeof item === 'string' ? JSON.parse(item) : item
+      );
+    } else if (typeof raw === 'string' && raw) {
+      try {
+        list = JSON.parse(raw);
+      } catch {
+        list = [];
+      }
+    }
+    list.push(entry);
+    const notificationsValue = list.map((item) =>
+      typeof item === 'string' ? item : JSON.stringify(item)
+    );
+    await databases.updateDocument(
+      DATABASE_ID,
+      USER_PROFILES_TABLE_ID,
+      userProfileId,
+      { notifications: notificationsValue }
+    );
+    log(`Appended notification to user profile ${userProfileId}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log(`Warning: could not append notification to user ${userProfileId}: ${errorMessage}`);
+  }
+}
+
+/**
+ * Append the same notification to multiple user profiles (e.g. after sending push).
+ */
+async function appendNotificationToUserProfiles(
+  databases: Databases,
+  userProfileIds: string[],
+  notification: NotificationData,
+  log: (message: string) => void
+): Promise<void> {
+  const now = new Date().toISOString();
+  const entry: UserProfileNotificationEntry = {
+    id: notification.$id,
+    type: notification.type,
+    title: notification.title,
+    message: notification.message,
+    isRead: false,
+    createdAt: now,
+    data: { notificationId: notification.$id },
+  };
+  for (const userId of userProfileIds) {
+    await appendNotificationToUserProfile(databases, userId, entry, log);
   }
 }
 
@@ -292,6 +374,10 @@ async function sendNotification(
         recipients: recipientCount,
       }
     );
+
+    // Append notification to each recipient's user profile for in-app list
+    const userProfileIds = users.map((u) => u.$id);
+    await appendNotificationToUserProfiles(databases, userProfileIds, notification, log);
 
     log(`Notification sent successfully. Recipients: ${recipientCount}, Message ID: ${pushResult.$id}`);
 
