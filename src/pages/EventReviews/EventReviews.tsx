@@ -26,6 +26,7 @@ interface UIReview {
     location: string
     date: string
     time: string
+    endTime?: string
   }
   rating: number
   sentiment: 'Positive' | 'Neutral' | 'Negative'
@@ -191,6 +192,7 @@ const EventReviews = () => {
           let eventLocation = 'Unknown Location'
           let eventDate = ''
           let eventTime = ''
+          let eventEndTime = ''
           let eventId: string | undefined = undefined
           let brandId: string | undefined = undefined
 
@@ -202,11 +204,11 @@ const EventReviews = () => {
                 eventName = event.name || 'Unknown Event'
                 eventDate = formatDate(event.date)
                 eventTime = formatTime(event.startTime || event.date)
-                
-                // Build location string
-                const locationParts = []
-                if (event.city) locationParts.push(event.city)
-                if (event.state) locationParts.push(event.state)
+                eventEndTime = event.endTime ? formatTime(event.endTime) : ''
+
+                // Build full address from event document (address, city, state, optional zipCode)
+                const locationParts = [event.address, event.city, event.state].filter(Boolean) as string[]
+                if (event.zipCode) locationParts.push(event.zipCode)
                 eventLocation = locationParts.length > 0 ? locationParts.join(', ') : 'Unknown Location'
 
                 // Fetch client/brand name
@@ -257,6 +259,7 @@ const EventReviews = () => {
               location: eventLocation,
               date: eventDate,
               time: eventTime,
+              endTime: eventEndTime || undefined,
             },
             rating: reviewDoc.rating || 0,
             sentiment: sentimentData.sentiment,

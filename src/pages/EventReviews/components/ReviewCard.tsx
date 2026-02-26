@@ -18,6 +18,7 @@ interface Event {
   location: string
   date: string
   time: string
+  endTime?: string
 }
 
 interface Review {
@@ -161,6 +162,7 @@ const ReviewCard = ({ review, onHide, onUnhide, onDelete }: ReviewCardProps) => 
         </div>
         <span className="text-gray-500" title="Event date & time">
           Event: {review.event.date}, {review.event.time}
+          {review.event.endTime ? ` – ${review.event.endTime}` : ''}
         </span>
         {review.reviewedAt && (
           <span className="text-gray-500" title="Reviewed time">
