@@ -1,4 +1,4 @@
-import { eventsService, clientsService, appUsersService, categoriesService, reviewsService, triviaService, triviaResponsesService } from './services'
+import { eventsService, clientsService, appUsersService, categoriesService, locationsService, reviewsService, triviaService, triviaResponsesService, isCorrectTriviaResponse } from './services'
 import type { EventDocument, ClientDocument, AppUser, TriviaDocument, TriviaResponseDocument, ReviewDocument } from './services'
 import { Query } from './appwrite'
 import jsPDF from 'jspdf'
@@ -61,31 +61,21 @@ const dashboardColumns: ReportColumn[] = [
   { header: 'Discount?', key: 'discount' },
 ]
 
-// Event List columns - ordered alphabetically: non-location fields first, then location fields alphabetically
-// These column names must exactly match what CSVUploadModal expects for re-import compatibility
+// Event List columns - ordered alphabetically; must match CSVUploadModal for re-import
 const eventListColumns: ReportColumn[] = [
-  // Non-location fields (alphabetical)
-  { header: 'Brand Description', key: 'brandDescription' },
   { header: 'Brand Name', key: 'brandName' },
   { header: 'Category', key: 'category' },
-  { header: 'Check-in Code', key: 'checkInCode' },
   { header: 'Date', key: 'date' },
   { header: 'Discount', key: 'discount' },
   { header: 'Discount Image URL', key: 'discountImageURL' },
   { header: 'End Time', key: 'endTime' },
   { header: 'Event Info', key: 'eventInfo' },
   { header: 'Event Name', key: 'name' },
+  { header: 'Location', key: 'location' },
+  { header: 'Points', key: 'checkInPoints' },
   { header: 'Products', key: 'products' },
   { header: 'Review Points', key: 'reviewPoints' },
   { header: 'Start Time', key: 'startTime' },
-  { header: 'Points', key: 'checkInPoints' },
-  // Location fields (alphabetical)
-  { header: 'Address', key: 'address' },
-  { header: 'City', key: 'city' },
-  { header: 'Latitude', key: 'latitude' },
-  { header: 'Longitude', key: 'longitude' },
-  { header: 'State', key: 'state' },
-  { header: 'Zip Code', key: 'zipCode' },
 ]
 
 // Clients & Brands columns
@@ -122,8 +112,6 @@ const pointsEarnedColumns: ReportColumn[] = [
   { header: 'First Name', key: 'firstName' },
   { header: 'Last Name', key: 'lastName' },
   { header: 'Username', key: 'username' },
-  { header: 'Email', key: 'email' },
-  { header: 'Last Login Date', key: 'lastLoginDate' },
   { header: 'Tier Level', key: 'tierLevel' },
   { header: 'User Points', key: 'userPoints' },
   { header: 'Check-in/Review Pts', key: 'checkInReviewPoints' },
@@ -399,7 +387,7 @@ async function fetchTriviasWonCountByUser(): Promise<Map<string, number>> {
     chunk = listResult.documents
     for (const t of chunk) {
       if (t.$id != null && t.correctOptionIndex != null) {
-        correctIndexByTriviaId.set(t.$id, t.correctOptionIndex)
+        correctIndexByTriviaId.set(t.$id, Number(t.correctOptionIndex))
       }
     }
     offset += REPORT_LIST_PAGE_SIZE
@@ -420,7 +408,7 @@ async function fetchTriviasWonCountByUser(): Promise<Map<string, number>> {
       if (!uid || !tid) continue
       const correctIndex = correctIndexByTriviaId.get(tid)
       if (correctIndex === undefined) continue
-      if (r.answerIndex === correctIndex) {
+      if (isCorrectTriviaResponse(r, correctIndex)) {
         countByUserId.set(uid, (countByUserId.get(uid) ?? 0) + 1)
       }
     }
@@ -576,6 +564,21 @@ export const exportService = {
           }
         }
 
+        // Resolve location ID to location name (for Location column)
+        let locationName = ''
+        const locationId = (event as EventDocument & { locationId?: string }).locationId
+        if (locationId) {
+          try {
+            const location = await locationsService.getById(locationId)
+            locationName = location?.name || ''
+          } catch (err) {
+            console.error('Error fetching location for event:', err)
+          }
+        }
+        if (!locationName && (event.address || event.city)) {
+          locationName = [event.address, event.city].filter(Boolean).join(', ') || ''
+        }
+
         // Normalize products: DB may store array or comma-separated string (same as Dashboard)
         const productsArray = Array.isArray(event.products)
           ? event.products
@@ -585,14 +588,6 @@ export const exportService = {
               : [event.products as unknown as string]
             : []
 
-        // Extract latitude and longitude from location array [longitude, latitude]
-        let latitude = ''
-        let longitude = ''
-        if (event.location && Array.isArray(event.location) && event.location.length === 2) {
-          longitude = event.location[0]?.toString() || ''
-          latitude = event.location[1]?.toString() || ''
-        }
-
         return {
           name: event.name || '',
           date: formatDateForUpload(event.date),
@@ -600,20 +595,13 @@ export const exportService = {
           endTime: formatTimeForUpload(event.endTime),
           category: categoryTitle,
           brandName: brandName,
-          brandDescription: event.brandDescription || '',
           products: formatProducts(productsArray),
           discount: event.discount?.toString() || '',
           discountImageURL: event.discountImageURL || '',
-          checkInCode: event.checkInCode || '',
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
           eventInfo: event.eventInfo || '',
-          address: event.address || '',
-          city: event.city || '',
-          state: event.state || '',
-          zipCode: event.zipCode || '',
-          latitude: latitude,
-          longitude: longitude,
+          location: locationName,
         }
       })
     )

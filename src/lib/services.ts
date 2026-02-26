@@ -524,6 +524,7 @@ export interface EventDocument extends Models.Document {
   isHidden: boolean
   radius?: number
   location?: [number, number] // [longitude, latitude]
+  locationId?: string // Location document ID (relationship) - used when event is linked to a Location
   client?: string // Client ID (relationship)
   categories?: string // Category ID (relationship)
   [key: string]: unknown
@@ -608,6 +609,14 @@ export interface TriviaResponseDocument extends Models.Document {
   [key: string]: unknown
 }
 
+/** Compare answerIndex to correctOptionIndex as numbers (Appwrite may return integers as strings). */
+export function isCorrectTriviaResponse(
+  response: { answerIndex?: number | string },
+  correctOptionIndex: number | string | undefined
+): boolean {
+  return Number(response.answerIndex) === Number(correctOptionIndex)
+}
+
 // Trivia Responses service
 export const triviaResponsesService = {
   create: (data: Record<string, unknown>) =>
@@ -644,7 +653,7 @@ export const triviaResponsesService = {
       try {
         const trivia = await triviaService.getById(tid)
         const correct = responses.filter(
-          (r) => r.trivia === tid && r.answerIndex === trivia.correctOptionIndex
+          (r) => r.trivia === tid && isCorrectTriviaResponse(r, trivia.correctOptionIndex)
         )
         count += correct.length
       } catch {
@@ -700,8 +709,8 @@ export const triviaService = {
     const { trivia, client } = await triviaService.getWithClient(id)
     const responses = await triviaResponsesService.getByTriviaId(id)
     
-    const correctResponses = responses.filter(
-      (response) => response.answerIndex === trivia.correctOptionIndex
+    const correctResponses = responses.filter((response) =>
+      isCorrectTriviaResponse(response, trivia.correctOptionIndex)
     )
     const uniqueUsers = new Set(responses.map((r) => r.user).filter(Boolean)).size
     
@@ -1773,4 +1782,11 @@ export const locationsService = {
       ['name', 'address', 'city', 'state', 'zipCode'],
       queries
     ),
+  findByName: async (name: string): Promise<LocationDocument | null> => {
+    const result = await DatabaseService.list<LocationDocument>(
+      appwriteConfig.collections.locations,
+      [Query.equal('name', [name])]
+    )
+    return result.documents[0] || null
+  },
 }

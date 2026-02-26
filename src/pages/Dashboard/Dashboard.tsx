@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Models } from 'appwrite'
 import { DashboardLayout, ShimmerPage, ConfirmationModal } from '../../components'
 import type { ConfirmationType } from '../../components'
-import { eventsService, categoriesService, clientsService, statisticsService, type DashboardStats, type ClientDocument } from '../../lib/services'
+import { eventsService, categoriesService, clientsService, locationsService, statisticsService, type DashboardStats, type ClientDocument } from '../../lib/services'
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { formatDateWithTimezone } from '../../lib/dateUtils'
@@ -560,10 +560,11 @@ const Dashboard = () => {
         'brand name': 'Brand Name',
         'brandname': 'Brand Name',
         'brand': 'Brand Name',
-        'brand description': 'Brand Description',
-        'branddescription': 'Brand Description',
         'points': 'Points',
         'point': 'Points',
+        'location': 'Location',
+        'location name': 'Location',
+        'locationname': 'Location',
         // Optional columns
         'start time': 'Start Time',
         'starttime': 'Start Time',
@@ -595,8 +596,20 @@ const Dashboard = () => {
 
     const normalizedHeaders = headers.map(normalizeHeader)
     
-    // Required columns
-    const requiredColumns = ['Event Name', 'Date', 'Address', 'City', 'State', 'Zip Code', 'Brand Name', 'Points']
+    // Required columns (aligned with CSVUploadModal)
+    const requiredColumns = [
+      'Brand Name',
+      'Category',
+      'Date',
+      'End Time',
+      'Event Info',
+      'Event Name',
+      'Location',
+      'Points',
+      'Products',
+      'Review Points',
+      'Start Time',
+    ]
     const missingColumns = requiredColumns.filter(col => !normalizedHeaders.includes(col))
     
     if (missingColumns.length > 0) {
@@ -662,15 +675,31 @@ const Dashboard = () => {
       let errorCount = 0
       const errors: string[] = []
 
+      // Required field keys for row-level validation (must be non-empty)
+      const requiredRowFields = [
+        'Event Name',
+        'Date',
+        'Brand Name',
+        'Location',
+        'Products',
+      ] as const
+
       // Process each row
       for (let i = 0; i < csvData.length; i++) {
         const row = csvData[i]
         try {
-          // Map CSV row to event data format
+          // Row-level validation: required string fields must be non-empty
+          for (const field of requiredRowFields) {
+            const value = row[field]
+            if (value == null || String(value).trim() === '') {
+              throw new Error(`Missing or empty required field: ${field}`)
+            }
+          }
+
           // Parse date - handle multiple formats: DD-MM-YYYY, YYYY-MM-DD, MM/DD/YYYY
           let eventDate: Date
           const dateStr = row['Date'].trim()
-          
+
           // Try DD-MM-YYYY format (e.g., "20-01-2026")
           if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
             const [day, month, year] = dateStr.split('-').map(Number)
@@ -688,9 +717,18 @@ const Dashboard = () => {
           else {
             eventDate = new Date(dateStr)
           }
-          
+
           if (isNaN(eventDate.getTime())) {
             throw new Error(`Invalid date format: ${row['Date']}. Expected formats: DD-MM-YYYY, YYYY-MM-DD, or MM/DD/YYYY`)
+          }
+
+          // Validate event date is not in the past (same rule as Add Event form)
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          const eventDateOnly = new Date(eventDate)
+          eventDateOnly.setHours(0, 0, 0, 0)
+          if (eventDateOnly < today) {
+            throw new Error('Event date cannot be in the past. Please use today or a future date.')
           }
 
           // Use times from CSV or default values
@@ -716,11 +754,19 @@ const Dashboard = () => {
           const endDateTime = new Date(eventDate)
           endDateTime.setHours(endHours, endMinutes, 0, 0)
 
+          // Validate start time is before end time (same rule as Add Event form)
+          const startTimeInMinutes = startHours * 60 + startMinutes
+          const endTimeInMinutes = endHours * 60 + endMinutes
+          if (startTimeInMinutes >= endTimeInMinutes) {
+            throw new Error('Start time must be before end time. Please adjust the event times.')
+          }
+
           // Find client by brand name
           let clientId: string | null = null
+          let client: ClientDocument | null = null
           if (row['Brand Name']) {
             try {
-              const client = await clientsService.findByName(row['Brand Name'].trim())
+              client = await clientsService.findByName(row['Brand Name'].trim())
               clientId = client?.$id || null
               if (!clientId) {
                 throw new Error(`Brand "${row['Brand Name']}" not found in database`)
@@ -741,69 +787,70 @@ const Dashboard = () => {
             }
           }
 
-          // Parse products (comma-separated) and convert to string format for database
-          // Database expects products as a string (max 1000 chars), not an array
-          const productsString = row['Products']?.trim() || ''
+          // Resolve Location by name (required)
+          const locationName = row['Location']?.trim() || ''
+          const locationDoc = await locationsService.findByName(locationName)
+          if (!locationDoc) {
+            throw new Error(`Location "${locationName}" not found. Use an existing Location name from the admin panel.`)
+          }
 
-          // Use check-in code from CSV or generate one
-          const checkInCode = row['Check-in Code']?.trim() || `CHK-${Date.now()}-${i}`
+          // Parse products (comma-separated) and sync new products to brand's product list
+          const productsString = row['Products']?.trim() || ''
+          const productsFromCsv = productsString
+            ? productsString.split(',').map((p: string) => p.trim()).filter(Boolean)
+            : []
+          if (clientId && client && productsFromCsv.length > 0) {
+            const existingProductType = client.productType || []
+            const newProductNames = productsFromCsv.filter((name: string) => !existingProductType.includes(name))
+            if (newProductNames.length > 0) {
+              const mergedProductType = [...existingProductType, ...newProductNames]
+              await clientsService.update(clientId, { productType: mergedProductType })
+              client = { ...client, productType: mergedProductType }
+            }
+          }
+
+          const checkInCode = `CHK-${Date.now()}-${i}`
 
           // Parse review points (use Points value as fallback)
           const checkInPoints = parseFloat(row['Points']) || 0
           const reviewPoints = row['Review Points']?.trim() 
             ? parseFloat(row['Review Points']) || 0
-            : checkInPoints // Use checkInPoints as default for review points
+            : checkInPoints
 
-          // Parse event info or generate default
-          const eventInfo = row['Event Info']?.trim() || `Event at ${row['Address'] || row['City'] || 'location'}`
+          const eventInfo = row['Event Info']?.trim() || `Event at ${locationDoc.name}`
 
-          // Parse brand description
-          const brandDescription = row['Brand Description']?.trim() || ''
-
-          // Parse discount (now text field)
           const discount = row['Discount']?.trim() || ''
-          
-          // Get discount image URL if provided
           const discountImageURL = row['Discount Image URL']?.trim() || ''
 
-          // Prepare event payload
+          // Prepare event payload: address/geo from Location document
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const eventPayload: any = {
             name: row['Event Name'],
             date: formatDateWithTimezone(eventDate),
             startTime: formatDateWithTimezone(startDateTime),
             endTime: formatDateWithTimezone(endDateTime),
-            city: row['City'] || '',
-            address: row['Address'] || '',
-            state: row['State'] || '',
-            zipCode: row['Zip Code'] || '',
+            city: locationDoc.city || '',
+            address: locationDoc.address || '',
+            state: locationDoc.state || '',
+            zipCode: locationDoc.zipCode || '',
             products: productsString,
-            checkInCode: checkInCode,
-            checkInPoints: checkInPoints,
-            reviewPoints: reviewPoints,
-            eventInfo: eventInfo,
-            brandDescription: brandDescription,
+            checkInCode,
+            checkInPoints,
+            reviewPoints,
+            eventInfo,
             isArchived: false,
             isHidden: false,
           }
 
-          // Discount: single string field
+          if (locationDoc.location && Array.isArray(locationDoc.location) && locationDoc.location.length === 2) {
+            eventPayload.location = locationDoc.location
+          }
+
           if (discount) {
             eventPayload.discount = discount.trim()
           }
-
-          // Add discount image URL if provided
           if (discountImageURL) {
             eventPayload.discountImageURL = discountImageURL
-          }
-
-          // Add location if latitude and longitude provided
-          if (row['Latitude']?.trim() && row['Longitude']?.trim()) {
-            const lat = parseFloat(row['Latitude'])
-            const lng = parseFloat(row['Longitude'])
-            if (!isNaN(lat) && !isNaN(lng)) {
-              eventPayload.location = [lng, lat] // Appwrite format: [longitude, latitude]
-            }
           }
 
           // Add client if found
@@ -1060,7 +1107,7 @@ const Dashboard = () => {
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
-        brandDescription: eventData.brandDescription || '',
+        brandDescription: eventData.brandDescription !== undefined ? eventData.brandDescription : (selectedEventDoc.brandDescription ?? ''),
       }
 
       // Add location as [longitude, latitude] array if both are provided

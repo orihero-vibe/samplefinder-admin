@@ -14,7 +14,7 @@ import {
   EditTriviaModal,
   StatsCards,
 } from './components'
-import { triviaService, triviaResponsesService, clientsService, statisticsService, userProfilesService, type TriviaStats, type TriviaDocument as ServiceTriviaDocument, type ClientDocument, type UserProfile } from '../../lib/services'
+import { triviaService, triviaResponsesService, clientsService, statisticsService, userProfilesService, isCorrectTriviaResponse, type TriviaStats, type TriviaDocument as ServiceTriviaDocument, type ClientDocument, type UserProfile } from '../../lib/services'
 import type { TriviaWinner } from './components/TriviaTable'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { Query } from '../../lib/appwrite'
@@ -110,12 +110,12 @@ const Trivia = () => {
         })
       : 'N/A'
 
-    // Calculate statistics from responses
-    const correctResponses = responses.filter(
-      (response) => response.answerIndex === doc.correctOptionIndex
+    // Calculate statistics from responses (normalize to number; Appwrite may return integers as strings)
+    const correctResponses = responses.filter((response) =>
+      isCorrectTriviaResponse(response, doc.correctOptionIndex)
     )
     const incorrectResponses = responses.filter(
-      (response) => response.answerIndex !== doc.correctOptionIndex
+      (response) => !isCorrectTriviaResponse(response, doc.correctOptionIndex)
     )
     
     // Get unique users who answered correctly (winners)

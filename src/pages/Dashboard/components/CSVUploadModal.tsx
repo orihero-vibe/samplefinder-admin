@@ -14,32 +14,23 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
 
   if (!isOpen) return null
 
-  // Required columns in alphabetical order: non-location fields first, then location fields
+  // Required columns in alphabetical order
   const requiredColumns = [
-    // Non-location fields (alphabetical)
     'Brand Name',
     'Category',
-    'Check-in Code',
     'Date',
     'End Time',
     'Event Info',
     'Event Name',
+    'Location',
     'Points',
     'Products',
     'Review Points',
     'Start Time',
-    // Location fields (alphabetical)
-    'Address',
-    'City',
-    'Latitude',
-    'Longitude',
-    'State',
-    'Zip Code',
   ]
   
   // Optional columns (alphabetical)
   const optionalColumns = [
-    'Brand Description',
     'Discount',
     'Discount Image URL',
   ]
@@ -98,29 +89,19 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
     const allColumns = [...requiredColumns, ...optionalColumns]
     const headers = allColumns.join(',')
     const sampleValues = [
-      // Required columns (in alphabetical order: non-location first, then location)
-      '[REPLACE WITH EXISTING BRAND]',    // Brand Name - Must exist in your database
-      '[REPLACE WITH EXISTING CATEGORY]', // Category - Must exist in your database
-      'CHK001',                           // Check-in Code
-      '2026-01-25',                       // Date (YYYY-MM-DD format)
-      '17:00',                            // End Time (HH:MM)
-      'Event description goes here',      // Event Info
-      'My Event Name',                    // Event Name - Replace with your event name
-      '100',                              // Points (Check In Points)
-      'Beer, Wine',                       // Products (comma-separated)
-      '50',                               // Review Points
-      '09:00',                            // Start Time (HH:MM)
-      // Location fields (alphabetical)
-      '123 Main Street',                  // Address
-      'New York',                         // City
-      '40.7128',                          // Latitude
-      '-74.0060',                         // Longitude
-      'NY',                               // State
-      '10001',                            // Zip Code
-      // Optional columns (alphabetical)
-      'Premium craft beer brand',         // Brand Description (optional)
-      '10%',                              // Discount (optional, text field)
-      'https://example.com/image.jpg',    // Discount Image URL (optional)
+      '[REPLACE WITH EXISTING BRAND]',      // Brand Name - Must exist in your database
+      '[REPLACE WITH EXISTING CATEGORY]',   // Category - Must exist in your database
+      '2026-01-25',                         // Date (YYYY-MM-DD format)
+      '17:00',                              // End Time (HH:MM)
+      'Event description goes here',       // Event Info
+      'My Event Name',                      // Event Name - Replace with your event name
+      'Main Street Store',                 // Location - MUST match an existing Location in admin
+      '100',                                // Points (Check In Points)
+      'Beer, Wine',                         // Products (comma-separated)
+      '50',                                 // Review Points
+      '09:00',                              // Start Time (HH:MM)
+      '10%',                                // Discount (optional)
+      'https://example.com/image.jpg',      // Discount Image URL (optional)
     ]
     // Properly escape CSV values (wrap in quotes if contains comma, quote, or newline)
     const escapeCSV = (value: string) => {
@@ -242,9 +223,10 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
             <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
               <li>The first row must be the header row with exact column names</li>
               <li><strong>Brand Name</strong> and <strong>Category</strong> must match existing values in the database</li>
+              <li><strong>Location</strong> must match an existing Location name in the admin panel (exact match)</li>
+              <li>Address and coordinates are taken from the Location record, not from the CSV</li>
               <li><strong>Date</strong> format: YYYY-MM-DD (e.g., 2026-01-25)</li>
               <li><strong>Time</strong> format: HH:MM (e.g., 09:00, 17:00)</li>
-              <li><strong>Latitude/Longitude</strong>: Decimal coordinates (e.g., 40.7128, -74.0060)</li>
               <li>Download the template and replace sample values with your actual data</li>
             </ul>
           </div>

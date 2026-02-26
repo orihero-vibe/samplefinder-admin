@@ -16,6 +16,7 @@ interface Event {
   location: string
   date: string
   time: string
+  endTime?: string
 }
 
 interface Review {
