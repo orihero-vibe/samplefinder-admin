@@ -56,6 +56,54 @@ async function getTargetUsers(databases, targetAudience, selectedUserIds, log) {
     }
 }
 /**
+ * Append a notification entry to a user profile's notifications array.
+ * Handles both string (JSON array) and array storage formats.
+ */
+async function appendNotificationToUserProfile(databases, userProfileId, entry, log) {
+    try {
+        const doc = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userProfileId);
+        const raw = doc.notifications;
+        let list = [];
+        if (Array.isArray(raw)) {
+            list = raw.map((item) => typeof item === 'string' ? JSON.parse(item) : item);
+        }
+        else if (typeof raw === 'string' && raw) {
+            try {
+                list = JSON.parse(raw);
+            }
+            catch {
+                list = [];
+            }
+        }
+        list.push(entry);
+        const notificationsValue = list.map((item) => typeof item === 'string' ? item : JSON.stringify(item));
+        await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userProfileId, { notifications: notificationsValue });
+        log(`Appended notification to user profile ${userProfileId}`);
+    }
+    catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log(`Warning: could not append notification to user ${userProfileId}: ${errorMessage}`);
+    }
+}
+/**
+ * Append the same notification to multiple user profiles (e.g. after sending push).
+ */
+async function appendNotificationToUserProfiles(databases, userProfileIds, notification, log) {
+    const now = new Date().toISOString();
+    const entry = {
+        id: notification.$id,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        isRead: false,
+        createdAt: now,
+        data: { notificationId: notification.$id },
+    };
+    for (const userId of userProfileIds) {
+        await appendNotificationToUserProfile(databases, userId, entry, log);
+    }
+}
+/**
  * Send push notification using Appwrite Messaging.
  * Uses the object API and sends one push per user to avoid known multi-user delivery issues.
  * users: array of Appwrite Auth user IDs (each user must have a push target registered).
@@ -149,6 +197,9 @@ async function sendNotification(databases, messaging, notificationId, log) {
             sentAt: now,
             recipients: recipientCount,
         });
+        // Append notification to each recipient's user profile for in-app list
+        const userProfileIds = users.map((u) => u.$id);
+        await appendNotificationToUserProfiles(databases, userProfileIds, notification, log);
         log(`Notification sent successfully. Recipients: ${recipientCount}, Message ID: ${pushResult.$id}`);
         return {
             success: true,

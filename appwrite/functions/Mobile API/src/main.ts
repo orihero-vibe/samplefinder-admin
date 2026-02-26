@@ -985,25 +985,60 @@ async function getUserByEmail(
 // ============================================================================
 
 /**
+ * Verify the OTP by creating a session with Appwrite's client API.
+ * This ensures only a valid, non-expired OTP is accepted (e.g. latest after Resend).
+ * Does not use API key so Appwrite validates the token and rejects expired/invalid.
+ */
+async function verifyEmailOTP(
+  endpoint: string,
+  projectId: string,
+  userId: string,
+  otp: string,
+  log: (message: string) => void
+): Promise<void> {
+  const url = `${endpoint.replace(/\/v1\/?$/, '')}/v1/account/sessions/token`;
+  log(`Verifying OTP for user ${userId} via ${url}`);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Appwrite-Project': projectId,
+    },
+    body: JSON.stringify({ userId, secret: otp }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    log(`OTP verification failed: ${res.status} ${text}`);
+    if (res.status === 401 || res.status === 400 || res.status === 404) {
+      throw { code: 400, message: 'Invalid or expired code. Please request a new password reset.' };
+    }
+    throw { code: 400, message: 'Invalid or expired code. Please request a new password reset.' };
+  }
+}
+
+/**
  * Reset user password after OTP verification.
- * Updates the password using server-side permissions.
+ * Verifies the OTP with Appwrite (rejects expired/invalid); then updates the password using server-side permissions.
  * Validates that the new password is not the same as the user's username.
  */
 async function resetPasswordAfterOTP(
   users: Users,
   databases: Databases,
+  endpoint: string,
+  projectId: string,
   userId: string,
-  _otp: string,
+  otp: string,
   newPassword: string,
   log: (message: string) => void
 ): Promise<void> {
   log(`Resetting password for user: ${userId}`);
-  if (!userId || !newPassword) {
-    throw { code: 400, message: 'userId and newPassword are required' };
+  if (!userId || !otp || !newPassword) {
+    throw { code: 400, message: 'userId, otp and newPassword are required' };
   }
   if (newPassword.length < 8) {
     throw { code: 400, message: 'Password must be at least 8 characters long' };
   }
+  await verifyEmailOTP(endpoint, projectId, userId, otp, log);
   try {
     const profileQuery = await databases.listDocuments(
       DATABASE_ID,
@@ -1454,11 +1489,11 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
 
       const body = req.body as ResetPasswordAfterOTPRequest;
 
-      if (!body || !body.userId || !body.newPassword) {
+      if (!body || !body.userId || !body.otp || !body.newPassword) {
         return res.json(
           {
             success: false,
-            error: 'userId and newPassword are required',
+            error: 'userId, otp and newPassword are required',
           },
           400
         );
@@ -1468,8 +1503,10 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
         await resetPasswordAfterOTP(
           users,
           databases,
+          endpoint,
+          projectId,
           body.userId,
-          body.otp || '',
+          body.otp,
           body.newPassword,
           log
         );
