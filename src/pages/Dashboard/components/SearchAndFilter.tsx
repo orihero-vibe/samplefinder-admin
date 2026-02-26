@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
+import { formatDateInAppTimezone } from '../../../lib/dateUtils'
 
 interface SearchAndFilterProps {
   onDateFilterClick: () => void
@@ -10,6 +11,7 @@ interface SearchAndFilterProps {
   onStatusFilterChange: (value: string) => void
   sortBy: string
   onSortByChange: (value: string) => void
+  appTimezone: string
 }
 
 const SearchAndFilter = ({
@@ -21,6 +23,7 @@ const SearchAndFilter = ({
   onStatusFilterChange,
   sortBy,
   onSortByChange,
+  appTimezone,
 }: SearchAndFilterProps) => {
   const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
 
@@ -80,13 +83,7 @@ const SearchAndFilter = ({
         >
           <Icon icon="mdi:calendar" className="w-5 h-5" />
           {dateRange.start && dateRange.end
-            ? `${dateRange.start.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              })} - ${dateRange.end.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              })}`
+            ? `${formatDateInAppTimezone(dateRange.start.toISOString(), appTimezone, 'medium')} - ${formatDateInAppTimezone(dateRange.end.toISOString(), appTimezone, 'medium')}`
             : 'Select Date'}
         </button>
         <select

@@ -1,6 +1,6 @@
 import { databases, appwriteConfig, ID, Query, functions, ExecutionMethod } from './appwrite'
 import type { Models } from 'appwrite'
-import { formatDateWithTimezone } from './dateUtils'
+import { formatDateWithTimezone, DEFAULT_APP_TIMEZONE, appTimeToUTC } from './dateUtils'
 
 // Collection IDs
 export const COLLECTION_IDS = {
@@ -1438,7 +1438,10 @@ function normalizeNotificationPayload(
 
 // Notifications service
 export const notificationsService = {
-  create: async (data: NotificationFormData): Promise<NotificationDocument> => {
+  create: async (
+    data: NotificationFormData,
+    appTimezone?: string
+  ): Promise<NotificationDocument> => {
     const { type, targetAudience } = normalizeNotificationPayload(data)
     const dbData: Record<string, unknown> = {
       title: data.title,
@@ -1465,13 +1468,21 @@ export const notificationsService = {
       }
     }
 
-    // Handle scheduling
+    // Handle scheduling: store in UTC when app timezone is provided
     if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
-      // Combine date and time
-      const [hours, minutes] = data.scheduledTime.split(':')
-      const scheduledDate = new Date(data.scheduledAt)
-      scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-      dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
+      if (appTimezone) {
+        const utcDate = appTimeToUTC(
+          data.scheduledAt,
+          data.scheduledTime,
+          appTimezone
+        )
+        dbData.scheduledAt = utcDate.toISOString()
+      } else {
+        const [hours, minutes] = data.scheduledTime.split(':')
+        const scheduledDate = new Date(data.scheduledAt)
+        scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
+        dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
+      }
     }
 
     const notification = await DatabaseService.create<NotificationDocument>(
@@ -1500,7 +1511,11 @@ export const notificationsService = {
   list: (queries?: string[]) =>
     DatabaseService.list<NotificationDocument>(appwriteConfig.collections.notifications, queries),
 
-  update: async (id: string, data: Partial<NotificationFormData>): Promise<NotificationDocument> => {
+  update: async (
+    id: string,
+    data: Partial<NotificationFormData>,
+    appTimezone?: string
+  ): Promise<NotificationDocument> => {
     const { type, targetAudience } = normalizeNotificationPayload(data)
     // Only include actual database fields
     const dbData: Record<string, unknown> = {
@@ -1527,10 +1542,19 @@ export const notificationsService = {
 
     // Handle scheduling updates
     if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
-      const [hours, minutes] = data.scheduledTime.split(':')
-      const scheduledDate = new Date(data.scheduledAt)
-      scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-      dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
+      if (appTimezone) {
+        const utcDate = appTimeToUTC(
+          data.scheduledAt,
+          data.scheduledTime,
+          appTimezone
+        )
+        dbData.scheduledAt = utcDate.toISOString()
+      } else {
+        const [hours, minutes] = data.scheduledTime.split(':')
+        const scheduledDate = new Date(data.scheduledAt)
+        scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
+        dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
+      }
       dbData.status = 'Scheduled'
     } else if (data.schedule === 'Send Immediately') {
       // Clear scheduledAt if switching to immediate
@@ -1835,6 +1859,30 @@ export const settingsService = {
       return isNaN(value) ? null : value
     }
     return null
+  },
+
+  /** Get app timezone (IANA). Defaults to America/New_York if not set. */
+  getAppTimezone: async (): Promise<string> => {
+    const setting = await settingsService.getByKey('appTimezone')
+    if (setting?.value) return setting.value
+    return DEFAULT_APP_TIMEZONE
+  },
+
+  /** Set app timezone (IANA). Upserts the appTimezone setting. */
+  setAppTimezone: async (ianaTimezone: string): Promise<void> => {
+    const existing = await settingsService.getByKey('appTimezone')
+    if (existing) {
+      await DatabaseService.update<SettingsDocument>(
+        appwriteConfig.collections.settings,
+        existing.$id,
+        { value: ianaTimezone }
+      )
+    } else {
+      await DatabaseService.create<SettingsDocument>(
+        appwriteConfig.collections.settings,
+        { key: 'appTimezone', value: ianaTimezone }
+      )
+    }
   },
 }
 
