@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Icon } from '@iconify/react'
 import DateFilterModal from '../../Dashboard/components/DateFilterModal'
+import { useTimezoneStore } from '../../../stores/timezoneStore'
+import { formatDateInAppTimezone } from '../../../lib/dateUtils'
 
 interface SearchAndFilterProps {
   searchQuery: string
@@ -17,20 +19,13 @@ const SearchAndFilter = ({
 }: SearchAndFilterProps) => {
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false)
 
+  const { appTimezone } = useTimezoneStore()
   const formatDateRange = () => {
     if (!dateRange.start || !dateRange.end) {
       return 'Select Date Range'
     }
-    const start = dateRange.start.toLocaleDateString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: 'numeric',
-    })
-    const end = dateRange.end.toLocaleDateString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: 'numeric',
-    })
+    const start = formatDateInAppTimezone(dateRange.start.toISOString(), appTimezone, 'short')
+    const end = formatDateInAppTimezone(dateRange.end.toISOString(), appTimezone, 'short')
     return `${start} - ${end}`
   }
 

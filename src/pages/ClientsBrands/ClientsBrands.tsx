@@ -3,6 +3,8 @@ import { ConfirmationModal, DashboardLayout } from '../../components'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { clientsService, statisticsService, type ClientDocument, type ClientsStats } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import { formatDateInAppTimezone } from '../../lib/dateUtils'
 import {
   AddClientModal,
   ClientsBrandsHeader,
@@ -55,6 +57,7 @@ const extractErrorMessage = (error: unknown): string => {
 
 const ClientsBrands = () => {
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -77,7 +80,7 @@ const ClientsBrands = () => {
       numberOfFavorites: stats?.totalFavorites ?? 0,
       numberOfCheckIns: stats?.totalCheckIns ?? 0,
       totalPoints: stats?.totalPoints ?? 0,
-      joinDate: doc.$createdAt ? new Date(doc.$createdAt).toLocaleDateString() : '',
+      joinDate: doc.$createdAt ? formatDateInAppTimezone(doc.$createdAt, appTimezone, 'short') : '',
       productTypes: doc.productType || [],
       logoUrl: doc.logoURL,
       description: (doc as Record<string, unknown>).description as string | undefined,

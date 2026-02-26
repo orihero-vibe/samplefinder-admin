@@ -3,6 +3,8 @@ import { Icon } from '@iconify/react'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import type { TriviaWinner } from './TriviaTable'
 import type { TriviaParticipant } from '../TriviaDetails'
+import { useTimezoneStore } from '../../../stores/timezoneStore'
+import { formatDateTimeInAppTimezone } from '../../../lib/dateUtils'
 
 interface TriviaQuiz {
   id: string
@@ -28,6 +30,7 @@ interface TriviaDetailsContentProps {
 }
 
 const TriviaDetailsContent = ({ trivia }: TriviaDetailsContentProps) => {
+  const { appTimezone } = useTimezoneStore()
   const [participantsFilter, setParticipantsFilter] = useState<'all' | 'correct' | 'incorrect'>('all')
   const [participantsPage, setParticipantsPage] = useState(1)
   const participantsPerPage = 10
@@ -358,13 +361,7 @@ const TriviaDetailsContent = ({ trivia }: TriviaDetailsContentProps) => {
                           </td>
                           <td className="py-3 px-4 text-sm text-gray-600">
                             {participant.answeredAt
-                              ? new Date(participant.answeredAt).toLocaleString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
+                              ? formatDateTimeInAppTimezone(participant.answeredAt, appTimezone)
                               : 'N/A'}
                           </td>
                         </tr>

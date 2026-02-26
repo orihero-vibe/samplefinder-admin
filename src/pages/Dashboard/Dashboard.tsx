@@ -6,7 +6,8 @@ import type { ConfirmationType } from '../../components'
 import { eventsService, categoriesService, clientsService, locationsService, statisticsService, type DashboardStats, type ClientDocument } from '../../lib/services'
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
-import { formatDateWithTimezone } from '../../lib/dateUtils'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import { formatDateWithTimezone, formatDateInAppTimezone, formatTimeInAppTimezone } from '../../lib/dateUtils'
 import { getEventStatus, getEventStatusColor } from '../../lib/eventUtils'
 import type { EventDocument } from '../../lib/services'
 import { Query } from '../../lib/appwrite'
@@ -117,6 +118,7 @@ const Dashboard = () => {
   })
   
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
   const [statistics, setStatistics] = useState<DashboardStats | null>(null)
 
   // Helper functions for formatting
@@ -130,49 +132,12 @@ const Dashboard = () => {
     return `${sign}${change}%`
   }
 
-  // Helper function to map database event document to EventsTable format
+  // Helper function to map database event document to EventsTable format (dates in app timezone)
   const mapEventDocumentToEvent = (doc: LocalEventDocument): Event => {
-    // Format date from ISO string or timestamp to MM/DD/YYYY
-    const formatDate = (dateStr?: string): string => {
-      if (!dateStr) return ''
-      const date = new Date(dateStr)
-      if (isNaN(date.getTime())) return dateStr
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      const year = date.getFullYear()
-      return `${month}/${day}/${year}`
-    }
-
-    // Format time from ISO datetime string to 12-hour format
-    const formatTime = (timeStr?: string): string => {
-      if (!timeStr) return ''
-      
-      // Parse as Date object to handle ISO datetime strings correctly
-      const date = new Date(timeStr)
-      if (isNaN(date.getTime())) {
-        // If not a valid date, try to parse as HH:MM format
-        if (timeStr.includes(':')) {
-          const parts = timeStr.split(':')
-          if (parts.length >= 2) {
-            const hour = parseInt(parts[0], 10)
-            const minute = parseInt(parts[1], 10)
-            if (!isNaN(hour) && !isNaN(minute)) {
-              const ampm = hour >= 12 ? 'PM' : 'AM'
-              const hour12 = hour % 12 || 12
-              return `${hour12}:${String(minute).padStart(2, '0')} ${ampm}`
-            }
-          }
-        }
-        return timeStr
-      }
-      
-      // Format date object to 12-hour time
-      const hours = date.getHours()
-      const minutes = date.getMinutes()
-      const ampm = hours >= 12 ? 'PM' : 'AM'
-      const hour12 = hours % 12 || 12
-      return `${hour12}:${String(minutes).padStart(2, '0')} ${ampm}`
-    }
+    const formatDate = (dateStr?: string): string =>
+      dateStr ? formatDateInAppTimezone(dateStr, appTimezone, 'short') : ''
+    const formatTime = (timeStr?: string): string =>
+      timeStr ? formatTimeInAppTimezone(timeStr, appTimezone) : ''
 
     // Derive status from isArchived, isHidden, and event date/time (Active = live, In Active = scheduled or completed)
     const status = getEventStatus(doc)
@@ -1384,6 +1349,7 @@ const Dashboard = () => {
           onSortByChange={(value: string) => {
             setSortBy(value)
           }}
+          appTimezone={appTimezone}
         />
         <EventsTable
           events={events}

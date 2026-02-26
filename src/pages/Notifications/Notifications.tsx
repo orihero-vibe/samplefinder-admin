@@ -10,6 +10,8 @@ import {
 } from './components'
 import { statisticsService, notificationsService, normalizeNotificationFormData, type NotificationsStats, type NotificationDocument, type NotificationFormData } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import { utcToAppTimeFormInputs } from '../../lib/dateUtils'
 import { Query } from '../../lib/appwrite'
 
 interface Notification {
@@ -25,6 +27,7 @@ interface Notification {
 
 const Notifications = () => {
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('All Types')
@@ -49,12 +52,25 @@ const Notifications = () => {
     onConfirm: () => {},
   })
 
-  // Convert NotificationDocument to UI Notification format
+  // Convert NotificationDocument to UI Notification format (date/timing in app timezone)
   const convertNotification = (doc: NotificationDocument): Notification => {
     const date = doc.sentAt || doc.scheduledAt || doc.$createdAt
     const dateObj = new Date(date)
-    const timing = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-    const formattedDate = dateObj.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+    const formatOpts = appTimezone
+      ? { timeZone: appTimezone } as const
+      : {}
+    const timing = dateObj.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      ...formatOpts,
+    })
+    const formattedDate = dateObj.toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      ...formatOpts,
+    })
     
     // Map target audience for display
     let targetDisplay: 'Targeted' | 'All' | 'Specific Segment' = doc.targetAudience
@@ -246,7 +262,7 @@ const Notifications = () => {
     try {
       if (editingNotification) {
         // Update existing notification (and send if "Send Immediately")
-        await notificationsService.update(editingNotification.id, notificationData)
+        await notificationsService.update(editingNotification.id, notificationData, appTimezone)
         
         addNotification({
           type: 'success',
@@ -259,7 +275,7 @@ const Notifications = () => {
         setEditingNotification(null)
       } else {
         // Create new notification
-        await notificationsService.create(notificationData)
+        await notificationsService.create(notificationData, appTimezone)
         
         addNotification({
           type: 'success',
@@ -300,9 +316,12 @@ const Notifications = () => {
       let schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring' = 'Send Immediately'
       
       if (fullNotification.scheduledAt) {
-        const scheduledDate = new Date(fullNotification.scheduledAt)
-        scheduledAt = scheduledDate.toISOString().split('T')[0]
-        scheduledTime = scheduledDate.toTimeString().slice(0, 5)
+        const { dateStr, timeStr } = utcToAppTimeFormInputs(
+          fullNotification.scheduledAt,
+          appTimezone
+        )
+        scheduledAt = dateStr
+        scheduledTime = timeStr
         schedule = 'Schedule for Later'
       } else if (fullNotification.status === 'Sent') {
         schedule = 'Send Immediately'
@@ -464,6 +483,7 @@ const Notifications = () => {
         onSave={handleSaveNotification}
         initialData={editingNotification?.data || duplicatingData}
         isEditMode={!!editingNotification}
+        appTimezone={appTimezone}
       />
 
       {/* Confirmation Modal */}

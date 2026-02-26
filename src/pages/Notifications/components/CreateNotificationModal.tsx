@@ -5,6 +5,7 @@ import { trimFormStrings } from '../../../lib/formUtils'
 import { appUsersService } from '../../../lib/services'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
+import { appTimeToUTC } from '../../../lib/dateUtils'
 
 interface CreateNotificationModalProps {
   isOpen: boolean
@@ -12,6 +13,8 @@ interface CreateNotificationModalProps {
   onSave: (notificationData: NotificationFormData) => void
   initialData?: NotificationFormData | null
   isEditMode?: boolean
+  /** IANA timezone for scheduled date/time validation and display */
+  appTimezone?: string
 }
 
 interface ValidationErrors {
@@ -73,6 +76,7 @@ const CreateNotificationModal = ({
   onSave,
   initialData,
   isEditMode = false,
+  appTimezone,
 }: CreateNotificationModalProps) => {
   const [formData, setFormData] = useState<NotificationFormData>(defaultFormData)
   const initialDataRef = useRef<NotificationFormData>(defaultFormData)
@@ -229,8 +233,10 @@ const CreateNotificationModal = ({
         errors.push(error)
         newValidationErrors.scheduledAt = getErrorMessage(error)
       } else {
-        // Validate that scheduled time is in the future
-        const scheduledDate = new Date(`${data.scheduledAt}T${data.scheduledTime}`)
+        // Validate that scheduled time is in the future (in app timezone when provided)
+        const scheduledDate = appTimezone
+          ? appTimeToUTC(data.scheduledAt, data.scheduledTime, appTimezone)
+          : new Date(`${data.scheduledAt}T${data.scheduledTime}`)
         if (scheduledDate <= new Date()) {
           const error: StructuredError = { 
             code: 'PAST_DATE', 

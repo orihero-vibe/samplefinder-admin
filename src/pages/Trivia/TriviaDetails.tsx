@@ -5,6 +5,8 @@ import TriviaDetailsHeader from './components/TriviaDetailsHeader'
 import TriviaDetailsContent from './components/TriviaDetailsContent'
 import { triviaService, userProfilesService, isCorrectTriviaResponse, type TriviaResponseDocument, type UserProfile } from '../../lib/services'
 import type { TriviaWinner } from './components/TriviaTable'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import { formatDateTimeInAppTimezone } from '../../lib/dateUtils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -41,6 +43,7 @@ interface TriviaQuiz {
 const TriviaDetails = () => {
   const navigate = useNavigate()
   const { triviaId } = useParams<{ triviaId: string }>()
+  const { appTimezone } = useTimezoneStore()
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [trivia, setTrivia] = useState<TriviaQuiz | null>(null)
@@ -76,15 +79,9 @@ const TriviaDetails = () => {
           }
         }
 
-        // Format date
+        // Format date (in app timezone)
         const date = triviaDoc.startDate
-          ? new Date(triviaDoc.startDate).toLocaleString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })
+          ? formatDateTimeInAppTimezone(triviaDoc.startDate, appTimezone)
           : 'N/A'
 
         // Calculate response distribution per answer option (normalize to number; Appwrite may return integers as strings)
@@ -232,7 +229,7 @@ const TriviaDetails = () => {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(100, 100, 100)
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, yPos)
+    doc.text(`Generated: ${formatDateTimeInAppTimezone(new Date().toISOString(), appTimezone)}`, 14, yPos)
     yPos += 12
 
     // Question Section
@@ -367,13 +364,7 @@ const TriviaDetails = () => {
         const answerLabel = String.fromCharCode(65 + p.answerIndex)
         const answerText = trivia.answers[p.answerIndex]?.option || 'Unknown'
         const answeredAt = p.answeredAt
-          ? new Date(p.answeredAt).toLocaleString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })
+          ? formatDateTimeInAppTimezone(p.answeredAt, appTimezone)
           : 'N/A'
         return [displayName, `${answerLabel}. ${answerText}`, p.isCorrect ? 'Correct' : 'Incorrect', answeredAt]
       })

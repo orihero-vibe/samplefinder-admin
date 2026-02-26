@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
+import { useTimezoneStore } from '../../../stores/timezoneStore'
+import { formatDateInAppTimezone } from '../../../lib/dateUtils'
 
 interface DateFilterModalProps {
   isOpen: boolean
@@ -16,6 +18,7 @@ const DateFilterModal = ({
   initialStartDate,
   initialEndDate,
 }: DateFilterModalProps) => {
+  const { appTimezone } = useTimezoneStore()
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedStartDate, setSelectedStartDate] = useState<Date | null>(initialStartDate || null)
   const [selectedEndDate, setSelectedEndDate] = useState<Date | null>(initialEndDate || null)
@@ -73,23 +76,11 @@ const DateFilterModal = ({
       return 'Select date range'
     }
     if (selectedStartDate && !selectedEndDate) {
-      return selectedStartDate.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
+      return formatDateInAppTimezone(selectedStartDate.toISOString(), appTimezone, 'medium')
     }
     if (selectedStartDate && selectedEndDate) {
-      const start = selectedStartDate.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-      const end = selectedEndDate.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
+      const start = formatDateInAppTimezone(selectedStartDate.toISOString(), appTimezone, 'medium')
+      const end = formatDateInAppTimezone(selectedEndDate.toISOString(), appTimezone, 'medium')
       return `${start} - ${end}`
     }
     return 'Select date range'
@@ -177,7 +168,11 @@ const DateFilterModal = ({
   }
 
   const calendarDays = getDaysInMonth(currentMonth)
-  const monthYear = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const monthYear = new Intl.DateTimeFormat('en-US', {
+    timeZone: appTimezone,
+    month: 'long',
+    year: 'numeric',
+  }).format(currentMonth)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">

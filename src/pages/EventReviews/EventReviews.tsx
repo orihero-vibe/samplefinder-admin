@@ -6,6 +6,8 @@ import { EventReviewsHeader, SearchAndFilter, ReviewsList } from './components'
 import { reviewsService, eventsService, clientsService, appUsersService, type ReviewDocument, type EventDocument, type ClientDocument } from '../../lib/services'
 import { exportService } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import { formatDateInAppTimezone, formatTimeInAppTimezone, formatDateTimeInAppTimezone } from '../../lib/dateUtils'
 import { Query } from '../../lib/appwrite'
 
 // UI Review interface
@@ -43,6 +45,7 @@ const EventReviews = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [reviews, setReviews] = useState<UIReview[]>([])
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize] = useState(25)
   const [totalReviews, setTotalReviews] = useState(0)
@@ -95,27 +98,13 @@ const EventReviews = () => {
     }
   }
 
-  // Helper function to format date
-  const formatDate = (dateStr: string): string => {
-    const date = new Date(dateStr)
-    if (isNaN(date.getTime())) return dateStr
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    const month = months[date.getMonth()]
-    const day = date.getDate()
-    const year = date.getFullYear()
-    return `${month} ${day}, ${year}`
-  }
-
-  // Helper function to format time
-  const formatTime = (dateStr: string): string => {
-    const date = new Date(dateStr)
-    if (isNaN(date.getTime())) return dateStr
-    const hours = date.getHours()
-    const minutes = date.getMinutes()
-    const ampm = hours >= 12 ? 'PM' : 'AM'
-    const hour12 = hours % 12 || 12
-    return `${hour12}:${String(minutes).padStart(2, '0')} ${ampm}`
-  }
+  // Format date/time in app timezone
+  const formatDate = (dateStr: string): string =>
+    formatDateInAppTimezone(dateStr, appTimezone, 'medium')
+  const formatTime = (dateStr: string): string =>
+    formatTimeInAppTimezone(dateStr, appTimezone)
+  const formatDateTime = (dateStr: string): string =>
+    formatDateTimeInAppTimezone(dateStr, appTimezone)
 
   // Fetch reviews from Appwrite with pagination
   const fetchReviews = async (page: number = currentPage) => {
@@ -267,7 +256,7 @@ const EventReviews = () => {
             reviewText: reviewDoc.review || 'No review text provided.',
             helpfulCount: reviewDoc.helpfulCount || 0,
             isHidden: reviewDoc.isHidden || false,
-            reviewedAt: `${formatDate(reviewDoc.$createdAt)} ${formatTime(reviewDoc.$createdAt)}`,
+            reviewedAt: formatDateTime(reviewDoc.$createdAt),
             answers: answersDisplay,
           } as UIReview
         })

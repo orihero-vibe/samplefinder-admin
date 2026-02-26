@@ -17,6 +17,8 @@ import {
 import { triviaService, triviaResponsesService, clientsService, statisticsService, userProfilesService, isCorrectTriviaResponse, type TriviaStats, type TriviaDocument as ServiceTriviaDocument, type ClientDocument, type UserProfile } from '../../lib/services'
 import type { TriviaWinner } from './components/TriviaTable'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import { formatDateTimeInAppTimezone } from '../../lib/dateUtils'
 import { Query } from '../../lib/appwrite'
 
 // Use ServiceTriviaDocument from services.ts
@@ -40,6 +42,7 @@ interface TriviaQuiz {
 const Trivia = () => {
   const navigate = useNavigate()
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
   const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isListLoading, setIsListLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -91,23 +94,11 @@ const Trivia = () => {
       }
     }
 
-    // Format date from startDate or createdAt
+    // Format date from startDate or createdAt (in app timezone)
     const date = doc.startDate
-      ? new Date(doc.startDate).toLocaleString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
+      ? formatDateTimeInAppTimezone(doc.startDate, appTimezone)
       : doc.$createdAt
-      ? new Date(doc.$createdAt).toLocaleString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
+      ? formatDateTimeInAppTimezone(doc.$createdAt, appTimezone)
       : 'N/A'
 
     // Calculate statistics from responses (normalize to number; Appwrite may return integers as strings)
