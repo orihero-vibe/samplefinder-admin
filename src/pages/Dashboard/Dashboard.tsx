@@ -595,8 +595,26 @@ const Dashboard = () => {
 
     const normalizedHeaders = headers.map(normalizeHeader)
     
-    // Required columns
-    const requiredColumns = ['Event Name', 'Date', 'Address', 'City', 'State', 'Zip Code', 'Brand Name', 'Points']
+    // Required columns (aligned with CSVUploadModal: non-location first, then location)
+    const requiredColumns = [
+      'Brand Name',
+      'Category',
+      'Check-in Code',
+      'Date',
+      'End Time',
+      'Event Info',
+      'Event Name',
+      'Points',
+      'Products',
+      'Review Points',
+      'Start Time',
+      'Address',
+      'City',
+      'Latitude',
+      'Longitude',
+      'State',
+      'Zip Code',
+    ]
     const missingColumns = requiredColumns.filter(col => !normalizedHeaders.includes(col))
     
     if (missingColumns.length > 0) {
@@ -662,15 +680,34 @@ const Dashboard = () => {
       let errorCount = 0
       const errors: string[] = []
 
+      // Required field keys for row-level validation (must be non-empty)
+      const requiredRowFields = [
+        'Event Name',
+        'Date',
+        'Brand Name',
+        'Address',
+        'City',
+        'State',
+        'Zip Code',
+        'Products',
+      ] as const
+
       // Process each row
       for (let i = 0; i < csvData.length; i++) {
         const row = csvData[i]
         try {
-          // Map CSV row to event data format
+          // Row-level validation: required string fields must be non-empty
+          for (const field of requiredRowFields) {
+            const value = row[field]
+            if (value == null || String(value).trim() === '') {
+              throw new Error(`Missing or empty required field: ${field}`)
+            }
+          }
+
           // Parse date - handle multiple formats: DD-MM-YYYY, YYYY-MM-DD, MM/DD/YYYY
           let eventDate: Date
           const dateStr = row['Date'].trim()
-          
+
           // Try DD-MM-YYYY format (e.g., "20-01-2026")
           if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
             const [day, month, year] = dateStr.split('-').map(Number)
@@ -688,9 +725,18 @@ const Dashboard = () => {
           else {
             eventDate = new Date(dateStr)
           }
-          
+
           if (isNaN(eventDate.getTime())) {
             throw new Error(`Invalid date format: ${row['Date']}. Expected formats: DD-MM-YYYY, YYYY-MM-DD, or MM/DD/YYYY`)
+          }
+
+          // Validate event date is not in the past (same rule as Add Event form)
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          const eventDateOnly = new Date(eventDate)
+          eventDateOnly.setHours(0, 0, 0, 0)
+          if (eventDateOnly < today) {
+            throw new Error('Event date cannot be in the past. Please use today or a future date.')
           }
 
           // Use times from CSV or default values
@@ -716,11 +762,19 @@ const Dashboard = () => {
           const endDateTime = new Date(eventDate)
           endDateTime.setHours(endHours, endMinutes, 0, 0)
 
+          // Validate start time is before end time (same rule as Add Event form)
+          const startTimeInMinutes = startHours * 60 + startMinutes
+          const endTimeInMinutes = endHours * 60 + endMinutes
+          if (startTimeInMinutes >= endTimeInMinutes) {
+            throw new Error('Start time must be before end time. Please adjust the event times.')
+          }
+
           // Find client by brand name
           let clientId: string | null = null
+          let client: ClientDocument | null = null
           if (row['Brand Name']) {
             try {
-              const client = await clientsService.findByName(row['Brand Name'].trim())
+              client = await clientsService.findByName(row['Brand Name'].trim())
               clientId = client?.$id || null
               if (!clientId) {
                 throw new Error(`Brand "${row['Brand Name']}" not found in database`)
@@ -741,9 +795,20 @@ const Dashboard = () => {
             }
           }
 
-          // Parse products (comma-separated) and convert to string format for database
-          // Database expects products as a string (max 1000 chars), not an array
+          // Parse products (comma-separated) and sync new products to brand's product list
           const productsString = row['Products']?.trim() || ''
+          const productsFromCsv = productsString
+            ? productsString.split(',').map((p: string) => p.trim()).filter(Boolean)
+            : []
+          if (clientId && client && productsFromCsv.length > 0) {
+            const existingProductType = client.productType || []
+            const newProductNames = productsFromCsv.filter((name: string) => !existingProductType.includes(name))
+            if (newProductNames.length > 0) {
+              const mergedProductType = [...existingProductType, ...newProductNames]
+              await clientsService.update(clientId, { productType: mergedProductType })
+              client = { ...client, productType: mergedProductType }
+            }
+          }
 
           // Use check-in code from CSV or generate one
           const checkInCode = row['Check-in Code']?.trim() || `CHK-${Date.now()}-${i}`
@@ -1060,7 +1125,7 @@ const Dashboard = () => {
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
-        brandDescription: eventData.brandDescription || '',
+        brandDescription: eventData.brandDescription !== undefined ? eventData.brandDescription : (selectedEventDoc.brandDescription ?? ''),
       }
 
       // Add location as [longitude, latitude] array if both are provided

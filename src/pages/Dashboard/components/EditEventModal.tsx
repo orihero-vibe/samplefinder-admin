@@ -92,7 +92,6 @@ const EditEventModal = ({
     discountImage: null as File | string | null,
     checkInCode: '',
     brandName: '',
-    brandDescription: '',
     checkInPoints: '',
     reviewPoints: '',
     eventInfo: '',
@@ -194,7 +193,6 @@ const EditEventModal = ({
               discountImage: initialData.discountImage || null,
               checkInCode: initialData.checkInCode || '',
               brandName: initialData.brandName || '',
-              brandDescription: initialData.brandDescription || '',
               checkInPoints: initialData.checkInPoints || defaultCheckInPoints?.toString() || '',
               reviewPoints: initialData.reviewPoints || defaultReviewPoints?.toString() || '',
               eventInfo: initialData.eventInfo || '',
@@ -223,7 +221,6 @@ const EditEventModal = ({
               discountImage: initialData.discountImage || null,
               checkInCode: initialData.checkInCode || '',
               brandName: initialData.brandName || '',
-              brandDescription: initialData.brandDescription || '',
               checkInPoints: initialData.checkInPoints || '',
               reviewPoints: initialData.reviewPoints || '',
               eventInfo: initialData.eventInfo || '',
@@ -252,7 +249,6 @@ const EditEventModal = ({
             discountImage: initialData.discountImage || null,
             checkInCode: initialData.checkInCode || '',
             brandName: initialData.brandName || '',
-            brandDescription: initialData.brandDescription || '',
             checkInPoints: initialData.checkInPoints || '',
             reviewPoints: initialData.reviewPoints || '',
             eventInfo: initialData.eventInfo || '',
@@ -284,11 +280,10 @@ const EditEventModal = ({
   // Track previous brand name to detect actual changes
   const prevBrandNameRef = useRef<string>('')
 
-  // Update available products and brand description when brand changes
+  // Update available products when brand changes
   useEffect(() => {
     // Only clear products when brand actually changed (not on initial load with initialData)
     const brandChanged = prevBrandNameRef.current !== '' && prevBrandNameRef.current !== formData.brandName
-    const firstBrandSelection = prevBrandNameRef.current === '' && formData.brandName
 
     if (formData.brandName) {
       const selectedBrand = brands.find((brand) => brand.name === formData.brandName)
@@ -299,20 +294,13 @@ const EditEventModal = ({
         } else {
           setAvailableProducts([])
         }
-        // Prefill brand description when user selects a brand (first time or switching)
         if (brandChanged) {
-          setFormData((prev) => ({
-            ...prev,
-            products: [],
-            brandDescription: selectedBrand.description || '',
-          }))
-        } else if (firstBrandSelection) {
-          setFormData((prev) => ({ ...prev, brandDescription: selectedBrand.description || '' }))
+          setFormData((prev) => ({ ...prev, products: [] }))
         }
       } else {
         setAvailableProducts([])
         if (brandChanged) {
-          setFormData((prev) => ({ ...prev, products: [], brandDescription: '' }))
+          setFormData((prev) => ({ ...prev, products: [] }))
         }
       }
       prevBrandNameRef.current = formData.brandName
@@ -320,7 +308,7 @@ const EditEventModal = ({
       setAvailableProducts([])
       // Only clear if brand was removed (not on initial load)
       if (prevBrandNameRef.current !== '') {
-        setFormData((prev) => ({ ...prev, products: [], brandDescription: '' }))
+        setFormData((prev) => ({ ...prev, products: [] }))
       }
       prevBrandNameRef.current = ''
     }
@@ -600,21 +588,6 @@ const EditEventModal = ({
                 ))}
               </select>
             </div>
-          </div>
-
-          {/* Brand Description */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Brand Description
-            </label>
-            <textarea
-              placeholder="Enter brand description (products, services, etc.)"
-              value={formData.brandDescription}
-              onChange={(e) => handleInputChange('brandDescription', e.target.value)}
-              rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent resize-none"
-            />
-            <p className="text-xs text-gray-500 mt-1">This description will be shown in the Favorites section.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
