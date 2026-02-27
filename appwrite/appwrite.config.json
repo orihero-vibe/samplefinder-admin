@@ -795,9 +795,57 @@
                     "type": "string",
                     "required": true,
                     "array": false,
-                    "elements": ["All", "Targeted", "Specific Segment"],
+                    "elements": [
+                        "All",
+                        "NewUsers",
+                        "BrandAmbassadors",
+                        "Influencers",
+                        "Tier1",
+                        "Tier2",
+                        "Tier3",
+                        "Tier4",
+                        "Tier5",
+                        "ZipCode",
+                        "Targeted"
+                    ],
                     "format": "enum",
+                    "default": "All"
+                },
+                {
+                    "key": "selectedUserIds",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "selectedZipCodes",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "newUsersTimeRange",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 1,
+                    "max": 365,
                     "default": null
+                },
+                {
+                    "key": "category",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "elements": ["AppPush", "SystemPush"],
+                    "format": "enum",
+                    "default": "AppPush"
                 },
                 {
                     "key": "status",
@@ -806,7 +854,7 @@
                     "array": false,
                     "elements": ["Scheduled", "Sent", "Draft"],
                     "format": "enum",
-                    "default": null
+                    "default": "Draft"
                 }
             ],
             "indexes": []

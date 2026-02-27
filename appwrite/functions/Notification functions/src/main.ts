@@ -10,12 +10,26 @@ interface NotificationData {
   title: string;
   message: string;
   type: 'Event Reminder' | 'Promotional' | 'Engagement';
-  targetAudience: 'All' | 'Targeted' | 'Specific Segment';
+  targetAudience:
+    | 'All'
+    | 'NewUsers'
+    | 'BrandAmbassadors'
+    | 'Influencers'
+    | 'Tier1'
+    | 'Tier2'
+    | 'Tier3'
+    | 'Tier4'
+    | 'Tier5'
+    | 'ZipCode'
+    | 'Targeted';
+  category?: 'AppPush' | 'SystemPush';
   status: 'Scheduled' | 'Sent' | 'Draft';
   scheduledAt?: string;
   sentAt?: string;
   recipients?: number;
   selectedUserIds?: string[]; // Array of user profile IDs for targeted notifications
+  selectedZipCodes?: string[]; // Zip codes for ZipCode audience
+  newUsersTimeRange?: number; // Days back for NewUsers audience
   [key: string]: unknown;
 }
 
@@ -91,13 +105,14 @@ async function getNotification(
 }
 
 /**
- * Get target users based on audience type and selected user IDs
+ * Get target users based on audience type and selected user IDs / filters
  */
 async function getTargetUsers(
   databases: Databases,
-  targetAudience: 'All' | 'Targeted' | 'Specific Segment',
+  targetAudience: NotificationData['targetAudience'],
   selectedUserIds: string[] | undefined,
-  log: (message: string) => void
+  log: (message: string) => void,
+  notification?: NotificationData
 ): Promise<UserProfile[]> {
   try {
     // If specific users are selected (for Targeted audience), fetch only those users
@@ -125,10 +140,58 @@ async function getTargetUsers(
       log(`Successfully fetched ${users.length} of ${selectedUserIds.length} selected users`);
       return users;
     }
-    
-    // For "All" or if no specific users selected, fetch all users
+
     const queries: string[] = [];
-    
+
+    // Audience-based filtering
+    if (targetAudience === 'NewUsers') {
+      const days = notification?.newUsersTimeRange ?? 30;
+      const now = new Date();
+      const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+      log(`Filtering NewUsers with cutoff >= ${cutoff}`);
+      queries.push(Query.greaterThanEqual('$createdAt', cutoff));
+    } else if (targetAudience === 'BrandAmbassadors') {
+      log('Filtering BrandAmbassadors (isAmbassador = true)');
+      queries.push(Query.equal('isAmbassador', true));
+    } else if (targetAudience === 'Influencers') {
+      log('Filtering Influencers (isInfluencer = true)');
+      queries.push(Query.equal('isInfluencer', true));
+    } else if (
+      targetAudience === 'Tier1' ||
+      targetAudience === 'Tier2' ||
+      targetAudience === 'Tier3' ||
+      targetAudience === 'Tier4' ||
+      targetAudience === 'Tier5'
+    ) {
+      const tierMap: Record<NotificationData['targetAudience'], string> = {
+        Tier1: 'NewbieSampler',
+        Tier2: 'SampleFan',
+        Tier3: 'SuperSampler',
+        Tier4: 'VIS',
+        Tier5: 'SampleMaster',
+        All: '',
+        NewUsers: '',
+        BrandAmbassadors: '',
+        Influencers: '',
+        ZipCode: '',
+        Targeted: '',
+      };
+      const tierName = tierMap[targetAudience] || '';
+      if (tierName) {
+        log(`Filtering by tierLevel = ${tierName}`);
+        queries.push(Query.equal('tierLevel', tierName));
+      }
+    } else if (targetAudience === 'ZipCode') {
+      const zips = notification?.selectedZipCodes || [];
+      if (zips.length > 0) {
+        log(`Filtering ZipCode audience for ${zips.length} zip(s)`);
+        queries.push(Query.equal('zipCode', zips));
+      } else {
+        log('ZipCode audience selected but no zip codes provided, returning empty list');
+        return [];
+      }
+    }
+
     const usersResponse = await databases.listDocuments(
       DATABASE_ID,
       USER_PROFILES_TABLE_ID,
@@ -137,7 +200,7 @@ async function getTargetUsers(
 
     const users = usersResponse.documents as unknown as UserProfile[];
     log(`Found ${users.length} target users for audience: ${targetAudience}`);
-    
+
     return users;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -306,7 +369,8 @@ async function sendNotification(
       databases,
       notification.targetAudience,
       notification.selectedUserIds,
-      log
+      log,
+      notification
     );
 
     if (users.length === 0) {

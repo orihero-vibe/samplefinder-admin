@@ -4,9 +4,10 @@ import { Pagination } from '../../../components'
 interface Notification {
   id: string
   title: string
-  target: 'Targeted' | 'All' | 'Specific Segment'
+  target: string
   timing: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  category?: 'AppPush' | 'SystemPush'
   recipients: number
   date: string
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -63,6 +64,42 @@ const NotificationsTable = ({
     }
   }
 
+  const getCategoryBadge = (category?: string) => {
+    if (category === 'SystemPush') {
+      return { label: 'System Push', className: 'bg-purple-100 text-purple-800' }
+    }
+    return { label: 'App Push', className: 'bg-blue-100 text-blue-800' }
+  }
+
+  const getTargetLabel = (target: string) => {
+    switch (target) {
+      case 'All':
+        return 'All Users'
+      case 'NewUsers':
+        return 'New Users'
+      case 'BrandAmbassadors':
+        return 'Certified Brand Ambassadors (BA)'
+      case 'Influencers':
+        return 'Certified Influencers'
+      case 'Tier1':
+        return 'Tier 1 Users - NewbieSamplers'
+      case 'Tier2':
+        return 'Tier 2 Users - SampleFans'
+      case 'Tier3':
+        return 'Tier 3 Users - SuperSamplers'
+      case 'Tier4':
+        return 'Tier 4 Users - VIS'
+      case 'Tier5':
+        return 'Tier 5 Users - SampleMasters'
+      case 'ZipCode':
+        return 'Specific Zip Code Area'
+      case 'Targeted':
+        return 'Specific Users'
+      default:
+        return target
+    }
+  }
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
@@ -73,6 +110,12 @@ const NotificationsTable = ({
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:help-circle-outline" className="w-4 h-4" />
                   Notification
+                </div>
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <div className="flex items-center gap-2">
+                  <Icon icon="mdi:help-circle-outline" className="w-4 h-4" />
+                  Category
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -119,7 +162,7 @@ const NotificationsTable = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
               <tr>
-                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
                   <div className="flex items-center justify-center gap-2">
                     <Icon icon="mdi:loading" className="w-6 h-6 animate-spin" />
                     <span>Loading...</span>
@@ -132,8 +175,18 @@ const NotificationsTable = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {notification.title}
                 </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  {(() => {
+                    const badge = getCategoryBadge(notification.category)
+                    return (
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.className}`}>
+                        {badge.label}
+                      </span>
+                    )
+                  })()}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {notification.target}
+                  {getTargetLabel(notification.target)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {notification.timing}

@@ -15,9 +15,10 @@ import { Query } from '../../lib/appwrite'
 interface Notification {
   id: string
   title: string
-  target: 'Targeted' | 'All' | 'Specific Segment'
+  target: string
   timing: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  category?: 'AppPush' | 'SystemPush'
   recipients: number
   date: string
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -49,6 +50,35 @@ const Notifications = () => {
     onConfirm: () => {},
   })
 
+  const getAudienceDisplayLabel = (audience: NotificationDocument['targetAudience']): string => {
+    switch (audience) {
+      case 'All':
+        return 'All'
+      case 'NewUsers':
+        return 'NewUsers'
+      case 'BrandAmbassadors':
+        return 'BrandAmbassadors'
+      case 'Influencers':
+        return 'Influencers'
+      case 'Tier1':
+        return 'Tier1'
+      case 'Tier2':
+        return 'Tier2'
+      case 'Tier3':
+        return 'Tier3'
+      case 'Tier4':
+        return 'Tier4'
+      case 'Tier5':
+        return 'Tier5'
+      case 'ZipCode':
+        return 'ZipCode'
+      case 'Targeted':
+        return 'Targeted'
+      default:
+        return String(audience)
+    }
+  }
+
   // Convert NotificationDocument to UI Notification format
   const convertNotification = (doc: NotificationDocument): Notification => {
     const date = doc.sentAt || doc.scheduledAt || doc.$createdAt
@@ -56,22 +86,13 @@ const Notifications = () => {
     const timing = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
     const formattedDate = dateObj.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
     
-    // Map target audience for display
-    let targetDisplay: 'Targeted' | 'All' | 'Specific Segment' = doc.targetAudience
-    if (doc.targetAudience === 'Targeted') {
-      targetDisplay = 'Targeted'
-    } else if (doc.targetAudience === 'All') {
-      targetDisplay = 'All'
-    } else {
-      targetDisplay = 'Specific Segment'
-    }
-    
     return {
       id: doc.$id,
       title: doc.title,
-      target: targetDisplay,
+      target: getAudienceDisplayLabel(doc.targetAudience),
       timing,
       type: doc.type,
+      category: (doc.category as 'AppPush' | 'SystemPush') || 'AppPush',
       recipients: doc.recipients || 0,
       date: formattedDate,
       status: doc.status,
@@ -317,6 +338,7 @@ const Notifications = () => {
           message: fullNotification.message,
           type,
           targetAudience,
+          category: (fullNotification.category as 'AppPush' | 'SystemPush') || 'AppPush',
           schedule,
           scheduledAt,
           scheduledTime,
@@ -347,7 +369,8 @@ const Notifications = () => {
         message: fullNotification.message,
         type,
         targetAudience,
-        schedule: 'Send Immediately', // Default to send immediately for duplicates
+        category: (fullNotification.category as 'AppPush' | 'SystemPush') || 'AppPush',
+        schedule: 'Send Immediately',
         scheduledAt: '',
         scheduledTime: '',
         selectedUserIds: fullNotification.selectedUserIds || [],
