@@ -678,15 +678,16 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
               </label>
             </div>
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4 mb-6'>
-            {/* End Time */}
+            {/* Event Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Time <span className="text-red-500">*</span>
+                Event Name <span className="text-red-500">*</span>
               </label>
               <input
-                type="time"
-                value={formData.endTime}
-                onChange={(e) => handleInputChange('endTime', e.target.value)}
+                type="text"
+                placeholder="Enter Event Name"
+                value={formData.eventName}
+                onChange={(e) => handleInputChange('eventName', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
@@ -707,16 +708,29 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
               />
             </div>
 
-            {/* Event Name */}
+            {/* Start Time */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Event Name <span className="text-red-500">*</span>
+                Start Time <span className="text-red-500">*</span>
               </label>
               <input
-                type="text"
-                placeholder="Enter Event Name"
-                value={formData.eventName}
-                onChange={(e) => handleInputChange('eventName', e.target.value)}
+                type="time"
+                value={formData.startTime}
+                onChange={(e) => handleInputChange('startTime', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
+            </div>
+
+            {/* End Time */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                End Time <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="time"
+                value={formData.endTime}
+                onChange={(e) => handleInputChange('endTime', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
@@ -790,20 +804,6 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                 placeholder="Enter point"
                 value={formData.reviewPoints}
                 onChange={(e) => handleInputChange('reviewPoints', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            {/* Start Time */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Time <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="time"
-                value={formData.startTime}
-                onChange={(e) => handleInputChange('startTime', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
