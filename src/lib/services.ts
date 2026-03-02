@@ -632,14 +632,14 @@ export const triviaResponsesService = {
   getByTriviaId: async (triviaId: string): Promise<TriviaResponseDocument[]> => {
     const result = await DatabaseService.list<TriviaResponseDocument>(
       appwriteConfig.collections.triviaResponses,
-      [Query.equal('trivia', [triviaId])]
+      [Query.equal('trivia', [triviaId]), Query.limit(5000)]
     )
     return result.documents
   },
   getByUserId: async (userId: string): Promise<TriviaResponseDocument[]> => {
     const result = await DatabaseService.list<TriviaResponseDocument>(
       appwriteConfig.collections.triviaResponses,
-      [Query.equal('user', [userId])]
+      [Query.equal('user', [userId]), Query.limit(5000)]
     )
     return result.documents
   },
