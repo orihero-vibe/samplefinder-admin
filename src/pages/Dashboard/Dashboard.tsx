@@ -64,6 +64,7 @@ const Dashboard = () => {
     eventInfo?: string
     latitude?: string
     longitude?: string
+    locationName?: string
   } | undefined>(undefined)
   const [editModalInitialData, setEditModalInitialData] = useState<{
     eventName?: string
@@ -86,6 +87,7 @@ const Dashboard = () => {
     eventInfo?: string
     latitude?: string
     longitude?: string
+    locationName?: string
   } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
@@ -457,15 +459,44 @@ const Dashboard = () => {
       latitude = eventDoc.location[1]?.toString() || ''
     }
 
+    // Resolve locationId when event references a Location document (for display + duplicate)
+    let locationName = ''
+    let resolvedAddress = eventDoc.address || ''
+    let resolvedCity = eventDoc.city || ''
+    let resolvedState = eventDoc.state || ''
+    let resolvedZipCode = eventDoc.zipCode || ''
+    let resolvedLatitude = latitude
+    let resolvedLongitude = longitude
+    const locationId = (eventDoc as EventDocument & { locationId?: string }).locationId
+    if (locationId) {
+      try {
+        const location = await locationsService.getById(locationId)
+        if (location) {
+          locationName = location.name || ''
+          if (!eventDoc.address) resolvedAddress = location.address || ''
+          if (!eventDoc.city) resolvedCity = location.city || ''
+          if (!eventDoc.state) resolvedState = location.state || ''
+          if (!eventDoc.zipCode) resolvedZipCode = location.zipCode || ''
+          if (!resolvedLatitude && !resolvedLongitude && location.location && Array.isArray(location.location) && location.location.length >= 2) {
+            resolvedLongitude = location.location[0]?.toString() || ''
+            resolvedLatitude = location.location[1]?.toString() || ''
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching location for event:', err)
+      }
+    }
+
     return {
       eventName: eventDoc.name || '',
       eventDate: formatDateForDateInput(eventDoc.date),
       startTime: formatTimeForTimeInput(eventDoc.startTime),
       endTime: formatTimeForTimeInput(eventDoc.endTime),
-      city: eventDoc.city || '',
-      address: eventDoc.address || '',
-      state: eventDoc.state || '',
-      zipCode: eventDoc.zipCode || '',
+      city: resolvedCity,
+      address: resolvedAddress,
+      state: resolvedState,
+      zipCode: resolvedZipCode,
+      locationName: locationName || undefined,
       category: categoryTitle,
       products: productsArray,
       discount: formatDiscountForInput(eventDoc.discount),
@@ -476,8 +507,8 @@ const Dashboard = () => {
       checkInPoints: eventDoc.checkInPoints?.toString() || '',
       reviewPoints: eventDoc.reviewPoints?.toString() || '',
       eventInfo: eventDoc.eventInfo || '',
-      latitude: latitude,
-      longitude: longitude,
+      latitude: resolvedLatitude,
+      longitude: resolvedLongitude,
     }
   }
 
