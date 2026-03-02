@@ -186,8 +186,8 @@ const TriviaDetails = () => {
           scheduledDateTime: triviaDoc.startDate || '',
           responses: stats.totalResponses,
           winners: winnerProfiles,
-          view: triviaDoc.views || 0, // Views from trivia document
-          skip: triviaDoc.skips || 0, // Skips from trivia document
+          view: Math.max(triviaDoc.views || 0, stats.totalResponses + (triviaDoc.skips || 0)),
+          skip: triviaDoc.skips || 0,
           incorrect: stats.incorrectResponses,
           winnersCount: stats.correctResponses,
           status,
