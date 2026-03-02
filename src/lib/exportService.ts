@@ -53,29 +53,34 @@ export interface ReportColumn {
 // Dashboard (All) columns
 const dashboardColumns: ReportColumn[] = [
   { header: 'Date', key: 'date' },
-  { header: 'Event Name', key: 'venueName' },
+  { header: 'Venue Name', key: 'venueName' },
   { header: 'Brand', key: 'brand' },
   { header: 'Start Time', key: 'startTime' },
   { header: 'End Time', key: 'endTime' },
-  { header: 'Products', key: 'products' },
+  { header: 'Product Type', key: 'products' },
   { header: 'Discount?', key: 'discount' },
 ]
 
-// Event List columns - ordered alphabetically; must match CSVUploadModal for re-import
+// Event List columns - order matches report spec
 const eventListColumns: ReportColumn[] = [
-  { header: 'Brand Name', key: 'brandName' },
-  { header: 'Category', key: 'category' },
-  { header: 'Date', key: 'date' },
-  { header: 'Discount', key: 'discount' },
-  { header: 'Discount Image URL', key: 'discountImageURL' },
-  { header: 'End Time', key: 'endTime' },
-  { header: 'Event Info', key: 'eventInfo' },
   { header: 'Event Name', key: 'name' },
-  { header: 'Location', key: 'location' },
-  { header: 'Points', key: 'checkInPoints' },
-  { header: 'Products', key: 'products' },
-  { header: 'Review Points', key: 'reviewPoints' },
+  { header: 'Brand Name', key: 'brandName' },
+  { header: 'Event Date', key: 'eventDate' },
   { header: 'Start Time', key: 'startTime' },
+  { header: 'End Time', key: 'endTime' },
+  { header: 'Address', key: 'address' },
+  { header: 'City', key: 'city' },
+  { header: 'State', key: 'state' },
+  { header: 'Zip', key: 'zip' },
+  { header: 'Location', key: 'location' },
+  { header: 'Product Type', key: 'productType' },
+  { header: 'Products', key: 'products' },
+  { header: 'Event Info', key: 'eventInfo' },
+  { header: 'Discount Text', key: 'discountText' },
+  { header: 'Discount Image File?', key: 'discountImageFile' },
+  { header: 'Check-In Code', key: 'checkInCode' },
+  { header: 'Check-in Points', key: 'checkInPoints' },
+  { header: 'Review Points', key: 'reviewPoints' },
 ]
 
 // Clients & Brands columns
@@ -220,10 +225,10 @@ const wrapTextForPdf = (text: string, maxCharsPerLine = 35): string => {
   return lines.join('\n')
 }
 
-// Column keys that hold display dates (MM/DD/YYYY) for sort order in exports
-const SORT_DATE_COLUMN_KEYS = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'signupDate'])
+// Column keys that hold display dates (MM/DD/YYYY or YYYY-MM-DD) for sort order in exports
+const SORT_DATE_COLUMN_KEYS = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'eventDate', 'signupDate'])
 // Numeric columns that sort descending in export so order matches Preview Reports UI
-const SORT_DESCENDING_NUMERIC_KEYS = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites'])
+const SORT_DESCENDING_NUMERIC_KEYS = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites', 'checkInPoints', 'reviewPoints'])
 
 const parseSortableDate = (value: string | number): number => {
   if (value === '' || value === undefined || value === null) return NaN
@@ -553,12 +558,12 @@ export const exportService = {
           }
         }
 
-        // Resolve category ID to category title
-        let categoryTitle = ''
+        // Resolve category ID to category title (Product Type column)
+        let productType = ''
         if (event.categories) {
           try {
             const category = await categoriesService.getById(event.categories)
-            categoryTitle = category?.title || ''
+            productType = category?.title || ''
           } catch (err) {
             console.error('Error fetching category for event:', err)
           }
@@ -579,7 +584,7 @@ export const exportService = {
           locationName = [event.address, event.city].filter(Boolean).join(', ') || ''
         }
 
-        // Normalize products: DB may store array or comma-separated string (same as Dashboard)
+        // Normalize products: DB may store array or comma-separated string
         const productsArray = Array.isArray(event.products)
           ? event.products
           : event.products
@@ -588,19 +593,26 @@ export const exportService = {
               : [event.products as unknown as string]
             : []
 
+        const hasDiscountImage = event.discountImageURL != null && String(event.discountImageURL).trim() !== ''
+
         return {
           name: event.name || '',
-          date: formatDateForUpload(event.date),
+          brandName,
+          eventDate: formatDateForUpload(event.date),
           startTime: formatTimeForUpload(event.startTime),
           endTime: formatTimeForUpload(event.endTime),
-          category: categoryTitle,
-          brandName: brandName,
+          address: event.address || '',
+          city: event.city || '',
+          state: event.state || '',
+          zip: event.zipCode || '',
+          productType,
           products: formatProducts(productsArray),
-          discount: event.discount?.toString() || '',
-          discountImageURL: event.discountImageURL || '',
+          eventInfo: event.eventInfo || '',
+          discountText: event.discount?.toString() || '',
+          discountImageFile: hasDiscountImage ? 'Yes' : 'No',
+          checkInCode: event.checkInCode || '',
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
-          eventInfo: event.eventInfo || '',
           location: locationName,
         }
       })
@@ -659,13 +671,13 @@ export const exportService = {
 
   /**
    * Generate App Users report.
-   * When dateRange is provided, filters users by sign-up date ($createdAt); single day or range; future dates allowed.
+   * "App Users (All)" shows all users regardless of date range; date range is ignored for this report.
    */
   async generateAppUsersReport(
-    dateRange?: { start: Date | null; end: Date | null }
+    _dateRange?: { start: Date | null; end: Date | null }
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const [usersResult, checkInReviewPointsByUser, triviasWonByUser] = await Promise.all([
-      fetchAllAppUsers(dateRange),
+      fetchAllAppUsers(),
       fetchCheckInReviewPointsByUser(), // all-time check-in pts + review pts per user
       fetchTriviasWonCountByUser(),
     ])
