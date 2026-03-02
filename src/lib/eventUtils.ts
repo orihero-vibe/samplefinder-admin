@@ -108,8 +108,8 @@ export type EventDisplayStatus = 'Archived' | 'Hidden' | 'Active' | 'In Active'
 /**
  * Derives display status from event document.
  * - Archived / Hidden come from DB flags.
- * - "Active" = current time is within event start and end (live).
- * - "In Active" = scheduled (not started) or completed (ended).
+ * - "Active" = event not yet ended (upcoming or live).
+ * - "In Active" = event completed (past end time).
  */
 export function getEventStatus(doc: {
   startTime?: string
@@ -125,9 +125,8 @@ export function getEventStatus(doc: {
   if (!eventStart || !eventEnd || isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
     return 'In Active'
   }
-  if (now < eventStart) return 'In Active' // scheduled
   if (now > eventEnd) return 'In Active' // completed
-  return 'Active' // live
+  return 'Active' // upcoming or live
 }
 
 /**

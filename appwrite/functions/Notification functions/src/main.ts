@@ -654,6 +654,7 @@ async function archiveEventsCompletedOver7DaysAgo(
       [
         Query.equal('isArchived', false),
         Query.lessThan('endTime', sevenDaysAgoISO),
+        Query.limit(500),
       ]
     );
 
