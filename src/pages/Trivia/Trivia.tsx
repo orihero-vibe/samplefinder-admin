@@ -164,8 +164,8 @@ const Trivia = () => {
       date,
       responses: responses.length,
       winners: winnerProfiles,
-      view: doc.views || 0, // Views from trivia document
-      skip: doc.skips || 0, // Skips from trivia document
+      view: Math.max(doc.views || 0, responses.length + (doc.skips || 0)),
+      skip: doc.skips || 0,
       incorrect: incorrectResponses.length,
       winnersCount: correctResponses.length,
       status,

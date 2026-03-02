@@ -487,16 +487,19 @@ async function getActiveTrivia(
   }
 
   // Increment views for each trivia returned (admin View column).
-  for (const trivia of triviaToIncrementViews) {
-    try {
-      const fresh = await databases.getDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id) as unknown as TriviaDocument;
-      await databases.updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id, {
-        views: (fresh.views ?? 0) + 1,
-      });
-    } catch (err) {
-      log(`Failed to increment views for trivia ${trivia.$id}: ${String(err)}`);
-    }
-  }
+  // Uses the already-fetched trivia objects and runs updates in parallel to avoid
+  // redundant getDocument calls that can fail due to relationship expansion issues.
+  await Promise.allSettled(
+    triviaToIncrementViews.map((trivia) =>
+      databases
+        .updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id, {
+          views: (trivia.views ?? 0) + 1,
+        })
+        .catch((err) =>
+          log(`Failed to increment views for trivia ${trivia.$id}: ${String(err)}`)
+        )
+    )
+  );
 
   log(`Returning ${unansweredTrivia.length} unanswered trivia questions`);
 
@@ -658,12 +661,10 @@ async function dismissTrivia(
     return;
   }
   skippedUsers.push(userId);
-  const updatePayload: { skippedUsers: string[]; skips?: number } = {
+  const updatePayload: { skippedUsers: string[]; skips: number } = {
     skippedUsers,
+    skips: (trivia.skips ?? 0) + 1,
   };
-  if (typeof trivia.skips === 'number') {
-    updatePayload.skips = trivia.skips + 1;
-  }
   await databases.updateDocument(
     DATABASE_ID,
     TRIVIA_TABLE_ID,
