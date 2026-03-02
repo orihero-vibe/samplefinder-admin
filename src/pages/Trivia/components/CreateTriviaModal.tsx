@@ -34,6 +34,7 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
   
   const [formData, setFormData] = useState(initialFormData)
   const initialDataRef = useRef(initialFormData)
+  const isSubmittingRef = useRef(false)
   const [brands, setBrands] = useState<ClientDocument[]>([])
   const [isLoadingBrands, setIsLoadingBrands] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -104,7 +105,8 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+    if (isSubmittingRef.current || isSubmitting) return
+
     const trimmed = trimFormStrings(formData)
 
     if (!trimmed.client) {
@@ -149,6 +151,8 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
       return
     }
 
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
     try {
       setError(null)
       // Convert dates to ISO 8601 format with timezone preservation
@@ -169,6 +173,7 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
       console.error('Error saving trivia:', err)
       setError('Failed to save trivia quiz. Please try again.')
     } finally {
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
@@ -368,13 +373,15 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
             <button
               type="button"
               onClick={handleClose}
-              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-70 disabled:cursor-not-allowed"
             >
               Create Trivia
             </button>

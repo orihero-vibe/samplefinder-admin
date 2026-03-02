@@ -44,6 +44,7 @@ interface EventData {
   eventInfo?: string
   latitude?: string
   longitude?: string
+  locationName?: string
 }
 
 interface AddEventModalProps {
@@ -163,11 +164,37 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             setDiscountImagePreview(null)
           }
           
-          // Set location display value if address is provided
-          if (initialData?.address) {
-            setLocationDisplayValue(initialData.address)
+          // Set location display value: prefer locationName, else resolve via findLocationByName
+          if (initialData?.locationName) {
+            setLocationDisplayValue(initialData.locationName)
           } else {
-            setLocationDisplayValue('')
+            const findLocationByName = async () => {
+              if (initialData?.address && initialData?.city) {
+                try {
+                  const searchTerm = initialData.address || initialData.city
+                  const result = await locationsService.search(searchTerm)
+                  const matchingLocation = result.documents.find(
+                    (loc) =>
+                      loc.address === initialData?.address &&
+                      loc.city === initialData?.city &&
+                      loc.state === initialData?.state
+                  )
+                  if (matchingLocation) {
+                    setLocationDisplayValue(matchingLocation.name)
+                  } else {
+                    setLocationDisplayValue(initialData.address || '')
+                  }
+                } catch (error) {
+                  console.error('Error finding location:', error)
+                  setLocationDisplayValue(initialData?.address || '')
+                }
+              } else if (initialData?.address) {
+                setLocationDisplayValue(initialData.address)
+              } else {
+                setLocationDisplayValue('')
+              }
+            }
+            findLocationByName()
           }
         } catch (error) {
           console.error('Error fetching default points:', error)

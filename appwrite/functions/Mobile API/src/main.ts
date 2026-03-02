@@ -486,17 +486,16 @@ async function getActiveTrivia(
     }
   }
 
-  // Increment views for each trivia returned (admin View column)
-  if (triviaToIncrementViews.length > 0) {
-    await Promise.all(
-      triviaToIncrementViews.map((trivia) =>
-        databases
-          .updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id, {
-            views: (trivia.views ?? 0) + 1,
-          })
-          .catch((err) => log(`Failed to increment views for trivia ${trivia.$id}: ${String(err)}`))
-      )
-    );
+  // Increment views for each trivia returned (admin View column).
+  for (const trivia of triviaToIncrementViews) {
+    try {
+      const fresh = await databases.getDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id) as unknown as TriviaDocument;
+      await databases.updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id, {
+        views: (fresh.views ?? 0) + 1,
+      });
+    } catch (err) {
+      log(`Failed to increment views for trivia ${trivia.$id}: ${String(err)}`);
+    }
   }
 
   log(`Returning ${unansweredTrivia.length} unanswered trivia questions`);

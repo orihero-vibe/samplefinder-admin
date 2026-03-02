@@ -383,6 +383,7 @@ async function checkAndSendScheduledNotifications(databases, messaging, log) {
 }
 /**
  * Archive events that completed more than 7 days ago (endTime < now - 7 days).
+ * Runs on the same cron schedule as event reminders and scheduled notifications.
  */
 async function archiveEventsCompletedOver7DaysAgo(databases, log) {
     try {
@@ -394,6 +395,7 @@ async function archiveEventsCompletedOver7DaysAgo(databases, log) {
         const response = await databases.listDocuments(DATABASE_ID, EVENTS_TABLE_ID, [
             Query.equal('isArchived', false),
             Query.lessThan('endTime', sevenDaysAgoISO),
+            Query.limit(500),
         ]);
         let archived = 0;
         for (const doc of response.documents) {
