@@ -10,12 +10,26 @@ interface NotificationData {
   title: string;
   message: string;
   type: 'Event Reminder' | 'Promotional' | 'Engagement';
-  targetAudience: 'All' | 'Targeted' | 'Specific Segment';
+  targetAudience:
+    | 'All'
+    | 'NewUsers'
+    | 'BrandAmbassadors'
+    | 'Influencers'
+    | 'Tier1'
+    | 'Tier2'
+    | 'Tier3'
+    | 'Tier4'
+    | 'Tier5'
+    | 'ZipCode'
+    | 'Targeted';
+  category?: 'AppPush' | 'SystemPush';
   status: 'Scheduled' | 'Sent' | 'Draft';
   scheduledAt?: string;
   sentAt?: string;
   recipients?: number;
   selectedUserIds?: string[]; // Array of user profile IDs for targeted notifications
+  selectedZipCodes?: string[]; // Zip codes for ZipCode audience
+  newUsersTimeRange?: number; // Days back for NewUsers audience
   [key: string]: unknown;
 }
 
@@ -68,6 +82,33 @@ const NOTIFICATIONS_TABLE_ID = 'notifications';
 const USER_PROFILES_TABLE_ID = 'user_profiles';
 const EVENTS_TABLE_ID = 'events';
 
+const PAGE_SIZE = 100;
+
+/**
+ * Fetch all documents matching queries by paginating with limit/offset.
+ * Appwrite defaults to 25 docs per request; this ensures we get every matching document.
+ */
+async function listAllDocuments(
+  databases: Databases,
+  databaseId: string,
+  collectionId: string,
+  queries: string[] = []
+): Promise<unknown[]> {
+  let offset = 0;
+  const all: unknown[] = [];
+  while (true) {
+    const response = await databases.listDocuments(databaseId, collectionId, [
+      ...queries,
+      Query.limit(PAGE_SIZE),
+      Query.offset(offset),
+    ]);
+    all.push(...response.documents);
+    if (response.documents.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return all;
+}
+
 /**
  * Get notification by ID
  */
@@ -91,13 +132,14 @@ async function getNotification(
 }
 
 /**
- * Get target users based on audience type and selected user IDs
+ * Get target users based on audience type and selected user IDs / filters
  */
 async function getTargetUsers(
   databases: Databases,
-  targetAudience: 'All' | 'Targeted' | 'Specific Segment',
+  targetAudience: NotificationData['targetAudience'],
   selectedUserIds: string[] | undefined,
-  log: (message: string) => void
+  log: (message: string) => void,
+  notification?: NotificationData
 ): Promise<UserProfile[]> {
   try {
     // If specific users are selected (for Targeted audience), fetch only those users
@@ -125,19 +167,66 @@ async function getTargetUsers(
       log(`Successfully fetched ${users.length} of ${selectedUserIds.length} selected users`);
       return users;
     }
-    
-    // For "All" or if no specific users selected, fetch all users
+
     const queries: string[] = [];
-    
-    const usersResponse = await databases.listDocuments(
+
+    // Audience-based filtering
+    if (targetAudience === 'NewUsers') {
+      const days = notification?.newUsersTimeRange ?? 30;
+      const now = new Date();
+      const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+      log(`Filtering NewUsers with cutoff >= ${cutoff}`);
+      queries.push(Query.greaterThanEqual('$createdAt', cutoff));
+    } else if (targetAudience === 'BrandAmbassadors') {
+      log('Filtering BrandAmbassadors (isAmbassador = true)');
+      queries.push(Query.equal('isAmbassador', true));
+    } else if (targetAudience === 'Influencers') {
+      log('Filtering Influencers (isInfluencer = true)');
+      queries.push(Query.equal('isInfluencer', true));
+    } else if (
+      targetAudience === 'Tier1' ||
+      targetAudience === 'Tier2' ||
+      targetAudience === 'Tier3' ||
+      targetAudience === 'Tier4' ||
+      targetAudience === 'Tier5'
+    ) {
+      const tierMap: Record<NotificationData['targetAudience'], string> = {
+        Tier1: 'NewbieSampler',
+        Tier2: 'SampleFan',
+        Tier3: 'SuperSampler',
+        Tier4: 'VIS',
+        Tier5: 'SampleMaster',
+        All: '',
+        NewUsers: '',
+        BrandAmbassadors: '',
+        Influencers: '',
+        ZipCode: '',
+        Targeted: '',
+      };
+      const tierName = tierMap[targetAudience] || '';
+      if (tierName) {
+        log(`Filtering by tierLevel = ${tierName}`);
+        queries.push(Query.equal('tierLevel', tierName));
+      }
+    } else if (targetAudience === 'ZipCode') {
+      const zips = notification?.selectedZipCodes || [];
+      if (zips.length > 0) {
+        log(`Filtering ZipCode audience for ${zips.length} zip(s)`);
+        queries.push(Query.equal('zipCode', zips));
+      } else {
+        log('ZipCode audience selected but no zip codes provided, returning empty list');
+        return [];
+      }
+    }
+
+    const users = (await listAllDocuments(
+      databases,
       DATABASE_ID,
       USER_PROFILES_TABLE_ID,
       queries
-    );
-
-    const users = usersResponse.documents as unknown as UserProfile[];
+    )) as UserProfile[];
     log(`Found ${users.length} target users for audience: ${targetAudience}`);
-    
+
     return users;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -238,22 +327,27 @@ async function sendPushNotificationToUsers(
   let sentCount = 0;
   for (const userId of userIds) {
     try {
+      // Positional API: node-appwrite 14 types do not expose object overload; use positional args.
       const result = await messaging.createPush(
         ID.unique(),
         title,
         body,
-        [],
-        [userId],
-        [],
-        payload,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        false
+        [], // topics
+        [userId], // users
+        [], // targets
+        payload, // data
+        undefined, // action
+        undefined, // image
+        undefined, // icon
+        undefined, // sound
+        undefined, // color
+        undefined, // tag
+        undefined, // badge
+        false, // draft
+        undefined, // scheduledAt
+        undefined, // contentAvailable
+        undefined, // critical
+        undefined // priority
       );
       lastResult = result as PushResult;
       sentCount += 1;
@@ -306,7 +400,8 @@ async function sendNotification(
       databases,
       notification.targetAudience,
       notification.selectedUserIds,
-      log
+      log,
+      notification
     );
 
     if (users.length === 0) {
@@ -424,13 +519,12 @@ async function checkAndSendEventReminders(
     log(`1h window: ${time1hStart.toISOString()} to ${time1hEnd.toISOString()}`);
 
     // Fetch all events
-    const eventsResponse = await databases.listDocuments(
+    const events = (await listAllDocuments(
+      databases,
       DATABASE_ID,
       EVENTS_TABLE_ID,
       []
-    );
-
-    const events = eventsResponse.documents as unknown as Event[];
+    )) as Event[];
     log(`Found ${events.length} total events`);
 
     // Create a map of events by ID for quick lookup
@@ -456,13 +550,12 @@ async function checkAndSendEventReminders(
     log(`Events in 24h window: ${events24h.length}, in 1h window: ${events1h.length}`);
 
     // Fetch all users
-    const usersResponse = await databases.listDocuments(
+    const allUsers = (await listAllDocuments(
+      databases,
       DATABASE_ID,
       USER_PROFILES_TABLE_ID,
       []
-    );
-
-    const allUsers = usersResponse.documents as unknown as UserProfile[];
+    )) as UserProfile[];
     log(`Checking ${allUsers.length} users for saved events`);
 
     let reminders24hSent = 0;
@@ -596,16 +689,15 @@ async function checkAndSendScheduledNotifications(
     const nowISO = new Date().toISOString();
     log(`Checking for due scheduled notifications (scheduledAt <= ${nowISO})`);
 
-    const response = await databases.listDocuments(
+    const dueNotifications = (await listAllDocuments(
+      databases,
       DATABASE_ID,
       NOTIFICATIONS_TABLE_ID,
       [
         Query.equal('status', 'Scheduled'),
         Query.lessThanEqual('scheduledAt', nowISO),
       ]
-    );
-
-    const dueNotifications = response.documents as unknown as NotificationData[];
+    )) as NotificationData[];
     log(`Found ${dueNotifications.length} scheduled notification(s) due to send`);
 
     let sent = 0;

@@ -1279,11 +1279,28 @@ export const statisticsService = {
 }
 
 // Notification Document interface
+export type NotificationAudience =
+  | 'All'
+  | 'NewUsers'
+  | 'BrandAmbassadors'
+  | 'Influencers'
+  | 'Tier1'
+  | 'Tier2'
+  | 'Tier3'
+  | 'Tier4'
+  | 'Tier5'
+  | 'ZipCode'
+  | 'Targeted'
+
+export type NotificationCategory = 'AppPush' | 'SystemPush'
+
+// Notification Document interface
 export interface NotificationDocument extends Models.Document {
   title: string
   message: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
-  targetAudience: 'All' | 'Targeted' | 'Specific Segment'
+  targetAudience: NotificationAudience
+  category?: NotificationCategory
   status: 'Scheduled' | 'Sent' | 'Draft'
   scheduledAt?: string // ISO date string for scheduled notifications
   sentAt?: string // ISO date string when notification was sent
@@ -1291,6 +1308,8 @@ export interface NotificationDocument extends Models.Document {
   openRate?: number // Percentage of users who opened
   clickRate?: number // Percentage of users who clicked
   selectedUserIds?: string[] // Array of user IDs for targeted notifications
+  selectedZipCodes?: string[] // Array of zip codes for ZipCode audience
+  newUsersTimeRange?: number // Days back for NewUsers audience
   [key: string]: unknown
 }
 
@@ -1299,24 +1318,52 @@ export interface NotificationFormData {
   title: string
   message: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
-  targetAudience: 'All' | 'Targeted' | 'Specific Segment'
+  targetAudience: NotificationAudience
+  category: NotificationCategory
   schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring'
   scheduledAt?: string // ISO date string
   scheduledTime?: string // Time string (HH:mm)
   selectedUserIds?: string[] // Array of user IDs for targeted notifications
+  selectedZipCodes?: string[] // Array of zip codes for ZipCode audience
+  newUsersTimeRange?: number // Days back for NewUsers audience
 }
 
 const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = ['Event Reminder', 'Promotional', 'Engagement']
-const VALID_TARGET_AUDIENCES: Array<NotificationFormData['targetAudience']> = ['All', 'Targeted', 'Specific Segment']
+const VALID_TARGET_AUDIENCES: Array<NotificationAudience> = [
+  'All',
+  'NewUsers',
+  'BrandAmbassadors',
+  'Influencers',
+  'Tier1',
+  'Tier2',
+  'Tier3',
+  'Tier4',
+  'Tier5',
+  'ZipCode',
+  'Targeted',
+]
 
 /** Normalize type and targetAudience to valid enum values for form display and API payloads. */
-export function normalizeNotificationFormData(doc: { type?: string; targetAudience?: string }): { type: NotificationFormData['type']; targetAudience: NotificationFormData['targetAudience'] } {
-  const type: NotificationFormData['type'] = (doc.type && VALID_NOTIFICATION_TYPES.includes(doc.type as NotificationFormData['type'])) ? (doc.type as NotificationFormData['type']) : 'Event Reminder'
-  const targetAudience: NotificationFormData['targetAudience'] = (doc.targetAudience && VALID_TARGET_AUDIENCES.includes(doc.targetAudience as NotificationFormData['targetAudience'])) ? (doc.targetAudience as NotificationFormData['targetAudience']) : 'All'
+export function normalizeNotificationFormData(doc: { type?: string; targetAudience?: string }): {
+  type: NotificationFormData['type']
+  targetAudience: NotificationAudience
+} {
+  const type: NotificationFormData['type'] =
+    doc.type && VALID_NOTIFICATION_TYPES.includes(doc.type as NotificationFormData['type'])
+      ? (doc.type as NotificationFormData['type'])
+      : 'Event Reminder'
+
+  const targetAudience: NotificationAudience =
+    doc.targetAudience && VALID_TARGET_AUDIENCES.includes(doc.targetAudience as NotificationAudience)
+      ? (doc.targetAudience as NotificationAudience)
+      : 'All'
+
   return { type, targetAudience }
 }
 
-function normalizeNotificationPayload(data: Partial<NotificationFormData>): { type: NotificationFormData['type']; targetAudience: NotificationFormData['targetAudience'] } {
+function normalizeNotificationPayload(
+  data: Partial<NotificationFormData>
+): { type: NotificationFormData['type']; targetAudience: NotificationAudience } {
   return normalizeNotificationFormData(data)
 }
 
@@ -1329,6 +1376,7 @@ export const notificationsService = {
       message: data.message,
       type,
       targetAudience,
+      category: data.category || 'AppPush',
       // Always start with 'Draft' status - function will update to 'Sent' after sending
       status: data.schedule === 'Schedule for Later' ? 'Scheduled' : 'Draft',
       recipients: 0, // Will be updated when notification is sent
@@ -1337,6 +1385,16 @@ export const notificationsService = {
     // Add selected user IDs if targeting specific users
     if (data.selectedUserIds && data.selectedUserIds.length > 0) {
       dbData.selectedUserIds = data.selectedUserIds
+    }
+
+    // Add selected zip codes if using ZipCode audience
+    if (data.selectedZipCodes && data.selectedZipCodes.length > 0) {
+      dbData.selectedZipCodes = data.selectedZipCodes
+    }
+
+    // Add New Users time range if using NewUsers audience
+    if (typeof data.newUsersTimeRange === 'number') {
+      dbData.newUsersTimeRange = data.newUsersTimeRange
     }
 
     // Handle scheduling
@@ -1382,11 +1440,22 @@ export const notificationsService = {
       message: data.message,
       type,
       targetAudience,
+      category: data.category || 'AppPush',
     }
     
     // Add selected user IDs if targeting specific users
     if (data.selectedUserIds && data.selectedUserIds.length > 0) {
       dbData.selectedUserIds = data.selectedUserIds
+    }
+
+    // Add selected zip codes if using ZipCode audience
+    if (data.selectedZipCodes && data.selectedZipCodes.length > 0) {
+      dbData.selectedZipCodes = data.selectedZipCodes
+    }
+
+    // Add New Users time range if using NewUsers audience
+    if (typeof data.newUsersTimeRange === 'number') {
+      dbData.newUsersTimeRange = data.newUsersTimeRange
     }
     
     // Handle scheduling updates
@@ -1651,6 +1720,14 @@ export const settingsService = {
       return null
     }
   },
+  
+  // Create a new setting
+  create: (data: { key: string; value: string; description?: string }) =>
+    DatabaseService.create<SettingsDocument>(appwriteConfig.collections.settings, data),
+
+  // Update an existing setting
+  update: (id: string, data: Partial<Pick<SettingsDocument, 'value' | 'description'>>) =>
+    DatabaseService.update<SettingsDocument>(appwriteConfig.collections.settings, id, data),
   
   // Get multiple settings by keys
   getByKeys: async (keys: string[]): Promise<Map<string, string>> => {
