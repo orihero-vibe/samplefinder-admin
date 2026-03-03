@@ -516,7 +516,7 @@ async function submitTriviaAnswer(
   triviaId: string,
   answerIndex: number,
   log: (message: string) => void
-): Promise<{ isCorrect: boolean; pointsAwarded: number; message: string }> {
+): Promise<{ isCorrect: boolean; correctAnswerIndex: number; pointsAwarded: number; message: string }> {
   const now = new Date().toISOString();
 
   // 1. Get the trivia question and validate it exists
@@ -572,8 +572,9 @@ async function submitTriviaAnswer(
     };
   }
 
-  // 6. Check if answer is correct
-  const isCorrect = answerIndex === trivia.correctOptionIndex;
+  // 6. Check if answer is correct (coerce to number - DB may return string)
+  const correctIndex = Number(trivia.correctOptionIndex);
+  const isCorrect = Number(answerIndex) === correctIndex;
   const answerText = trivia.answers[answerIndex];
 
   // 7. Create the trivia response record
@@ -621,6 +622,7 @@ async function submitTriviaAnswer(
 
   return {
     isCorrect,
+    correctAnswerIndex: correctIndex,
     pointsAwarded,
     message: isCorrect
       ? `Correct! You earned ${pointsAwarded} points.`

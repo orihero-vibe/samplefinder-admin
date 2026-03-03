@@ -295,8 +295,9 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
             message: `Invalid answer index. Must be between 0 and ${trivia.answers.length - 1}`,
         };
     }
-    // 6. Check if answer is correct
-    const isCorrect = answerIndex === trivia.correctOptionIndex;
+    // 6. Check if answer is correct (coerce to number - DB may return string)
+    const correctIndex = Number(trivia.correctOptionIndex);
+    const isCorrect = Number(answerIndex) === correctIndex;
     const answerText = trivia.answers[answerIndex];
     // 7. Create the trivia response record
     await databases.createDocument(DATABASE_ID, TRIVIA_RESPONSES_TABLE_ID, ID.unique(), {
@@ -321,6 +322,7 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
     }
     return {
         isCorrect,
+        correctAnswerIndex: correctIndex,
         pointsAwarded,
         message: isCorrect
             ? `Correct! You earned ${pointsAwarded} points.`
