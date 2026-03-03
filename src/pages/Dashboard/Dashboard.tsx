@@ -7,7 +7,7 @@ import { eventsService, categoriesService, clientsService, locationsService, sta
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { formatDateWithTimezone } from '../../lib/dateUtils'
-import { getEventStatus, getEventStatusColor } from '../../lib/eventUtils'
+import { getEventStatus, getEventStatusColor, generateUniqueCheckInCode } from '../../lib/eventUtils'
 import type { EventDocument } from '../../lib/services'
 import { Query } from '../../lib/appwrite'
 import {
@@ -680,8 +680,12 @@ const Dashboard = () => {
         row[normalizedHeader] = values[index]?.replace(/^"|"$/g, '') || ''
       })
 
-      // Only add row if it has required data
-      if (row['Event Name'] && row['Date']) {
+      // Only skip completely empty rows; rows with partial data
+      // will be validated later in handleCSVUpload
+      const isRowEmpty = Object.values(row).every(
+        value => value == null || String(value).trim() === ''
+      )
+      if (!isRowEmpty) {
         data.push(row)
       }
     }
@@ -697,8 +701,9 @@ const Dashboard = () => {
       
       // Parse CSV
       const csvData = parseCSV(csvText)
+      const totalRows = csvData.length
       
-      if (csvData.length === 0) {
+      if (totalRows === 0) {
         throw new Error('No valid event data found in CSV file')
       }
 
@@ -713,6 +718,7 @@ const Dashboard = () => {
         'Brand Name',
         'Location',
         'Products',
+        'Category',
       ] as const
 
       // Process each row
@@ -807,16 +813,13 @@ const Dashboard = () => {
             }
           }
 
-          // Find category by name if provided
-          let categoryId: string | null = null
-          if (row['Category']?.trim()) {
-            try {
-              const category = await categoriesService.findByTitle(row['Category'].trim())
-              categoryId = category?.$id || null
-            } catch (catErr) {
-              console.warn(`Category "${row['Category']}" not found, skipping category assignment`)
-            }
+          // Resolve category by name (required); reject invalid category
+          const categoryName = row['Category'].trim()
+          const category = await categoriesService.findByTitle(categoryName)
+          if (!category) {
+            throw new Error(`Category "${categoryName}" not found. Use an existing Category from the admin panel.`)
           }
+          const categoryId = category.$id
 
           // Resolve Location by name (required)
           const locationName = row['Location']?.trim() || ''
@@ -840,7 +843,7 @@ const Dashboard = () => {
             }
           }
 
-          const checkInCode = `CHK-${Date.now()}-${i}`
+          const checkInCode = await generateUniqueCheckInCode()
 
           // Parse review points (use Points value as fallback)
           const checkInPoints = parseFloat(row['Points']) || 0
@@ -913,13 +916,13 @@ const Dashboard = () => {
         addNotification({
           type: 'success',
           title: 'CSV Upload Successful',
-          message: `Successfully created ${successCount} event${successCount > 1 ? 's' : ''} from CSV file.`,
+          message: `Successfully created ${successCount} of ${totalRows} event${totalRows > 1 ? 's' : ''} from CSV file.`,
         })
       } else if (successCount > 0 && errorCount > 0) {
         addNotification({
           type: 'warning',
           title: 'Partial CSV Upload',
-          message: `Created ${successCount} event${successCount > 1 ? 's' : ''}, but ${errorCount} failed:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n... and ${errors.length - 3} more` : ''}`,
+          message: `Created ${successCount} of ${totalRows} event${totalRows > 1 ? 's' : ''}, but ${errorCount} failed:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n... and ${errors.length - 3} more` : ''}`,
         })
         console.error('CSV Upload Errors (Full List):', errors)
       } else {
