@@ -104,7 +104,6 @@ const CreateNotificationModal = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
-  const [segment, setSegment] = useState<string>('All segments')
   const [selectedAppTemplateId, setSelectedAppTemplateId] = useState<string>('')
   const [selectedSystemTemplateId, setSelectedSystemTemplateId] = useState<string>('')
   const [users, setUsers] = useState<AppUser[]>([])
@@ -188,7 +187,6 @@ const CreateNotificationModal = ({
       }
       setValidationErrors({})
       setTouchedFields(new Set())
-      setSegment('All segments')
       setSelectedAppTemplateId('')
       setSelectedSystemTemplateId('')
       setUserSearchQuery('')

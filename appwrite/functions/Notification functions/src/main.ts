@@ -82,6 +82,33 @@ const NOTIFICATIONS_TABLE_ID = 'notifications';
 const USER_PROFILES_TABLE_ID = 'user_profiles';
 const EVENTS_TABLE_ID = 'events';
 
+const PAGE_SIZE = 100;
+
+/**
+ * Fetch all documents matching queries by paginating with limit/offset.
+ * Appwrite defaults to 25 docs per request; this ensures we get every matching document.
+ */
+async function listAllDocuments(
+  databases: Databases,
+  databaseId: string,
+  collectionId: string,
+  queries: string[] = []
+): Promise<unknown[]> {
+  let offset = 0;
+  const all: unknown[] = [];
+  while (true) {
+    const response = await databases.listDocuments(databaseId, collectionId, [
+      ...queries,
+      Query.limit(PAGE_SIZE),
+      Query.offset(offset),
+    ]);
+    all.push(...response.documents);
+    if (response.documents.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return all;
+}
+
 /**
  * Get notification by ID
  */
@@ -192,13 +219,12 @@ async function getTargetUsers(
       }
     }
 
-    const usersResponse = await databases.listDocuments(
+    const users = (await listAllDocuments(
+      databases,
       DATABASE_ID,
       USER_PROFILES_TABLE_ID,
       queries
-    );
-
-    const users = usersResponse.documents as unknown as UserProfile[];
+    )) as UserProfile[];
     log(`Found ${users.length} target users for audience: ${targetAudience}`);
 
     return users;
@@ -301,22 +327,27 @@ async function sendPushNotificationToUsers(
   let sentCount = 0;
   for (const userId of userIds) {
     try {
+      // Positional API: node-appwrite 14 types do not expose object overload; use positional args.
       const result = await messaging.createPush(
         ID.unique(),
         title,
         body,
-        [],
-        [userId],
-        [],
-        payload,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        false
+        [], // topics
+        [userId], // users
+        [], // targets
+        payload, // data
+        undefined, // action
+        undefined, // image
+        undefined, // icon
+        undefined, // sound
+        undefined, // color
+        undefined, // tag
+        undefined, // badge
+        false, // draft
+        undefined, // scheduledAt
+        undefined, // contentAvailable
+        undefined, // critical
+        undefined // priority
       );
       lastResult = result as PushResult;
       sentCount += 1;
@@ -488,13 +519,12 @@ async function checkAndSendEventReminders(
     log(`1h window: ${time1hStart.toISOString()} to ${time1hEnd.toISOString()}`);
 
     // Fetch all events
-    const eventsResponse = await databases.listDocuments(
+    const events = (await listAllDocuments(
+      databases,
       DATABASE_ID,
       EVENTS_TABLE_ID,
       []
-    );
-
-    const events = eventsResponse.documents as unknown as Event[];
+    )) as Event[];
     log(`Found ${events.length} total events`);
 
     // Create a map of events by ID for quick lookup
@@ -520,13 +550,12 @@ async function checkAndSendEventReminders(
     log(`Events in 24h window: ${events24h.length}, in 1h window: ${events1h.length}`);
 
     // Fetch all users
-    const usersResponse = await databases.listDocuments(
+    const allUsers = (await listAllDocuments(
+      databases,
       DATABASE_ID,
       USER_PROFILES_TABLE_ID,
       []
-    );
-
-    const allUsers = usersResponse.documents as unknown as UserProfile[];
+    )) as UserProfile[];
     log(`Checking ${allUsers.length} users for saved events`);
 
     let reminders24hSent = 0;
@@ -660,16 +689,15 @@ async function checkAndSendScheduledNotifications(
     const nowISO = new Date().toISOString();
     log(`Checking for due scheduled notifications (scheduledAt <= ${nowISO})`);
 
-    const response = await databases.listDocuments(
+    const dueNotifications = (await listAllDocuments(
+      databases,
       DATABASE_ID,
       NOTIFICATIONS_TABLE_ID,
       [
         Query.equal('status', 'Scheduled'),
         Query.lessThanEqual('scheduledAt', nowISO),
       ]
-    );
-
-    const dueNotifications = response.documents as unknown as NotificationData[];
+    )) as NotificationData[];
     log(`Found ${dueNotifications.length} scheduled notification(s) due to send`);
 
     let sent = 0;
