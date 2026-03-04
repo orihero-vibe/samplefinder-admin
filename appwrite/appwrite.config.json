@@ -808,7 +808,8 @@
                         "ZipCode",
                         "Targeted"
                     ],
-                    "format": "enum"
+                    "format": "enum",
+                    "default": null
                 },
                 {
                     "key": "selectedUserIds",
@@ -852,7 +853,8 @@
                     "required": true,
                     "array": false,
                     "elements": ["Scheduled", "Sent", "Draft"],
-                    "format": "enum"
+                    "format": "enum",
+                    "default": null
                 }
             ],
             "indexes": []
