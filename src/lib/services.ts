@@ -1382,19 +1382,18 @@ export const notificationsService = {
       recipients: 0, // Will be updated when notification is sent
     }
 
-    // Add selected user IDs if targeting specific users
-    if (data.selectedUserIds && data.selectedUserIds.length > 0) {
+    // Add audience-specific fields only when matching targetAudience
+    if (targetAudience === 'Targeted' && data.selectedUserIds && data.selectedUserIds.length > 0) {
       dbData.selectedUserIds = data.selectedUserIds
     }
-
-    // Add selected zip codes if using ZipCode audience
-    if (data.selectedZipCodes && data.selectedZipCodes.length > 0) {
+    if (targetAudience === 'ZipCode' && data.selectedZipCodes && data.selectedZipCodes.length > 0) {
       dbData.selectedZipCodes = data.selectedZipCodes
     }
-
-    // Add New Users time range if using NewUsers audience
-    if (typeof data.newUsersTimeRange === 'number') {
-      dbData.newUsersTimeRange = data.newUsersTimeRange
+    if (targetAudience === 'NewUsers' && data.newUsersTimeRange != null) {
+      const days = Number(data.newUsersTimeRange)
+      if (!isNaN(days) && days > 0) {
+        dbData.newUsersTimeRange = days
+      }
     }
 
     // Handle scheduling
@@ -1443,21 +1442,20 @@ export const notificationsService = {
       category: data.category || 'AppPush',
     }
     
-    // Add selected user IDs if targeting specific users
-    if (data.selectedUserIds && data.selectedUserIds.length > 0) {
+    // Add audience-specific fields only when matching targetAudience
+    if (targetAudience === 'Targeted' && data.selectedUserIds && data.selectedUserIds.length > 0) {
       dbData.selectedUserIds = data.selectedUserIds
     }
-
-    // Add selected zip codes if using ZipCode audience
-    if (data.selectedZipCodes && data.selectedZipCodes.length > 0) {
+    if (targetAudience === 'ZipCode' && data.selectedZipCodes && data.selectedZipCodes.length > 0) {
       dbData.selectedZipCodes = data.selectedZipCodes
     }
-
-    // Add New Users time range if using NewUsers audience
-    if (typeof data.newUsersTimeRange === 'number') {
-      dbData.newUsersTimeRange = data.newUsersTimeRange
+    if (targetAudience === 'NewUsers' && data.newUsersTimeRange != null) {
+      const days = Number(data.newUsersTimeRange)
+      if (!isNaN(days) && days > 0) {
+        dbData.newUsersTimeRange = days
+      }
     }
-    
+
     // Handle scheduling updates
     if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
       const [hours, minutes] = data.scheduledTime.split(':')
