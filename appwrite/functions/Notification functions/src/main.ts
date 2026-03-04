@@ -686,7 +686,10 @@ async function checkAndSendScheduledNotifications(
   log: (message: string) => void
 ): Promise<{ success: boolean; sent: number; failed: number }> {
   try {
-    const nowISO = new Date().toISOString();
+    const now = new Date();
+    const nowISO = now.toISOString();
+    // Server runs in UTC; log for debugging timezone issues
+    log(`Server time: ${nowISO} UTC (tz: ${process.env.TZ ?? 'UTC'})`);
     log(`Checking for due scheduled notifications (scheduledAt <= ${nowISO})`);
 
     const dueNotifications = (await listAllDocuments(
