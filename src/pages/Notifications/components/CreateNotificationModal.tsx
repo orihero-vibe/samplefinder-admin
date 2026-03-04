@@ -45,6 +45,8 @@ const defaultFormData: NotificationFormData = {
   scheduledAt: '',
   scheduledTime: '',
   selectedUserIds: [],
+  selectedZipCodes: [],
+  newUsersTimeRange: undefined,
 }
 
 interface NotificationTemplate {
@@ -348,7 +350,7 @@ const CreateNotificationModal = ({
       console.error('Validation failed:', errors)
       return
     }
-    
+
     setIsSubmitting(true)
     try {
       await onSave(trimmed)
@@ -691,9 +693,16 @@ const CreateNotificationModal = ({
                   <div className="relative">
                     <select
                       value={formData.targetAudience}
-                      onChange={(e) =>
-                        handleInputChange('targetAudience', e.target.value as NotificationAudience)
-                      }
+                      onChange={(e) => {
+                        const audience = e.target.value as NotificationAudience
+                        setFormData((prev) => ({
+                          ...prev,
+                          targetAudience: audience,
+                          selectedUserIds: [],
+                          selectedZipCodes: [],
+                          newUsersTimeRange: undefined,
+                        }))
+                      }}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
                     >
                       <optgroup label="App Push Notifications">
@@ -730,12 +739,12 @@ const CreateNotificationModal = ({
                       min={1}
                       max={365}
                       value={formData.newUsersTimeRange ?? ''}
-                      onChange={(e) =>
-                        handleInputChange(
-                          'newUsersTimeRange',
-                          e.target.value ? String(Math.max(1, Math.min(365, Number(e.target.value)))) : ''
-                        )
-                      }
+                      onChange={(e) => {
+                        const val = e.target.value
+                          ? Math.max(1, Math.min(365, Number(e.target.value)))
+                          : undefined
+                        setFormData((prev) => ({ ...prev, newUsersTimeRange: val }))
+                      }}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
                       placeholder="e.g. 30"
                     />
