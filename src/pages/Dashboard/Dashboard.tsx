@@ -769,8 +769,8 @@ const Dashboard = () => {
           }
 
           // Use times from CSV or default values
-          const startTime = row['Start Time']?.trim() || '09:00' // Default start time
-          const endTime = row['End Time']?.trim() || '17:00' // Default end time
+          const startTime = row['Start Time']?.trim() || '00:00' // Default start time
+          const endTimeRaw = row['End Time']?.trim()
 
           // Parse start time (supports HH:MM format)
           const parseTimeString = (timeStr: string): { hours: number; minutes: number } => {
@@ -787,14 +787,18 @@ const Dashboard = () => {
           const startDateTime = new Date(eventDate)
           startDateTime.setHours(startHours, startMinutes, 0, 0)
 
-          const { hours: endHours, minutes: endMinutes } = parseTimeString(endTime)
-          const endDateTime = new Date(eventDate)
-          endDateTime.setHours(endHours, endMinutes, 0, 0)
+          // End time: use CSV value or Start + 24 hours
+          let endDateTime: Date
+          if (endTimeRaw) {
+            const { hours: endHours, minutes: endMinutes } = parseTimeString(endTimeRaw)
+            endDateTime = new Date(eventDate)
+            endDateTime.setHours(endHours, endMinutes, 0, 0)
+          } else {
+            endDateTime = new Date(startDateTime.getTime() + 24 * 60 * 60 * 1000)
+          }
 
           // Validate start time is before end time (same rule as Add Event form)
-          const startTimeInMinutes = startHours * 60 + startMinutes
-          const endTimeInMinutes = endHours * 60 + endMinutes
-          if (startTimeInMinutes >= endTimeInMinutes) {
+          if (startDateTime.getTime() >= endDateTime.getTime()) {
             throw new Error('Start time must be before end time. Please adjust the event times.')
           }
 
@@ -845,13 +849,11 @@ const Dashboard = () => {
 
           const checkInCode = await generateUniqueCheckInCode()
 
-          // Parse review points (use Points value as fallback)
-          const checkInPoints = parseFloat(row['Points']) || 0
-          const reviewPoints = row['Review Points']?.trim() 
-            ? parseFloat(row['Review Points']) || 0
-            : checkInPoints
+          // Check-in points (Points) and review points with defaults when empty
+          const checkInPoints = parseFloat(row['Points']) || 10
+          const reviewPoints = parseFloat(row['Review Points']) || 50
 
-          const eventInfo = row['Event Info']?.trim() || `Event at ${locationDoc.name}`
+          const eventInfo = row['Event Info']?.trim() || 'Event info'
 
           const discount = row['Discount']?.trim() || ''
           const discountImageURL = row['Discount Image URL']?.trim() || ''
