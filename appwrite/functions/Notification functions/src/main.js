@@ -435,7 +435,10 @@ async function checkAndSendEventReminders(databases, messaging, log) {
  */
 async function checkAndSendScheduledNotifications(databases, messaging, log) {
     try {
-        const nowISO = new Date().toISOString();
+        const now = new Date();
+        const nowISO = now.toISOString();
+        // Server runs in UTC; log for debugging timezone issues
+        log(`Server time: ${nowISO} UTC (tz: ${process.env.TZ ?? 'UTC'})`);
         log(`Checking for due scheduled notifications (scheduledAt <= ${nowISO})`);
         const dueNotifications = (await listAllDocuments(databases, DATABASE_ID, NOTIFICATIONS_TABLE_ID, [
             Query.equal('status', 'Scheduled'),
