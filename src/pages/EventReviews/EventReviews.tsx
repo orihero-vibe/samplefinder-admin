@@ -36,6 +36,7 @@ interface UIReview {
   isHidden: boolean
   reviewedAt: string // when the review was submitted
   answers?: string // e.g. liked (staff, swag, sample, etc.)
+  hasPurchased?: boolean
 }
 
 const EventReviews = () => {
@@ -231,16 +232,20 @@ const EventReviews = () => {
 
           const sentimentData = getSentiment(reviewDoc.rating || 0)
 
-          // Format "liked" (answers) for display
-          const liked = reviewDoc.liked as string | undefined
-          const answersDisplay = liked
-            ? String(liked)
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean)
-                .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
-                .join(', ')
-            : undefined
+          // Format "liked" (answers) for display — support array (multi-select) or string (legacy/comma-separated)
+          const liked = reviewDoc.liked
+          const likedItems: string[] = Array.isArray(liked)
+            ? (liked as string[]).map((s) => String(s).trim()).filter(Boolean)
+            : liked != null
+              ? String(liked)
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              : []
+          const answersDisplay =
+            likedItems.length > 0
+              ? likedItems.map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(', ')
+              : undefined
 
           return {
             id: reviewDoc.$id,
@@ -269,6 +274,7 @@ const EventReviews = () => {
             isHidden: reviewDoc.isHidden || false,
             reviewedAt: `${formatDate(reviewDoc.$createdAt)} ${formatTime(reviewDoc.$createdAt)}`,
             answers: answersDisplay,
+            hasPurchased: reviewDoc.hasPurchased ?? false,
           } as UIReview
         })
       )

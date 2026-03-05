@@ -820,6 +820,7 @@ export const exportService = {
       { header: 'Review', key: 'review' },
       { header: 'Reviewed At', key: 'reviewedAt' },
       { header: 'Answers', key: 'answers' },
+      { header: 'Purchased Product', key: 'purchasedProduct' },
     ]
     const rows: Record<string, string | number>[] = []
     let offset = 0
@@ -846,15 +847,19 @@ export const exportService = {
             // keep defaults
           }
         }
-        const liked = doc.liked as string | undefined
-        const answersDisplay = liked
-          ? String(liked)
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-              .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
-              .join(', ')
-          : ''
+        const liked = doc.liked
+        const likedItems: string[] = Array.isArray(liked)
+          ? (liked as string[]).map((s) => String(s).trim()).filter(Boolean)
+          : liked != null
+            ? String(liked)
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : []
+        const answersDisplay =
+          likedItems.length > 0
+            ? likedItems.map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(', ')
+            : ''
         const createdAt = doc.$createdAt
         const reviewedAt = createdAt
           ? `${formatDate(createdAt)} ${formatTime(createdAt)}`
@@ -866,6 +871,7 @@ export const exportService = {
           review: doc.review ?? '',
           reviewedAt,
           answers: answersDisplay,
+          purchasedProduct: doc.hasPurchased ? 'Yes' : 'No',
         })
       }
       offset += limit
