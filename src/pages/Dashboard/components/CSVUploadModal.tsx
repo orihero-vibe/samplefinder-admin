@@ -227,7 +227,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
               <li>Address and coordinates are taken from the Location record, not from the CSV</li>
               <li><strong>Date</strong> format: YYYY-MM-DD (e.g., 2026-01-25)</li>
               <li><strong>Time</strong> format: HH:MM (e.g., 09:00, 17:00)</li>
-              <li>If <strong>Start Time</strong>, <strong>End Time</strong>, <strong>Event Info</strong>, <strong>Points</strong>, or <strong>Review Points</strong> are left empty, defaults are applied: Start 00:00, End 24 hours after Start, Event info text, 10 and 50 points</li>
+              <li>If <strong>Start Time</strong>, <strong>End Time</strong>, <strong>Event Info</strong>, <strong>Points</strong>, or <strong>Review Points</strong> are left empty, defaults are applied: Start 00:00, End 23:59, Event info text, 10 and 50 points</li>
               <li>Download the template and replace sample values with your actual data</li>
             </ul>
           </div>

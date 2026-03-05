@@ -794,7 +794,9 @@ const Dashboard = () => {
             endDateTime = new Date(eventDate)
             endDateTime.setHours(endHours, endMinutes, 0, 0)
           } else {
-            endDateTime = new Date(startDateTime.getTime() + 24 * 60 * 60 * 1000)
+            // Default: same day at 23:59
+            endDateTime = new Date(eventDate)
+            endDateTime.setHours(23, 59, 0, 0)
           }
 
           // Validate start time is before end time (same rule as Add Event form)
