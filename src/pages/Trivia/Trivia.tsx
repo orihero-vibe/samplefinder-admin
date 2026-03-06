@@ -47,6 +47,7 @@ const Trivia = () => {
   const [sortBy, setSortBy] = useState('Date')
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [triviaToDelete, setTriviaToDelete] = useState<TriviaQuiz | null>(null)
+  const [isDeletingTrivia, setIsDeletingTrivia] = useState(false)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [triviaToEdit, setTriviaToEdit] = useState<TriviaQuiz | null>(null)
@@ -318,6 +319,7 @@ const Trivia = () => {
 
   const handleConfirmDelete = async () => {
     if (triviaToDelete?.id) {
+      setIsDeletingTrivia(true)
       try {
         await triviaService.delete(triviaToDelete.id)
         // Check if we need to go back a page if current page becomes empty
@@ -342,6 +344,8 @@ const Trivia = () => {
           message: 'Failed to delete trivia quiz. Please try again.',
         })
         setIsDeleteModalOpen(false)
+      } finally {
+        setIsDeletingTrivia(false)
       }
     }
   }
@@ -509,6 +513,7 @@ const Trivia = () => {
         onConfirm={handleConfirmDelete}
         type="delete"
         itemName="trivia quiz"
+        isLoading={isDeletingTrivia}
       />
     </DashboardLayout>
   )
