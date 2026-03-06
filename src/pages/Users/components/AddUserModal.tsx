@@ -53,21 +53,55 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     isAvailable: null,
     message: ''
   })
+  const [emailValidation, setEmailValidation] = useState<{
+    isChecking: boolean
+    isAvailable: boolean | null
+    message: string
+  }>({
+    isChecking: false,
+    isAvailable: null,
+    message: ''
+  })
+  const [phoneValidation, setPhoneValidation] = useState<{
+    isChecking: boolean
+    isAvailable: boolean | null
+    message: string
+  }>({
+    isChecking: false,
+    isAvailable: null,
+    message: ''
+  })
   const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const emailCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const phoneCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [passwordError, setPasswordError] = useState('')
   const [firstNameError, setFirstNameError] = useState('')
   const [lastNameError, setLastNameError] = useState('')
   const [usernameError, setUsernameError] = useState('')
+  const [emailError, setEmailError] = useState('')
   
   const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
-  // Password validation: min 8 chars, at least one letter, one number, and one uppercase
+  // Email format validation
+  const validateEmailFormat = (email: string): string => {
+    if (!email) return 'Email is required'
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed) return 'Email is required'
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(trimmed)) return 'Please enter a valid email address'
+    return ''
+  }
+
+  // Password validation: min 8 chars, at least one letter, one number, one uppercase, and one special character
   const validatePassword = (password: string): string => {
     if (!password) return 'Password is required'
     if (password.length < 8) return 'Password must be at least 8 characters'
     if (!/[a-zA-Z]/.test(password)) return 'Password must contain at least one letter'
     if (!/\d/.test(password)) return 'Password must contain at least one number'
     if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter'
+    if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)) {
+      return 'Password must contain at least one special character'
+    }
     return ''
   }
 
@@ -165,6 +199,12 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       if (usernameCheckTimeoutRef.current) {
         clearTimeout(usernameCheckTimeoutRef.current)
       }
+      if (emailCheckTimeoutRef.current) {
+        clearTimeout(emailCheckTimeoutRef.current)
+      }
+      if (phoneCheckTimeoutRef.current) {
+        clearTimeout(phoneCheckTimeoutRef.current)
+      }
     }
   }, [])
 
@@ -189,10 +229,63 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
   }
 
   const handleInputChange = (field: string, value: string) => {
-    // Format phone number automatically
+    // Format phone number automatically and check availability when fully entered
     if (field === 'phoneNumber') {
       const formatted = formatPhoneNumber(value)
       setFormData((prev) => ({ ...prev, [field]: formatted }))
+
+      if (phoneCheckTimeoutRef.current) {
+        clearTimeout(phoneCheckTimeoutRef.current)
+        phoneCheckTimeoutRef.current = null
+      }
+
+      const digitsOnly = formatted.replace(/\D/g, '')
+
+      // Only check when we have 10 digits (fully entered US number)
+      if (digitsOnly.length === 10) {
+        setPhoneValidation({
+          isChecking: true,
+          isAvailable: null,
+          message: 'Checking phone number...',
+        })
+
+        const formattedForQuery = formatted
+        phoneCheckTimeoutRef.current = setTimeout(async () => {
+          try {
+            const result = await appUsersService.listWithPagination([
+              Query.equal('phoneNumber', formattedForQuery),
+            ])
+
+            if (result.total > 0) {
+              setPhoneValidation({
+                isChecking: false,
+                isAvailable: false,
+                message: 'Phone number already exists',
+              })
+            } else {
+              setPhoneValidation({
+                isChecking: false,
+                isAvailable: true,
+                message: 'Phone number is available',
+              })
+            }
+          } catch (error) {
+            console.error('Error checking phone number:', error)
+            setPhoneValidation({
+              isChecking: false,
+              isAvailable: null,
+              message: '',
+            })
+          }
+        }, 500)
+      } else {
+        setPhoneValidation({
+          isChecking: false,
+          isAvailable: null,
+          message: '',
+        })
+      }
+
       return
     }
     
@@ -237,6 +330,62 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       }
       return
     }
+
+    // Email: format validation and debounced uniqueness check
+    if (field === 'email') {
+      setFormData((prev) => ({ ...prev, [field]: value }))
+      const formatErr = validateEmailFormat(value)
+      setEmailError(formatErr)
+
+      if (emailCheckTimeoutRef.current) {
+        clearTimeout(emailCheckTimeoutRef.current)
+        emailCheckTimeoutRef.current = null
+      }
+
+      const trimmed = value.trim().toLowerCase()
+      if (!trimmed || formatErr) {
+        setEmailValidation({
+          isChecking: false,
+          isAvailable: null,
+          message: '',
+        })
+        return
+      }
+
+      setEmailValidation({
+        isChecking: true,
+        isAvailable: null,
+        message: 'Checking email...',
+      })
+
+      emailCheckTimeoutRef.current = setTimeout(async () => {
+        try {
+          const result = await appUsersService.checkEmailAvailability(trimmed)
+          if (result.exists) {
+            setEmailValidation({
+              isChecking: false,
+              isAvailable: false,
+              message: 'Email already exists',
+            })
+          } else {
+            setEmailValidation({
+              isChecking: false,
+              isAvailable: true,
+              message: 'Email is available',
+            })
+          }
+        } catch (error) {
+          console.error('Error checking email:', error)
+          setEmailValidation({
+            isChecking: false,
+            isAvailable: null,
+            message: '',
+          })
+        }
+      }, 500)
+
+      return
+    }
     
     setFormData((prev) => ({ ...prev, [field]: value }))
 
@@ -254,13 +403,23 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     const fnError = validateName(trimmed.firstName, 'First Name')
     const lnError = trimmed.lastName ? validateName(trimmed.lastName, 'Last Name') : ''
     const unError = validateUsername(trimmed.username)
+    const emailFormatErr = validateEmailFormat(trimmed.email)
     
     setPasswordError(pwdError)
     setFirstNameError(fnError)
     setLastNameError(lnError)
     setUsernameError(unError)
+    setEmailError(emailFormatErr)
     
-    if (pwdError || fnError || lnError || unError) return
+    if (pwdError || fnError || lnError || unError || emailFormatErr) return
+
+    // Prevent submission if email or phone are known to be unavailable
+    if (trimmed.email && emailValidation.isAvailable === false) {
+      return
+    }
+    if (trimmed.phoneNumber && phoneValidation.isAvailable === false) {
+      return
+    }
 
     // Prevent submission if username is required but not available
     if (trimmed.username && usernameValidation.isAvailable === false) {
@@ -281,7 +440,18 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       setFirstNameError('')
       setLastNameError('')
       setUsernameError('')
+      setEmailError('')
       setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+      setEmailValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+      setPhoneValidation({
         isChecking: false,
         isAvailable: null,
         message: ''
@@ -306,7 +476,18 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       setFirstNameError('')
       setLastNameError('')
       setUsernameError('')
+      setEmailError('')
       setUsernameValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+      setEmailValidation({
+        isChecking: false,
+        isAvailable: null,
+        message: ''
+      })
+      setPhoneValidation({
         isChecking: false,
         isAvailable: null,
         message: ''
@@ -323,7 +504,18 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     setFirstNameError('')
     setLastNameError('')
     setUsernameError('')
+    setEmailError('')
     setUsernameValidation({
+      isChecking: false,
+      isAvailable: null,
+      message: ''
+    })
+    setEmailValidation({
+      isChecking: false,
+      isAvailable: null,
+      message: ''
+    })
+    setPhoneValidation({
       isChecking: false,
       isAvailable: null,
       message: ''
@@ -374,14 +566,60 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email <span className="text-red-500">*</span>
               </label>
+            <div className="relative">
               <input
                 type="email"
                 placeholder="Enter Email"
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                  emailError
+                    ? 'border-red-500'
+                    : formData.email.trim()
+                    ? emailValidation.isAvailable === false
+                      ? 'border-red-500'
+                      : emailValidation.isAvailable === true
+                      ? 'border-green-500'
+                      : 'border-gray-300'
+                    : 'border-gray-300'
+                }`}
               />
+              {formData.email.trim() && emailValidation.isChecking && (
+                <Icon
+                  icon="mdi:loading"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 animate-spin"
+                />
+              )}
+              {formData.email.trim() && !emailValidation.isChecking && emailValidation.isAvailable === true && (
+                <Icon
+                  icon="mdi:check-circle"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-500"
+                />
+              )}
+              {formData.email.trim() && !emailValidation.isChecking && emailValidation.isAvailable === false && (
+                <Icon
+                  icon="mdi:close-circle"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500"
+                />
+              )}
+            </div>
+            {emailError && (
+              <p className="mt-1 text-xs text-red-500">{emailError}</p>
+            )}
+            {!emailError && formData.email.trim() && emailValidation.message && (
+              <p
+                className={`mt-1 text-xs ${
+                  emailValidation.isAvailable === false
+                    ? 'text-red-500'
+                    : emailValidation.isAvailable === true
+                    ? 'text-green-500'
+                    : 'text-gray-500'
+                }`}
+              >
+                {emailValidation.message}
+              </p>
+            )}
             </div>
 
             {/* Password */}
@@ -392,7 +630,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter Password (min 8 chars with letter, number, uppercase)"
+                  placeholder="Enter Password (min 8 chars with letter, number, uppercase, special char)"
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   required
@@ -538,14 +776,59 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Phone Number <span className="text-red-500">*</span>
               </label>
+            <div className="relative">
               <input
                 type="tel"
                 placeholder="Enter Phone Number"
                 value={formData.phoneNumber}
                 onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                  formData.phoneNumber.replace(/\D/g, '').length === 10
+                    ? phoneValidation.isAvailable === false
+                      ? 'border-red-500'
+                      : phoneValidation.isAvailable === true
+                      ? 'border-green-500'
+                      : 'border-gray-300'
+                    : 'border-gray-300'
+                }`}
               />
+              {formData.phoneNumber.replace(/\D/g, '').length === 10 && phoneValidation.isChecking && (
+                <Icon
+                  icon="mdi:loading"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 animate-spin"
+                />
+              )}
+              {formData.phoneNumber.replace(/\D/g, '').length === 10 &&
+                !phoneValidation.isChecking &&
+                phoneValidation.isAvailable === true && (
+                  <Icon
+                    icon="mdi:check-circle"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-500"
+                  />
+                )}
+              {formData.phoneNumber.replace(/\D/g, '').length === 10 &&
+                !phoneValidation.isChecking &&
+                phoneValidation.isAvailable === false && (
+                  <Icon
+                    icon="mdi:close-circle"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500"
+                  />
+                )}
+            </div>
+            {formData.phoneNumber.replace(/\D/g, '').length === 10 && phoneValidation.message && (
+              <p
+                className={`mt-1 text-xs ${
+                  phoneValidation.isAvailable === false
+                    ? 'text-red-500'
+                    : phoneValidation.isAvailable === true
+                    ? 'text-green-500'
+                    : 'text-gray-500'
+                }`}
+              >
+                {phoneValidation.message}
+              </p>
+            )}
             </div>
 
             {/* Role */}
@@ -619,7 +902,10 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                 !!firstNameError ||
                 !!lastNameError ||
                 !!usernameError ||
-                (!!formData.username.trim() && usernameValidation.isAvailable === false)
+                !!emailError ||
+                (!!formData.username.trim() && usernameValidation.isAvailable === false) ||
+                (!!formData.email.trim() && emailValidation.isAvailable === false) ||
+                (formData.phoneNumber.replace(/\D/g, '').length === 10 && phoneValidation.isAvailable === false)
               }
             >
               {isSubmitting && <Icon icon="mdi:loading" className="w-5 h-5 animate-spin" />}
