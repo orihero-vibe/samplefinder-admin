@@ -868,6 +868,54 @@ export const appUsersService = {
     }
   },
 
+  // Check if an Auth user already exists for a given email via Mobile API
+  checkEmailAvailability: async (email: string): Promise<{ exists: boolean }> => {
+    if (!appwriteConfig.functions.mobileApiFunctionId) {
+      throw new Error('Mobile API function is not configured. Cannot check email availability.')
+    }
+
+    const trimmedEmail = email.trim().toLowerCase()
+    if (!trimmedEmail) {
+      return { exists: false }
+    }
+
+    try {
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.mobileApiFunctionId,
+        xpath: '/get-user-by-email',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ email: trimmedEmail }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      // If function did not complete properly, assume not exists but log
+      if (execution.status !== 'completed') {
+        console.warn('get-user-by-email execution did not complete:', execution.status)
+        return { exists: false }
+      }
+
+      const status = execution.responseStatusCode ?? 0
+
+      // 200-range: user found => exists
+      if (status >= 200 && status < 300) {
+        return { exists: true }
+      }
+
+      // 404: user not found => does not exist
+      if (status === 404) {
+        return { exists: false }
+      }
+
+      // Other status codes: log and treat as non-existent to avoid blocking form
+      console.warn('Unexpected status from get-user-by-email:', status, execution.responseBody)
+      return { exists: false }
+    } catch (error) {
+      console.error('Error checking email availability:', error)
+      // On error, do not block user creation; treat as not existing
+      return { exists: false }
+    }
+  },
+
   // List all users with their profiles
   list: async (queries?: string[]): Promise<AppUser[]> => {
     try {
