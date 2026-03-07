@@ -1065,17 +1065,38 @@ export const appUsersService = {
     }
   },
 
-  // Delete user (Auth + user_profiles)
+  // Delete user (Auth + user_profiles) via Mobile API server-side function
   delete: async (id: string): Promise<void> => {
     try {
-      // Step 1: Delete user_profiles
-      await userProfilesService.delete(id)
-      
-      // Step 2: Delete Auth user
-      // Note: This requires server-side access (Users.delete)
-      // For now, we'll only delete the profile
-      // You may need to implement a Cloud Function to delete Auth user
-      console.warn('Auth user deletion requires server-side execution')
+      if (!appwriteConfig.functions.mobileApiFunctionId) {
+        throw new Error('Mobile API function is not configured. Cannot delete Auth user.')
+      }
+
+      // Get the user profile to retrieve the authID
+      const userProfile = await userProfilesService.getById(id)
+      if (!userProfile.authID) {
+        throw new Error('User profile does not have an authID')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.mobileApiFunctionId,
+        xpath: '/delete-account',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ userId: userProfile.authID }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (execution.status !== 'completed' || !execution.responseBody) {
+        const msg = execution.responseBody ?? 'Delete user request did not complete'
+        throw new Error(msg)
+      }
+
+      const response = JSON.parse(execution.responseBody)
+      const status = execution.responseStatusCode ?? 0
+
+      if (status < 200 || status >= 300 || !response.success) {
+        throw new Error(response.error ?? 'Failed to delete user')
+      }
     } catch (error) {
       console.error('Error deleting user:', error)
       throw error

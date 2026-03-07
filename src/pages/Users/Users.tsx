@@ -382,6 +382,10 @@ const Users = () => {
       }
       setIsDeleteModalOpen(false)
       setUserToDelete(null)
+      setIsEditUserModalOpen(false)
+      setSelectedUser(null)
+      setUserForEdit(null)
+      setEditModalTriviasWon(null)
       addNotification({
         type: 'success',
         title: 'User deleted successfully',
