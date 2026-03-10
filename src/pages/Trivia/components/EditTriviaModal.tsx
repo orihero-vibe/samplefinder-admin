@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { clientsService, triviaService, type ClientDocument } from '../../../lib/services'
-import { formatDateWithTimezone, formatDateForInput } from '../../../lib/dateUtils'
+import { appTimeToUTC, utcToAppTimeFormInputs } from '../../../lib/dateUtils'
+import { useTimezoneStore } from '../../../stores/timezoneStore'
 import { trimFormStrings } from '../../../lib/formUtils'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
@@ -14,6 +15,7 @@ interface EditTriviaModalProps {
 }
 
 const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModalProps) => {
+  const { appTimezone } = useTimezoneStore()
   const [formData, setFormData] = useState({
     client: '', // Client ID
     question: '',
@@ -62,9 +64,15 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
       setError(null)
       const { trivia } = await triviaService.getWithClient(triviaId)
       
-      // Convert ISO dates to datetime-local format (YYYY-MM-DDTHH:mm) preserving local timezone
-      const startDate = trivia.startDate ? formatDateForInput(trivia.startDate) : ''
-      const endDate = trivia.endDate ? formatDateForInput(trivia.endDate) : ''
+      // Convert UTC ISO dates to app-timezone datetime-local format (YYYY-MM-DDTHH:mm)
+      const { dateStr: sd, timeStr: st } = trivia.startDate
+        ? utcToAppTimeFormInputs(trivia.startDate, appTimezone)
+        : { dateStr: '', timeStr: '' }
+      const startDate = sd && st ? `${sd}T${st}` : ''
+      const { dateStr: ed, timeStr: et } = trivia.endDate
+        ? utcToAppTimeFormInputs(trivia.endDate, appTimezone)
+        : { dateStr: '', timeStr: '' }
+      const endDate = ed && et ? `${ed}T${et}` : ''
       
       // Ensure answers array has at least 4 elements
       const answers = trivia.answers && trivia.answers.length > 0 
@@ -151,10 +159,11 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
       return
     }
 
-    const startDate = new Date(trimmed.startDate)
-    const endDate = new Date(trimmed.endDate)
-
-    if (endDate <= startDate) {
+    const [startDatePart, startTimePart] = trimmed.startDate.split('T')
+    const [endDatePart, endTimePart] = trimmed.endDate.split('T')
+    const startUtc = appTimeToUTC(startDatePart, startTimePart, appTimezone)
+    const endUtc = appTimeToUTC(endDatePart, endTimePart, appTimezone)
+    if (endUtc <= startUtc) {
       alert('End date must be after start date')
       return
     }
@@ -168,14 +177,14 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
     try {
       setError(null)
       setIsSubmitting(true)
-      // Convert dates to ISO 8601 format with timezone preservation
+      // Convert app-timezone form values to UTC ISO for storage
       const triviaData = {
         client: trimmed.client || undefined,
         question: trimmed.question,
         answers: trimmed.answers,
         correctOptionIndex: trimmed.correctOptionIndex,
-        startDate: formatDateWithTimezone(startDate),
-        endDate: formatDateWithTimezone(endDate),
+        startDate: startUtc.toISOString(),
+        endDate: endUtc.toISOString(),
         points: trimmed.points,
       }
       await triviaService.update(triviaId, triviaData)

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { clientsService } from '../../../lib/services'
 import type { ClientDocument } from '../../../lib/services'
-import { formatDateWithTimezone } from '../../../lib/dateUtils'
+import { appTimeToUTC } from '../../../lib/dateUtils'
+import { useTimezoneStore } from '../../../stores/timezoneStore'
 import { trimFormStrings } from '../../../lib/formUtils'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
@@ -22,6 +23,7 @@ interface CreateTriviaModalProps {
 }
 
 const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) => {
+  const { appTimezone } = useTimezoneStore()
   const initialFormData = {
     client: '', // Client ID
     question: '',
@@ -137,10 +139,11 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
       return
     }
 
-    const startDate = new Date(trimmed.startDate)
-    const endDate = new Date(trimmed.endDate)
-
-    if (endDate <= startDate) {
+    const [startDatePart, startTimePart] = trimmed.startDate.split('T')
+    const [endDatePart, endTimePart] = trimmed.endDate.split('T')
+    const startUtc = appTimeToUTC(startDatePart, startTimePart, appTimezone)
+    const endUtc = appTimeToUTC(endDatePart, endTimePart, appTimezone)
+    if (endUtc <= startUtc) {
       alert('End date must be after start date')
       return
     }
@@ -155,14 +158,14 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     isSubmittingRef.current = true
     try {
       setError(null)
-      // Convert dates to ISO 8601 format with timezone preservation
+      // Convert app-timezone form values to UTC ISO for storage
       const triviaData = {
         client: trimmed.client,
         question: trimmed.question,
         answers: trimmed.answers,
         correctOptionIndex: trimmed.correctOptionIndex,
-        startDate: formatDateWithTimezone(startDate),
-        endDate: formatDateWithTimezone(endDate),
+        startDate: startUtc.toISOString(),
+        endDate: endUtc.toISOString(),
         points: trimmed.points,
       }
       setIsSubmitting(true)

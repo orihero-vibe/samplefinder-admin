@@ -4,12 +4,15 @@
  * without unwanted timezone conversions.
  */
 
-/** Supported app timezones: label (ET/CT/MT/PT) → IANA timezone (handles DST) */
+/** Supported app timezones: label (NT/ET/CT/MT/PT/AKT/HAT) → IANA timezone (handles DST) */
 export const APP_TIMEZONES = {
+  NT: 'America/St_Johns',
   ET: 'America/New_York',
   CT: 'America/Chicago',
   MT: 'America/Denver',
   PT: 'America/Los_Angeles',
+  AKT: 'America/Anchorage',
+  HAT: 'Pacific/Honolulu',
 } as const
 
 export type AppTimezoneCode = keyof typeof APP_TIMEZONES
