@@ -10,6 +10,8 @@ import {
 } from './components'
 import { categoriesService, type CategoryDocument } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import { formatDateInAppTimezone } from '../../lib/dateUtils'
 import { Query } from '../../lib/appwrite'
 
 // UI Category interface (for display and table)
@@ -49,6 +51,7 @@ const extractErrorMessage = (error: unknown): string => {
 
 const Categories = () => {
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -64,7 +67,7 @@ const Categories = () => {
       id: doc.$id,
       title: doc.title || '',
       isAdult: doc.isAdult ?? false,
-      createdAt: doc.$createdAt ? new Date(doc.$createdAt).toLocaleDateString() : undefined,
+      createdAt: doc.$createdAt ? formatDateInAppTimezone(doc.$createdAt, appTimezone, 'short') : undefined,
     }
   }
 
