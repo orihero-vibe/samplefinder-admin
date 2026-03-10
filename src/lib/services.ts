@@ -1039,16 +1039,29 @@ export const appUsersService = {
     try {
       // Validate username uniqueness if username is being updated
       if (data.username && typeof data.username === 'string' && data.username.trim()) {
-        const existingUsers = await userProfilesService.list([
-          Query.equal('username', data.username.trim())
-        ])
-        
-        // Check if username exists for a different user (exclude current user)
-        const duplicateUser = existingUsers.documents.find(user => user.$id !== id)
-        if (duplicateUser) {
-          throw new Error('Username already exists. Please choose a different username.')
-        }
+      const existingUsers = await userProfilesService.list([
+        Query.equal('username', data.username.trim())
+      ])
+      
+      // Check if username exists for a different user (exclude current user)
+      const duplicateUser = existingUsers.documents.find(user => user.$id !== id)
+      if (duplicateUser) {
+        throw new Error('Username already exists. Please choose a different username.')
       }
+    }
+
+    // Validate phone number uniqueness if phoneNumber is being updated
+    if (data.phoneNumber && typeof data.phoneNumber === 'string' && data.phoneNumber.trim()) {
+      const phoneValue = data.phoneNumber.trim()
+      const existingByPhone = await userProfilesService.list([
+        Query.equal('phoneNumber', [phoneValue])
+      ])
+
+      const duplicatePhoneUser = existingByPhone.documents.find(user => user.$id !== id)
+      if (duplicatePhoneUser) {
+        throw new Error('Phone number already exists. Please use a different phone number.')
+      }
+    }
       
       // Update user_profiles
       const updatedProfile = await userProfilesService.update(id, data)
