@@ -407,7 +407,7 @@ const EventReviews = () => {
       const safeName = (eventName || 'event').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)
       const ext = format === 'csv' ? 'csv' : 'pdf'
       const filename = `event_reviews_${safeName}_${timestamp}.${ext}`
-      await exportService.exportEventReviewsReport(eventId, eventName || 'Event', filename, format)
+      await exportService.exportEventReviewsReport(eventId, eventName || 'Event', filename, format, appTimezone)
       addNotification({
         type: 'success',
         title: 'Download complete',

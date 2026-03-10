@@ -5,6 +5,7 @@ import type { DownloadFormat } from '../../components'
 import { ReportsHeader, SearchAndFilter, ReportsList } from './components'
 import { exportService, getCurrentMonthRange, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTimezoneStore } from '../../stores/timezoneStore'
 import { reportsService } from '../../lib/services'
 
 interface Report {
@@ -40,6 +41,7 @@ const Reports = () => {
   const [pageSize] = useState(25)
   const [reportMetadata, setReportMetadata] = useState<ReportMetadata | null>(null)
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
 
   // Fetch report metadata on mount
   useEffect(() => {
@@ -178,14 +180,14 @@ const Reports = () => {
       const useDateRange = getEffectiveDateRange(dateRange)
 
       if (format === 'csv') {
-        await exportService.exportReport(reportType, filename, useDateRange)
+        await exportService.exportReport(reportType, filename, useDateRange, undefined, appTimezone)
         addNotification({
           type: 'success',
           title: 'Export Successful',
           message: `Report has been exported to ${filename}`,
         })
       } else if (format === 'pdf') {
-        await exportService.exportReportToPDF(reportType, filename, useDateRange)
+        await exportService.exportReportToPDF(reportType, filename, useDateRange, undefined, appTimezone)
         addNotification({
           type: 'success',
           title: 'Export Successful',

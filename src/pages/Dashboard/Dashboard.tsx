@@ -7,7 +7,7 @@ import { eventsService, categoriesService, clientsService, locationsService, sta
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useTimezoneStore } from '../../stores/timezoneStore'
-import { formatDateWithTimezone, formatDateInAppTimezone, formatTimeInAppTimezone } from '../../lib/dateUtils'
+import { appTimeToUTC, formatDateWithTimezone, formatDateInAppTimezone, formatTimeInAppTimezone, utcToAppTimeFormInputs } from '../../lib/dateUtils'
 import { getEventStatus, getEventStatusColor, generateUniqueCheckInCode } from '../../lib/eventUtils'
 import type { EventDocument } from '../../lib/services'
 import { Query } from '../../lib/appwrite'
@@ -381,25 +381,6 @@ const Dashboard = () => {
       }
     }
 
-    // Format date for date input (YYYY-MM-DD)
-    const formatDateForDateInput = (dateStr: string): string => {
-      const date = new Date(dateStr)
-      if (isNaN(date.getTime())) return ''
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-    }
-
-    // Format time for time input (HH:MM)
-    const formatTimeForTimeInput = (dateStr: string): string => {
-      const date = new Date(dateStr)
-      if (isNaN(date.getTime())) return ''
-      const hours = String(date.getHours()).padStart(2, '0')
-      const minutes = String(date.getMinutes()).padStart(2, '0')
-      return `${hours}:${minutes}`
-    }
-
     // Format discount for the input field (single discount field, string)
     const formatDiscountForInput = (discount?: string): string => {
       if (discount == null || String(discount).trim() === '') return ''
@@ -452,11 +433,17 @@ const Dashboard = () => {
       }
     }
 
+    // Derive date and time strings for form inputs using the configured app timezone
+    // to avoid device-local timezone shifts that can move events to previous/next day.
+    const { dateStr: eventDateForInput } = utcToAppTimeFormInputs(eventDoc.date, appTimezone)
+    const { timeStr: startTimeForInput } = utcToAppTimeFormInputs(eventDoc.startTime, appTimezone)
+    const { timeStr: endTimeForInput } = utcToAppTimeFormInputs(eventDoc.endTime, appTimezone)
+
     return {
       eventName: eventDoc.name || '',
-      eventDate: formatDateForDateInput(eventDoc.date),
-      startTime: formatTimeForTimeInput(eventDoc.startTime),
-      endTime: formatTimeForTimeInput(eventDoc.endTime),
+      eventDate: eventDateForInput,
+      startTime: startTimeForInput,
+      endTime: endTimeForInput,
       city: resolvedCity,
       address: resolvedAddress,
       state: resolvedState,
@@ -941,28 +928,14 @@ const Dashboard = () => {
         }
       }
 
-      // 4. Combine date and time for datetime fields
-      const eventDate = new Date(eventData.eventDate)
-      const startTimeStr = eventData.startTime // Format: "HH:MM"
-      const endTimeStr = eventData.endTime // Format: "HH:MM"
-
-      // Parse start time
-      const [startHours, startMinutes] = startTimeStr.split(':').map(Number)
-      const startDateTime = new Date(eventDate)
-      startDateTime.setHours(startHours, startMinutes, 0, 0)
-
-      // Parse end time
-      const [endHours, endMinutes] = endTimeStr.split(':').map(Number)
-      const endDateTime = new Date(eventDate)
-      endDateTime.setHours(endHours, endMinutes, 0, 0)
-
+      // 4. Convert app-timezone date/time to UTC for storage
       // 5. Prepare event data according to database schema
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const eventPayload: any = {
         name: eventData.eventName,
-        date: formatDateWithTimezone(eventDate),
-        startTime: formatDateWithTimezone(startDateTime),
-        endTime: formatDateWithTimezone(endDateTime),
+        date: appTimeToUTC(eventData.eventDate, '00:00', appTimezone).toISOString(),
+        startTime: appTimeToUTC(eventData.eventDate, eventData.startTime, appTimezone).toISOString(),
+        endTime: appTimeToUTC(eventData.eventDate, eventData.endTime, appTimezone).toISOString(),
         city: eventData.city,
         address: eventData.address,
         state: eventData.state,
@@ -1077,28 +1050,14 @@ const Dashboard = () => {
         }
       }
 
-      // 4. Combine date and time for datetime fields
-      const eventDate = new Date(eventData.eventDate)
-      const startTimeStr = eventData.startTime // Format: "HH:MM"
-      const endTimeStr = eventData.endTime // Format: "HH:MM"
-
-      // Parse start time
-      const [startHours, startMinutes] = startTimeStr.split(':').map(Number)
-      const startDateTime = new Date(eventDate)
-      startDateTime.setHours(startHours, startMinutes, 0, 0)
-
-      // Parse end time
-      const [endHours, endMinutes] = endTimeStr.split(':').map(Number)
-      const endDateTime = new Date(eventDate)
-      endDateTime.setHours(endHours, endMinutes, 0, 0)
-
+      // 4. Convert app-timezone date/time to UTC for storage
       // 5. Prepare event data according to database schema
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const eventPayload: any = {
         name: eventData.eventName,
-        date: formatDateWithTimezone(eventDate),
-        startTime: formatDateWithTimezone(startDateTime),
-        endTime: formatDateWithTimezone(endDateTime),
+        date: appTimeToUTC(eventData.eventDate, '00:00', appTimezone).toISOString(),
+        startTime: appTimeToUTC(eventData.eventDate, eventData.startTime, appTimezone).toISOString(),
+        endTime: appTimeToUTC(eventData.eventDate, eventData.endTime, appTimezone).toISOString(),
         city: eventData.city,
         address: eventData.address,
         state: eventData.state,

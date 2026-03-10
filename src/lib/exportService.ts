@@ -122,11 +122,19 @@ const pointsEarnedColumns: ReportColumn[] = [
   { header: 'Check-in/Review Pts', key: 'checkInReviewPoints' },
 ]
 
-// Helper function to format date for display (MM/DD/YYYY)
-const formatDate = (dateStr?: string): string => {
+// Helper function to format date for display (MM/DD/YYYY). Optional appTimezone (IANA) formats in that zone.
+const formatDate = (dateStr?: string, appTimezone?: string): string => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   if (isNaN(date.getTime())) return ''
+  if (appTimezone) {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: appTimezone,
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+    }).format(date)
+  }
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   const year = date.getFullYear()
@@ -152,25 +160,44 @@ const formatDateOnly = (dateStr?: string): string => {
     const yearStr = String(date.getFullYear())
     return `${monthStr}/${dayStr}/${yearStr}`
   }
-  return formatDate(dateStr)
+  return formatDate(dateStr, undefined)
 }
 
-// Helper function to format date for CSV upload (YYYY-MM-DD)
-const formatDateForUpload = (dateStr?: string): string => {
+// Helper function to format date for CSV upload (YYYY-MM-DD). Optional appTimezone (IANA) formats in that zone.
+const formatDateForUpload = (dateStr?: string, appTimezone?: string): string => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   if (isNaN(date.getTime())) return ''
+  if (appTimezone) {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: appTimezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    const parts = formatter.formatToParts(date)
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+    return `${get('year')}-${get('month')}-${get('day')}`
+  }
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
-// Helper function to format time for display (12-hour with AM/PM)
-const formatTime = (timeStr?: string): string => {
+// Helper function to format time for display (12-hour with AM/PM). Optional appTimezone (IANA) formats in that zone.
+const formatTime = (timeStr?: string, appTimezone?: string): string => {
   if (!timeStr) return ''
   const date = new Date(timeStr)
   if (isNaN(date.getTime())) return ''
+  if (appTimezone) {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: appTimezone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date)
+  }
   const hours = date.getHours()
   const minutes = date.getMinutes()
   const ampm = hours >= 12 ? 'PM' : 'AM'
@@ -178,11 +205,20 @@ const formatTime = (timeStr?: string): string => {
   return `${hour12}:${String(minutes).padStart(2, '0')} ${ampm}`
 }
 
-// Helper function to format time for CSV upload (24-hour HH:MM format)
-const formatTimeForUpload = (timeStr?: string): string => {
+// Helper function to format time for CSV upload (24-hour HH:MM format). Optional appTimezone (IANA) formats in that zone.
+const formatTimeForUpload = (timeStr?: string, appTimezone?: string): string => {
   if (!timeStr) return ''
   const date = new Date(timeStr)
   if (isNaN(date.getTime())) return ''
+  if (appTimezone) {
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: appTimezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    return formatter.format(date)
+  }
   const hours = String(date.getHours()).padStart(2, '0')
   const minutes = String(date.getMinutes()).padStart(2, '0')
   return `${hours}:${minutes}`
@@ -426,30 +462,32 @@ async function fetchTriviasWonCountByUser(): Promise<Map<string, number>> {
 // Export Service
 export const exportService = {
   /**
-   * Generate report data based on report type
+   * Generate report data based on report type.
+   * @param appTimezone - Optional IANA timezone (e.g. America/New_York) for formatting dates/times in exports.
    */
   async generateReportData(
     reportType: ReportType,
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     switch (reportType) {
       case 'dashboard-all':
       case 'dashboard-date-range':
-        return await this.generateDashboardReport(dateRange)
+        return await this.generateDashboardReport(dateRange, appTimezone)
       
       case 'event-list':
-        return await this.generateEventListReport(dateRange)
+        return await this.generateEventListReport(dateRange, appTimezone)
       
       case 'clients-brands':
-        return await this.generateClientsBrandsReport(dateRange)
+        return await this.generateClientsBrandsReport(dateRange, appTimezone)
       
       case 'app-users':
-        return await this.generateAppUsersReport(dateRange)
+        return await this.generateAppUsersReport(dateRange, appTimezone)
       
       case 'points-earned-all':
-        return await this.generatePointsEarnedReport(dateRange, false)
+        return await this.generatePointsEarnedReport(dateRange, false, appTimezone)
       case 'points-earned-date-range':
-        return await this.generatePointsEarnedReport(dateRange, true)
+        return await this.generatePointsEarnedReport(dateRange, true, appTimezone)
 
       default:
         throw new Error(`Unknown report type: ${reportType}`)
@@ -460,7 +498,8 @@ export const exportService = {
    * Generate Dashboard report
    */
   async generateDashboardReport(
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const baseQueries: string[] = [
       Query.equal('isArchived', false), // Only active events
@@ -506,11 +545,11 @@ export const exportService = {
         const hasDiscount = (event.discount != null && String(event.discount).trim() !== '') ||
           (event.discountImageURL != null && String(event.discountImageURL).trim() !== '')
         return {
-          date: formatDate(event.date),
+          date: formatDate(event.date, appTimezone),
           venueName: event.name || '',
           brand: brandName,
-          startTime: formatTime(event.startTime),
-          endTime: formatTime(event.endTime),
+          startTime: formatTime(event.startTime, appTimezone),
+          endTime: formatTime(event.endTime, appTimezone),
           products: formatProducts(productsArray),
           discount: hasDiscount ? 'YES' : 'NO',
         }
@@ -528,7 +567,8 @@ export const exportService = {
    * When dateRange is provided, filters events by event date (single day or range; future dates allowed).
    */
   async generateEventListReport(
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const queries: string[] = [
       Query.equal('isArchived', false),
@@ -598,9 +638,9 @@ export const exportService = {
         return {
           name: event.name || '',
           brandName,
-          eventDate: formatDateForUpload(event.date),
-          startTime: formatTimeForUpload(event.startTime),
-          endTime: formatTimeForUpload(event.endTime),
+          eventDate: formatDateForUpload(event.date, appTimezone),
+          startTime: formatTimeForUpload(event.startTime, appTimezone),
+          endTime: formatTimeForUpload(event.endTime, appTimezone),
           address: event.address || '',
           city: event.city || '',
           state: event.state || '',
@@ -630,7 +670,8 @@ export const exportService = {
    * # of Favorites = count of users who have any of the client's events in their favorites.
    */
   async generateClientsBrandsReport(
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const queries: string[] = [Query.orderDesc('$createdAt')]
     if (dateRange?.start) {
@@ -657,7 +698,7 @@ export const exportService = {
       return {
         name: client.name || '',
         logoFile: client.logoURL ? 'Yes' : 'No',
-        signupDate: formatDate(client.$createdAt),
+        signupDate: formatDate(client.$createdAt, appTimezone),
         productType: formatProducts(client.productType),
         favorites: String(totalFavorites),
       }
@@ -674,7 +715,8 @@ export const exportService = {
    * "App Users (All)" shows all users regardless of date range; date range is ignored for this report.
    */
   async generateAppUsersReport(
-    _dateRange?: { start: Date | null; end: Date | null }
+    _dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const [usersResult, checkInReviewPointsByUser, triviasWonByUser] = await Promise.all([
       fetchAllAppUsers(),
@@ -721,8 +763,8 @@ export const exportService = {
         username: (userRecord.username as string) || '',
         email: user.email || '',
         dob: formatDateOnly(userRecord.dob as string | undefined),
-        signUpDate: formatDate(user.$createdAt),
-        lastLoginDate: formatDate(user.lastLoginDate),
+        signUpDate: formatDate(user.$createdAt, appTimezone),
+        lastLoginDate: formatDate(user.lastLoginDate, appTimezone),
         referralCode: (userRecord.referralCode as string) || '',
         userPoints: totalPoints.toString(),
         checkInReviewPoints: checkInReviewPoints.toString(),
@@ -749,7 +791,8 @@ export const exportService = {
    */
   async generatePointsEarnedReport(
     dateRange?: { start: Date | null; end: Date | null },
-    useDateRangeForPoints = false
+    useDateRangeForPoints = false,
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const pointsDateRange = useDateRangeForPoints ? dateRange : undefined
     const [usersResult, checkInReviewPointsByUser] = await Promise.all([
@@ -784,7 +827,7 @@ export const exportService = {
         lastName: user.lastName || '',
         username: (userRecord.username as string) || '',
         email: user.email || '',
-        lastLoginDate: formatDate(user.lastLoginDate),
+        lastLoginDate: formatDate(user.lastLoginDate, appTimezone),
         tierLevel,
         userPoints: totalPoints.toString(),
         checkInReviewPoints: checkInReviewPoints.toString(),
@@ -812,7 +855,7 @@ export const exportService = {
   /**
    * Generate Event Reviews report for a single event (for Download on event-reviews/:eventId page).
    */
-  async generateEventReviewsReport(eventId: string): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+  async generateEventReviewsReport(eventId: string, appTimezone?: string): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const eventReviewColumns: ReportColumn[] = [
       { header: 'Reviewer Name', key: 'reviewerName' },
       { header: 'Email', key: 'email' },
@@ -862,7 +905,7 @@ export const exportService = {
             : ''
         const createdAt = doc.$createdAt
         const reviewedAt = createdAt
-          ? `${formatDate(createdAt)} ${formatTime(createdAt)}`
+          ? `${formatDate(createdAt, appTimezone)} ${formatTime(createdAt, appTimezone)}`
           : ''
         rows.push({
           reviewerName,
@@ -890,9 +933,10 @@ export const exportService = {
     eventId: string,
     eventName: string,
     filename: string,
-    format: 'csv' | 'pdf'
+    format: 'csv' | 'pdf',
+    appTimezone?: string
   ): Promise<void> {
-    const { columns, rows } = await this.generateEventReviewsReport(eventId)
+    const { columns, rows } = await this.generateEventReviewsReport(eventId, appTimezone)
     if (format === 'csv') {
       const csvContent = this.exportToCSV(columns, rows)
       this.downloadCSV(filename, csvContent)
@@ -982,10 +1026,11 @@ export const exportService = {
     reportType: ReportType,
     filename: string,
     dateRange?: { start: Date | null; end: Date | null },
-    sortKey?: string
+    sortKey?: string,
+    appTimezone?: string
   ): Promise<void> {
     try {
-      const { columns, rows } = await this.generateReportData(reportType, dateRange)
+      const { columns, rows } = await this.generateReportData(reportType, dateRange, appTimezone)
       const columnKeys = new Set(columns.map((c) => c.key))
       const effectiveSortKey = sortKey && columnKeys.has(sortKey) ? sortKey : columns[0]?.key
       const sortedRows = effectiveSortKey ? sortReportRows(rows, effectiveSortKey) : rows
@@ -1006,10 +1051,11 @@ export const exportService = {
     reportType: ReportType,
     filename: string,
     dateRange?: { start: Date | null; end: Date | null },
-    sortKey?: string
+    sortKey?: string,
+    appTimezone?: string
   ): Promise<void> {
     try {
-      const { columns, rows } = await this.generateReportData(reportType, dateRange)
+      const { columns, rows } = await this.generateReportData(reportType, dateRange, appTimezone)
       const columnKeys = new Set(columns.map((c) => c.key))
       const effectiveSortKey = sortKey && columnKeys.has(sortKey) ? sortKey : columns[0]?.key
       const sortedRows = effectiveSortKey ? sortReportRows(rows, effectiveSortKey) : rows
@@ -1035,7 +1081,7 @@ export const exportService = {
       doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22)
       let startY = 28
       if (dateRange && (dateRange.start || dateRange.end)) {
-        const rangeText = `Date Range: ${dateRange.start ? formatDate(dateRange.start.toISOString()) : 'N/A'} - ${dateRange.end ? formatDate(dateRange.end.toISOString()) : 'N/A'}`
+        const rangeText = `Date Range: ${dateRange.start ? formatDate(dateRange.start.toISOString(), appTimezone) : 'N/A'} - ${dateRange.end ? formatDate(dateRange.end.toISOString(), appTimezone) : 'N/A'}`
         doc.text(rangeText, 14, 28)
         startY = 32
       }
