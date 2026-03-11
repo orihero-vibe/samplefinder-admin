@@ -1,6 +1,6 @@
 import { databases, appwriteConfig, ID, Query, functions, ExecutionMethod } from './appwrite'
 import type { Models } from 'appwrite'
-import { formatDateWithTimezone, DEFAULT_APP_TIMEZONE, appTimeToUTC } from './dateUtils'
+import { DEFAULT_APP_TIMEZONE, appTimeToUTC } from './dateUtils'
 
 // Collection IDs
 export const COLLECTION_IDS = {
@@ -1494,7 +1494,7 @@ export const notificationsService = {
         const [hours, minutes] = data.scheduledTime.split(':')
         const scheduledDate = new Date(data.scheduledAt)
         scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-        dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
+        dbData.scheduledAt = scheduledDate.toISOString()
       }
     }
 
@@ -1566,7 +1566,7 @@ export const notificationsService = {
         const [hours, minutes] = data.scheduledTime.split(':')
         const scheduledDate = new Date(data.scheduledAt)
         scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-        dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
+        dbData.scheduledAt = scheduledDate.toISOString()
       }
       dbData.status = 'Scheduled'
     } else if (data.schedule === 'Send Immediately') {

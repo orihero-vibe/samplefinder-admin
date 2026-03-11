@@ -7,7 +7,7 @@ import { eventsService, categoriesService, clientsService, locationsService, sta
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useTimezoneStore } from '../../stores/timezoneStore'
-import { appTimeToUTC, formatDateWithTimezone, formatDateInAppTimezone, formatTimeInAppTimezone, utcToAppTimeFormInputs } from '../../lib/dateUtils'
+import { appTimeToUTC, formatDateInAppTimezone, formatTimeInAppTimezone, utcToAppTimeFormInputs } from '../../lib/dateUtils'
 import { getEventStatus, getEventStatusColor, generateUniqueCheckInCode } from '../../lib/eventUtils'
 import type { EventDocument } from '../../lib/services'
 import { Query } from '../../lib/appwrite'
@@ -685,74 +685,85 @@ const Dashboard = () => {
             }
           }
 
-          // Parse date - handle multiple formats: DD-MM-YYYY, YYYY-MM-DD, MM/DD/YYYY
-          let eventDate: Date
-          const dateStr = row['Date'].trim()
+          // Parse date - handle multiple formats and normalize to YYYY-MM-DD
+          const rawDateStr = row['Date'].trim()
+          let eventDateStr: string
 
           // Try DD-MM-YYYY format (e.g., "20-01-2026")
-          if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
-            const [day, month, year] = dateStr.split('-').map(Number)
-            eventDate = new Date(year, month - 1, day)
+          if (/^\d{2}-\d{2}-\d{4}$/.test(rawDateStr)) {
+            const [day, month, year] = rawDateStr.split('-')
+            eventDateStr = `${year}-${month}-${day}`
           }
           // Try YYYY-MM-DD format (e.g., "2026-01-20")
-          else if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            eventDate = new Date(dateStr)
+          else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDateStr)) {
+            eventDateStr = rawDateStr
           }
           // Try MM/DD/YYYY format (e.g., "01/20/2026")
-          else if (dateStr.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-            eventDate = new Date(dateStr)
+          else if (/^\d{2}\/\d{2}\/\d{4}$/.test(rawDateStr)) {
+            const [month, day, year] = rawDateStr.split('/')
+            eventDateStr = `${year}-${month}-${day}`
           }
-          // Fallback to default Date parsing
+          // Fallback to default Date parsing, then format as YYYY-MM-DD
           else {
-            eventDate = new Date(dateStr)
+            const parsed = new Date(rawDateStr)
+            if (isNaN(parsed.getTime())) {
+              throw new Error(
+                `Invalid date format: ${row['Date']}. Expected formats: DD-MM-YYYY, YYYY-MM-DD, or MM/DD/YYYY`
+              )
+            }
+            const year = parsed.getFullYear()
+            const month = String(parsed.getMonth() + 1).padStart(2, '0')
+            const day = String(parsed.getDate()).padStart(2, '0')
+            eventDateStr = `${year}-${month}-${day}`
           }
 
-          if (isNaN(eventDate.getTime())) {
-            throw new Error(`Invalid date format: ${row['Date']}. Expected formats: DD-MM-YYYY, YYYY-MM-DD, or MM/DD/YYYY`)
-          }
-
-          // Validate event date is not in the past (same rule as Add Event form)
-          const today = new Date()
-          today.setHours(0, 0, 0, 0)
-          const eventDateOnly = new Date(eventDate)
-          eventDateOnly.setHours(0, 0, 0, 0)
-          if (eventDateOnly < today) {
+          // Validate event date is not in the past (same rule as Add Event form),
+          // using the configured app timezone to avoid off-by-one issues.
+          const nowIso = new Date().toISOString()
+          const { dateStr: todayDateStr } = utcToAppTimeFormInputs(nowIso, appTimezone)
+          const todayUtc = appTimeToUTC(todayDateStr, '00:00', appTimezone)
+          const eventDateUtc = appTimeToUTC(eventDateStr, '00:00', appTimezone)
+          if (eventDateUtc.getTime() < todayUtc.getTime()) {
             throw new Error('Event date cannot be in the past. Please use today or a future date.')
           }
 
           // Use times from CSV or default values
-          const startTime = row['Start Time']?.trim() || '00:00' // Default start time
+          const startTimeRaw = row['Start Time']?.trim() || '00:00' // Default start time
           const endTimeRaw = row['End Time']?.trim()
 
-          // Parse start time (supports HH:MM format)
+          // Parse time string (supports HH:MM and optional AM/PM) and normalize to HH:mm
           const parseTimeString = (timeStr: string): { hours: number; minutes: number } => {
+            const lower = timeStr.toLowerCase()
+            const isPm = lower.includes('pm')
+            const isAm = lower.includes('am')
             const cleanTime = timeStr.replace(/[APap][Mm]/, '').trim()
-            const [h, m] = cleanTime.split(':').map(Number)
-            let hours = h
-            // Handle AM/PM if present
-            if (timeStr.toLowerCase().includes('pm') && hours < 12) hours += 12
-            if (timeStr.toLowerCase().includes('am') && hours === 12) hours = 0
-            return { hours: hours || 0, minutes: m || 0 }
+            const [hRaw, mRaw] = cleanTime.split(':')
+            let hours = parseInt(hRaw ?? '0', 10)
+            let minutes = parseInt(mRaw ?? '0', 10)
+            if (Number.isNaN(hours)) hours = 0
+            if (Number.isNaN(minutes)) minutes = 0
+            if (isPm && hours < 12) hours += 12
+            if (isAm && hours === 12) hours = 0
+            return { hours, minutes }
           }
 
-          const { hours: startHours, minutes: startMinutes } = parseTimeString(startTime)
-          const startDateTime = new Date(eventDate)
-          startDateTime.setHours(startHours, startMinutes, 0, 0)
+          const { hours: startHours, minutes: startMinutes } = parseTimeString(startTimeRaw)
+          const startTimeStr = `${String(startHours).padStart(2, '0')}:${String(startMinutes).padStart(2, '0')}`
 
-          // End time: use CSV value or Start + 24 hours
-          let endDateTime: Date
+          let endTimeStr: string
           if (endTimeRaw) {
             const { hours: endHours, minutes: endMinutes } = parseTimeString(endTimeRaw)
-            endDateTime = new Date(eventDate)
-            endDateTime.setHours(endHours, endMinutes, 0, 0)
+            endTimeStr = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`
           } else {
             // Default: same day at 23:59
-            endDateTime = new Date(eventDate)
-            endDateTime.setHours(23, 59, 0, 0)
+            endTimeStr = '23:59'
           }
 
-          // Validate start time is before end time (same rule as Add Event form)
-          if (startDateTime.getTime() >= endDateTime.getTime()) {
+          // Validate start time is before end time (same rule as Add Event form),
+          // comparing in the app timezone.
+          const startUtc = appTimeToUTC(eventDateStr, startTimeStr, appTimezone)
+          const endUtc = appTimeToUTC(eventDateStr, endTimeStr, appTimezone)
+          if (startUtc.getTime() >= endUtc.getTime()) {
             throw new Error('Start time must be before end time. Please adjust the event times.')
           }
 
@@ -816,9 +827,9 @@ const Dashboard = () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const eventPayload: any = {
             name: row['Event Name'],
-            date: formatDateWithTimezone(eventDate),
-            startTime: formatDateWithTimezone(startDateTime),
-            endTime: formatDateWithTimezone(endDateTime),
+            date: appTimeToUTC(eventDateStr, '00:00', appTimezone).toISOString(),
+            startTime: startUtc.toISOString(),
+            endTime: endUtc.toISOString(),
             city: locationDoc.city || '',
             address: locationDoc.address || '',
             state: locationDoc.state || '',
