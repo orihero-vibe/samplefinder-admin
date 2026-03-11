@@ -7,7 +7,6 @@ interface Notification {
   target: string
   timing: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
-  category?: 'AppPush' | 'SystemPush'
   recipients: number
   date: string
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -64,13 +63,6 @@ const NotificationsTable = ({
     }
   }
 
-  const getCategoryBadge = (category?: string) => {
-    if (category === 'SystemPush') {
-      return { label: 'System Push', className: 'bg-purple-100 text-purple-800' }
-    }
-    return { label: 'App Push', className: 'bg-blue-100 text-blue-800' }
-  }
-
   const getTargetLabel = (target: string) => {
     switch (target) {
       case 'All':
@@ -110,12 +102,6 @@ const NotificationsTable = ({
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:help-circle-outline" className="w-4 h-4" />
                   Notification
-                </div>
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <div className="flex items-center gap-2">
-                  <Icon icon="mdi:help-circle-outline" className="w-4 h-4" />
-                  Category
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -162,7 +148,7 @@ const NotificationsTable = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
               <tr>
-                <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                   <div className="flex items-center justify-center gap-2">
                     <Icon icon="mdi:loading" className="w-6 h-6 animate-spin" />
                     <span>Loading...</span>
@@ -174,16 +160,6 @@ const NotificationsTable = ({
               <tr key={notification.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {notification.title}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  {(() => {
-                    const badge = getCategoryBadge(notification.category)
-                    return (
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.className}`}>
-                        {badge.label}
-                      </span>
-                    )
-                  })()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {getTargetLabel(notification.target)}

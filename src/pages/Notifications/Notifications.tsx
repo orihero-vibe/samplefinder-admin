@@ -20,7 +20,6 @@ interface Notification {
   target: string
   timing: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
-  category?: 'AppPush' | 'SystemPush'
   recipients: number
   date: string
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -108,7 +107,6 @@ const Notifications = () => {
       target: getAudienceDisplayLabel(doc.targetAudience),
       timing,
       type: doc.type,
-      category: (doc.category as 'AppPush' | 'SystemPush') || 'AppPush',
       recipients: doc.recipients || 0,
       date: formattedDate,
       status: doc.status,
@@ -357,7 +355,7 @@ const Notifications = () => {
           message: fullNotification.message,
           type,
           targetAudience,
-          category: (fullNotification.category as 'AppPush' | 'SystemPush') || 'AppPush',
+          category: 'AppPush',
           schedule,
           scheduledAt,
           scheduledTime,
@@ -388,7 +386,7 @@ const Notifications = () => {
         message: fullNotification.message,
         type,
         targetAudience,
-        category: (fullNotification.category as 'AppPush' | 'SystemPush') || 'AppPush',
+        category: 'AppPush',
         schedule: 'Send Immediately',
         scheduledAt: '',
         scheduledTime: '',

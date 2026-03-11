@@ -1374,15 +1374,13 @@ export type NotificationAudience =
   | 'ZipCode'
   | 'Targeted'
 
-export type NotificationCategory = 'AppPush' | 'SystemPush'
-
-// Notification Document interface
+// Notification Document interface (category kept for existing DB records; admin only creates AppPush)
 export interface NotificationDocument extends Models.Document {
   title: string
   message: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
   targetAudience: NotificationAudience
-  category?: NotificationCategory
+  category?: 'AppPush' | 'SystemPush'
   status: 'Scheduled' | 'Sent' | 'Draft'
   scheduledAt?: string // ISO date string for scheduled notifications
   sentAt?: string // ISO date string when notification was sent
@@ -1395,13 +1393,13 @@ export interface NotificationDocument extends Models.Document {
   [key: string]: unknown
 }
 
-// Notification Form Data interface
+// Notification Form Data interface (admin only creates App Push notifications)
 export interface NotificationFormData {
   title: string
   message: string
   type: 'Event Reminder' | 'Promotional' | 'Engagement'
   targetAudience: NotificationAudience
-  category: NotificationCategory
+  category?: 'AppPush'
   schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring'
   scheduledAt?: string // ISO date string
   scheduledTime?: string // Time string (HH:mm)
@@ -1669,74 +1667,6 @@ export const notificationsService = {
       }
     } catch (error) {
       console.error('Error sending notification:', error)
-      throw error
-    }
-  },
-
-  // Send system push notification to a specific user (templateId matches SYSTEM_TEMPLATES keys in Notification function)
-  sendSystemPush: async (userId: string, templateId: string): Promise<void> => {
-    try {
-      if (!appwriteConfig.functions.notificationFunctionId) {
-        throw new Error('Notification function ID is not configured')
-      }
-
-      const execution = await functions.createExecution({
-        functionId: appwriteConfig.functions.notificationFunctionId,
-        xpath: '/send-system-push',
-        method: ExecutionMethod.POST,
-        body: JSON.stringify({ userId, templateId }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (execution.status === 'failed') {
-        let errorMessage = 'Function execution failed'
-        
-        if (execution.responseBody) {
-          try {
-            const errorResponse = JSON.parse(execution.responseBody)
-            if (errorResponse.error) {
-              errorMessage = errorResponse.error
-            }
-          } catch {
-            errorMessage = execution.responseBody
-          }
-        }
-        
-        if (execution.errors) {
-          errorMessage += ` (Execution errors: ${execution.errors})`
-        }
-        
-        throw new Error(errorMessage)
-      }
-
-      if (execution.responseStatusCode && execution.responseStatusCode >= 400) {
-        let errorMessage = `Function returned status ${execution.responseStatusCode}`
-        
-        if (execution.responseBody) {
-          try {
-            const errorResponse = JSON.parse(execution.responseBody)
-            if (errorResponse.error) {
-              errorMessage = errorResponse.error
-            }
-          } catch {
-            errorMessage = execution.responseBody
-          }
-        }
-        
-        throw new Error(errorMessage)
-      }
-
-      const response = execution.responseBody
-        ? JSON.parse(execution.responseBody)
-        : {}
-
-      if (!response.success) {
-        throw new Error(response.error || 'Failed to send system push notification')
-      }
-    } catch (error) {
-      console.error('Error sending system push notification:', error)
       throw error
     }
   },
