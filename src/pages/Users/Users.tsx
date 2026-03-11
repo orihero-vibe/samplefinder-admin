@@ -14,7 +14,7 @@ import {
   EditUserModal,
   StatsCards,
 } from './components'
-import { appUsersService, notificationsService, triviaResponsesService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
+import { appUsersService, triviaResponsesService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
@@ -628,34 +628,6 @@ const Users = () => {
             // Update user profile in database
             await appUsersService.update(selectedUser.$id, updateData)
 
-            // Send badge push notifications when admin assigns BA or Influencer badge
-            const prevBA = (selectedUser.isAmbassador ?? selectedUser.baBadge) ? 'Yes' : 'No'
-            const prevInf = (selectedUser.isInfluencer ?? selectedUser.influencerBadge) ? 'Yes' : 'No'
-            if (userData.baBadge === 'Yes' && prevBA !== 'Yes') {
-              try {
-                await notificationsService.sendSystemPush(selectedUser.$id, 'brand_ambassador_badge')
-              } catch (e) {
-                console.error('Failed to send BA badge push:', e)
-                addNotification({
-                  type: 'warning',
-                  title: 'Badge push not sent',
-                  message: 'User saved, but Brand Ambassador notification could not be sent.',
-                })
-              }
-            }
-            if (userData.influencerBadge === 'Yes' && prevInf !== 'Yes') {
-              try {
-                await notificationsService.sendSystemPush(selectedUser.$id, 'influencer_badge')
-              } catch (e) {
-                console.error('Failed to send Influencer badge push:', e)
-                addNotification({
-                  type: 'warning',
-                  title: 'Badge push not sent',
-                  message: 'User saved, but Influencer notification could not be sent.',
-                })
-              }
-            }
-            
             // Refresh the users list
             await fetchUsers(currentPage)
             

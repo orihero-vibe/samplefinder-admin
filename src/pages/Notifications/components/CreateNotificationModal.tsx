@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
-import type { NotificationFormData, AppUser, NotificationAudience, NotificationCategory } from '../../../lib/services'
+import type { NotificationFormData, AppUser, NotificationAudience } from '../../../lib/services'
 import { trimFormStrings } from '../../../lib/formUtils'
 import { appUsersService, locationsService } from '../../../lib/services'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
@@ -73,19 +73,6 @@ const APP_PUSH_TEMPLATES: NotificationTemplate[] = [
   { id: 'monthly_winner_promo_loot', label: 'Monthly Winner: Promo Loot Crate', title: 'MONTHLY WINNER: PROMO LOOT CRATE!', body: "Congratulations, you're the lucky winner of our promo loot crate! Our team will be in touch with prize details!" },
 ]
 
-const SYSTEM_PUSH_TEMPLATES: NotificationTemplate[] = [
-  { id: '', label: 'No template', title: '', body: '' },
-  { id: 'referral_points_earned', label: 'Referral Points Earned', title: 'REFERRAL POINTS EARNED', body: 'A new user signed up using your referral code! Thank you for sharing!', autoAudience: 'Targeted' },
-  { id: 'ba_badge_earned', label: 'Brand Ambassador Badge Earned', title: 'BRAND AMBASSADOR BADGE EARNED!', body: "Congratulations, you're an official SampleFinder Brand Ambassador!", autoAudience: 'BrandAmbassadors' },
-  { id: 'influencer_badge_earned', label: 'Influencer Badge Earned', title: 'INFLUENCER BADGE EARNED!', body: 'Congratulations on earning your SampleFinder Influencer badge!', autoAudience: 'Influencers' },
-  { id: 'new_checkin_badge', label: 'New Check-in Level Badge', title: 'NEW BADGE: SAMPLEFINDER CHECK-IN LEVEL (XX)', body: 'Congratulations, you earned the (XX) check-in level badge! Keep sampling to earn more points!', autoAudience: 'Targeted' },
-  { id: 'new_review_badge', label: 'New Review Level Badge', title: 'NEW BADGE: SAMPLEFINDER REVIEW LEVEL (XX)', body: 'Congratulations, you earned the (XX) review level badge! Keep reviewing to earn more points!', autoAudience: 'Targeted' },
-  { id: 'new_tier', label: 'New Tier Advancement', title: 'NEW TIER: (TIER NAME)!', body: "Congratulations, you've reached the (TIER NAME) tier! Keep earning points to level up!", autoAudience: 'Targeted' },
-  { id: 'inactive_30_days', label: '30 Day Inactive Users', title: "YOU'VE BEEN MISSING SAMPLES!", body: 'Enjoy experiencing new brands, earning points and winning prizes!', autoAudience: 'All' },
-  { id: 'birthday', label: 'Happy Birthday', title: 'HAPPY BIRTHDAY!', body: "We wish you a very happy birthday, from all of us here at SampleFinder! As a gift, we've awarded you XX points.", autoAudience: 'Targeted' },
-  { id: 'sampling_anniversary', label: 'Happy Sampling Anniversary', title: 'HAPPY SAMPLING ANNIVERSARY!', body: "Congratulations on reaching a full new year of sampling with SampleFinder! As a gift, we've awarded you XX points.", autoAudience: 'Targeted' },
-]
-
 // Validation constants (stricter limits for cross-platform push: iOS ~50 title/150 body, Android ~65/240)
 const VALIDATION_RULES = {
   title: {
@@ -113,7 +100,6 @@ const CreateNotificationModal = ({
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
   const [selectedAppTemplateId, setSelectedAppTemplateId] = useState<string>('')
-  const [selectedSystemTemplateId, setSelectedSystemTemplateId] = useState<string>('')
   const [users, setUsers] = useState<AppUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [userSearchQuery, setUserSearchQuery] = useState('')
@@ -196,7 +182,6 @@ const CreateNotificationModal = ({
       setValidationErrors({})
       setTouchedFields(new Set())
       setSelectedAppTemplateId('')
-      setSelectedSystemTemplateId('')
       setUserSearchQuery('')
       setShowUserDropdown(false)
     }
@@ -445,46 +430,6 @@ const CreateNotificationModal = ({
     )
   })
 
-  const handleCategoryChange = (newCategory: NotificationCategory) => {
-    setFormData((prev) => ({
-      ...prev,
-      category: newCategory,
-      title: '',
-      message: '',
-      targetAudience: newCategory === 'AppPush' ? 'All' : 'All',
-      selectedUserIds: [],
-    }))
-    setSelectedAppTemplateId('')
-    setSelectedSystemTemplateId('')
-    setValidationErrors({})
-  }
-
-  const handleSystemTemplateSelect = (templateId: string) => {
-    setSelectedSystemTemplateId(templateId)
-    const t = SYSTEM_PUSH_TEMPLATES.find((x) => x.id === templateId)
-    if (t && t.title) {
-      setFormData((prev) => ({
-        ...prev,
-        title: t.title,
-        message: t.body,
-        targetAudience: t.autoAudience || 'All',
-        selectedUserIds: t.autoAudience === 'Targeted' ? prev.selectedUserIds : [],
-      }))
-    } else {
-      setFormData((prev) => ({
-        ...prev,
-        title: '',
-        message: '',
-        targetAudience: 'All',
-        selectedUserIds: [],
-      }))
-    }
-  }
-
-  const isSystemPush = formData.category === 'SystemPush'
-  const selectedSystemTemplate = SYSTEM_PUSH_TEMPLATES.find((t) => t.id === selectedSystemTemplateId)
-  const systemTemplateNeedsUserPicker = selectedSystemTemplate?.autoAudience === 'Targeted'
-
   return (
     <>
       <UnsavedChangesModal
@@ -535,37 +480,6 @@ const CreateNotificationModal = ({
                   Fields marked with <span className="text-red-500">*</span> are required
                 </p>
               </div>
-            </div>
-          </div>
-
-          {/* Notification Category Toggle */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notification Category
-            </label>
-            <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => handleCategoryChange('AppPush')}
-                className={`flex-1 px-4 py-2.5 text-sm font-semibold transition-colors ${
-                  !isSystemPush
-                    ? 'bg-[#1D0A74] text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                App Push Notification
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCategoryChange('SystemPush')}
-                className={`flex-1 px-4 py-2.5 text-sm font-semibold transition-colors ${
-                  isSystemPush
-                    ? 'bg-[#1D0A74] text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                System Push & Pop-up
-              </button>
             </div>
           </div>
 
@@ -634,93 +548,72 @@ const CreateNotificationModal = ({
                 </p>
               </div>
 
-              {/* Notification Type (App Push only) */}
-              {!isSystemPush && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Notification Type
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={formData.type}
-                      onChange={(e) => handleInputChange('type', e.target.value as 'Event Reminder' | 'Promotional' | 'Engagement')}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
-                    >
-                      <option value="Event Reminder">Event Reminder</option>
-                      <option value="Promotional">Promotional</option>
-                      <option value="Engagement">Engagement</option>
-                    </select>
-                    <Icon
-                      icon="mdi:chevron-down"
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
-                    />
-                  </div>
+              {/* Notification Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Notification Type
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.type}
+                    onChange={(e) => handleInputChange('type', e.target.value as 'Event Reminder')}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
+                  >
+                    <option value="Event Reminder">Event Reminder</option>
+                  </select>
+                  <Icon
+                    icon="mdi:chevron-down"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+                  />
                 </div>
-              )}
+              </div>
 
               {/* Template picker */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {isSystemPush ? 'System Push Template' : 'Template (optional)'}
+                  Template (optional)
                 </label>
                 <div className="relative">
-                  {isSystemPush ? (
-                    <select
-                      value={selectedSystemTemplateId}
-                      onChange={(e) => handleSystemTemplateSelect(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
-                    >
-                      {SYSTEM_PUSH_TEMPLATES.map((t) => (
-                        <option key={t.id || 'none'} value={t.id}>
-                          {t.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <select
-                      value={selectedAppTemplateId}
-                      onChange={(e) => {
-                        const id = e.target.value
-                        setSelectedAppTemplateId(id)
-                        const t = APP_PUSH_TEMPLATES.find((x) => x.id === id)
-                        if (t && t.title) {
-                          setFormData((prev) => ({ ...prev, title: t.title, message: t.body }))
-                        }
-                      }}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
-                    >
-                      {APP_PUSH_TEMPLATES.map((t) => (
-                        <option key={t.id || 'none'} value={t.id}>
-                          {t.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
+                  <select
+                    value={selectedAppTemplateId}
+                    onChange={(e) => {
+                      const id = e.target.value
+                      setSelectedAppTemplateId(id)
+                      const t = APP_PUSH_TEMPLATES.find((x) => x.id === id)
+                      if (t && t.title) {
+                        setFormData((prev) => ({ ...prev, title: t.title, message: t.body }))
+                      }
+                    }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
+                  >
+                    {APP_PUSH_TEMPLATES.map((t) => (
+                      <option key={t.id || 'none'} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
                   <Icon
                     icon="mdi:chevron-down"
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  {isSystemPush
-                    ? 'Selecting a template auto-fills the title and body. You can edit placeholders after selecting.'
-                    : 'Prefills title and message. You can edit placeholders (e.g. Store Name, Time, Brand) after selecting.'}
+                  Prefills title and message. You can edit placeholders (e.g. Store Name, Time, Brand) after selecting.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Section 2: Audience (App Push) or User Picker (System Push targeted) */}
-          {!isSystemPush ? (
-            <div className="mb-8">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-[#1D0A74] text-white flex items-center justify-center font-semibold text-sm">
-                  2
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900">Audience</h3>
+          {/* Section 2: Audience */}
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-full bg-[#1D0A74] text-white flex items-center justify-center font-semibold text-sm">
+                2
               </div>
-              <div className="ml-11 space-y-4">
-                {/* Target Audience */}
+              <h3 className="text-lg font-semibold text-gray-900">Audience</h3>
+            </div>
+            <div className="ml-11 space-y-4">
+              {/* Target Audience */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Target Audience
@@ -930,145 +823,14 @@ const CreateNotificationModal = ({
                     )}
                   </div>
                 )}
-              </div>
             </div>
-          ) : (
-            /* System Push: user picker for Targeted templates, auto-audience info for others */
-            selectedSystemTemplateId && (
-              <div className="mb-8">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-8 h-8 rounded-full bg-[#1D0A74] text-white flex items-center justify-center font-semibold text-sm">
-                    2
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">Recipient</h3>
-                </div>
-                <div className="ml-11 space-y-4">
-                  {systemTemplateNeedsUserPicker ? (
-                    <div>
-                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mb-3">
-                        <p className="text-sm text-amber-800">
-                          This system notification targets specific users. Select the recipient(s) below.
-                        </p>
-                      </div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Select Users
-                      </label>
-                      
-                      {formData.selectedUserIds && formData.selectedUserIds.length > 0 && (
-                        <div className="mb-3 flex flex-wrap gap-2">
-                          {formData.selectedUserIds.map((userId) => {
-                            const user = users.find((u) => u.$id === userId)
-                            if (!user) return null
-                            const displayName = user.firstName && user.lastName 
-                              ? `${user.firstName} ${user.lastName}` 
-                              : user.username || user.email || 'Unknown User'
-                            return (
-                              <div
-                                key={userId}
-                                className="inline-flex items-center gap-2 px-3 py-1 bg-[#1D0A74] text-white rounded-full text-sm"
-                              >
-                                <span>{displayName}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveUser(userId)}
-                                  className="hover:bg-white/20 rounded-full p-0.5"
-                                >
-                                  <Icon icon="mdi:close" className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-
-                      <div className="relative user-dropdown-container">
-                        <div className="relative">
-                          <input
-                            type="text"
-                            placeholder="Search users by name, email or username..."
-                            value={userSearchQuery}
-                            onChange={(e) => setUserSearchQuery(e.target.value)}
-                            onFocus={() => setShowUserDropdown(true)}
-                            className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-                          />
-                          <Icon
-                            icon="mdi:magnify"
-                            className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
-                          />
-                        </div>
-
-                        {showUserDropdown && (
-                          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                            {loadingUsers ? (
-                              <div className="px-4 py-3 text-center text-gray-500">
-                                <Icon icon="mdi:loading" className="w-5 h-5 animate-spin mx-auto" />
-                              </div>
-                            ) : filteredUsers.length === 0 ? (
-                              <div className="px-4 py-3 text-center text-gray-500">
-                                No users found
-                              </div>
-                            ) : (
-                              <>
-                                {filteredUsers.map((user) => {
-                                  const isSelected = formData.selectedUserIds?.includes(user.$id)
-                                  const displayName = user.firstName && user.lastName 
-                                    ? `${user.firstName} ${user.lastName}` 
-                                    : user.username || 'Unknown User'
-                                  return (
-                                    <div
-                                      key={user.$id}
-                                      onClick={() => handleUserSelect(user.$id)}
-                                      className={`px-4 py-2 cursor-pointer hover:bg-gray-100 flex items-center justify-between ${
-                                        isSelected ? 'bg-blue-50' : ''
-                                      }`}
-                                    >
-                                      <div>
-                                        <div className="font-medium text-gray-900">{displayName}</div>
-                                        {user.email && (
-                                          <div className="text-xs text-gray-500">{user.email}</div>
-                                        )}
-                                      </div>
-                                      {isSelected && (
-                                        <Icon icon="mdi:check" className="w-5 h-5 text-[#1D0A74]" />
-                                      )}
-                                    </div>
-                                  )
-                                })}
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      <p className="text-xs text-gray-500 mt-1">
-                        Selected {formData.selectedUserIds?.length || 0} user(s)
-                      </p>
-                      {validationErrors.selectedUserIds && (
-                        <p className="mt-1 text-sm text-red-600">{validationErrors.selectedUserIds}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm text-green-800">
-                        <span className="font-medium">Auto-targeted:</span>{' '}
-                        {selectedSystemTemplate?.autoAudience === 'BrandAmbassadors'
-                          ? 'This notification will be sent to all Certified Brand Ambassadors.'
-                          : selectedSystemTemplate?.autoAudience === 'Influencers'
-                          ? 'This notification will be sent to all Certified Influencers.'
-                          : 'This notification will be sent to all matching users automatically.'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          )}
+          </div>
 
           {/* Schedule Section */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-8 h-8 rounded-full bg-[#1D0A74] text-white flex items-center justify-center font-semibold text-sm">
-                {isSystemPush ? (selectedSystemTemplateId ? '3' : '2') : '3'}
+                3
               </div>
               <h3 className="text-lg font-semibold text-gray-900">Schedule</h3>
             </div>
