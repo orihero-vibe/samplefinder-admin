@@ -22,14 +22,16 @@ interface ValidationErrors {
   message?: string
   scheduledAt?: string
   scheduledTime?: string
+  selectedUserIds?: string
 }
 
-type ValidationErrorCode = 
+type ValidationErrorCode =
   | 'REQUIRED_FIELD'
   | 'MIN_LENGTH'
   | 'MAX_LENGTH'
   | 'INVALID_DATE'
   | 'PAST_DATE'
+  | 'USERS_REQUIRED'
 
 interface StructuredError {
   code: ValidationErrorCode
@@ -210,6 +212,7 @@ const CreateNotificationModal = ({
       MAX_LENGTH: (field, rules) => `${field} must not exceed ${rules.maxLength} characters`,
       INVALID_DATE: () => 'Please select both date and time',
       PAST_DATE: () => 'Scheduled date and time must be in the future',
+      USERS_REQUIRED: () => 'Please select at least one user',
     }
     return errorMessages[error.code](error.field, VALIDATION_RULES[error.fieldName as keyof typeof VALIDATION_RULES])
   }
@@ -304,6 +307,18 @@ const CreateNotificationModal = ({
       }
     }
 
+    // Validate selected users when targeting specific users
+    if (data.targetAudience === 'Targeted' && (!data.selectedUserIds || data.selectedUserIds.length === 0)) {
+      const error: StructuredError = {
+        code: 'USERS_REQUIRED',
+        field: 'Selected Users',
+        fieldName: 'selectedUserIds',
+        message: ''
+      }
+      errors.push(error)
+      newValidationErrors.selectedUserIds = getErrorMessage(error)
+    }
+
     setValidationErrors(newValidationErrors)
     return { isValid: errors.length === 0, errors }
   }
@@ -327,6 +342,14 @@ const CreateNotificationModal = ({
           scheduledTime: undefined,
         }))
       }
+
+      // Clear selected users error when audience changes away from targeted
+      if (field === 'targetAudience') {
+        setValidationErrors((prev) => ({
+          ...prev,
+          selectedUserIds: undefined,
+        }))
+      }
     }
   }
 
@@ -347,7 +370,7 @@ const CreateNotificationModal = ({
     const trimmed = trimFormStrings(formData)
 
     // Mark all fields as touched to show validation errors
-    setTouchedFields(new Set(['title', 'message', 'scheduledAt', 'scheduledTime']))
+    setTouchedFields(new Set(['title', 'message', 'scheduledAt', 'scheduledTime', 'selectedUserIds']))
     
     // Validate form using trimmed data
     const { isValid, errors } = validateForm(trimmed)
@@ -396,6 +419,12 @@ const CreateNotificationModal = ({
         return { ...prev, selectedUserIds: [...selectedUserIds, userId] }
       }
     })
+
+    // Clear user selection error once at least one user is selected
+    setValidationErrors((prev) => ({
+      ...prev,
+      selectedUserIds: undefined,
+    }))
   }
 
   const handleRemoveUser = (userId: string) => {
@@ -896,6 +925,9 @@ const CreateNotificationModal = ({
                     <p className="text-xs text-gray-500 mt-1">
                       Selected {formData.selectedUserIds?.length || 0} user(s)
                     </p>
+                    {validationErrors.selectedUserIds && (
+                      <p className="mt-1 text-sm text-red-600">{validationErrors.selectedUserIds}</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -1011,6 +1043,9 @@ const CreateNotificationModal = ({
                       <p className="text-xs text-gray-500 mt-1">
                         Selected {formData.selectedUserIds?.length || 0} user(s)
                       </p>
+                      {validationErrors.selectedUserIds && (
+                        <p className="mt-1 text-sm text-red-600">{validationErrors.selectedUserIds}</p>
+                      )}
                     </div>
                   ) : (
                     <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
