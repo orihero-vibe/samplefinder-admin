@@ -152,7 +152,7 @@ const Dashboard = () => {
     
     return {
       id: doc.$id,
-      date: formatDate(doc.date),
+      date: formatDate(doc.startTime || doc.date),
       venueName: doc.name || '',
       brand: '', // Will be populated from client relationship if needed
       startTime: formatTime(doc.startTime),
@@ -1318,7 +1318,7 @@ const Dashboard = () => {
     setCurrentPage(1) // Reset to first page when filters change
     fetchEvents(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, statusFilter, sortBy, dateRange.start, dateRange.end])
+  }, [searchTerm, statusFilter, sortBy, dateRange.start, dateRange.end, appTimezone])
 
   // Fetch categories, brands, and statistics on component mount
   // OPTIMIZATION: Fetch all initial data in parallel

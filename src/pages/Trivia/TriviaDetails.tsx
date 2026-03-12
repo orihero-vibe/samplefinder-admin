@@ -204,7 +204,7 @@ const TriviaDetails = () => {
     }
 
     fetchTriviaDetails()
-  }, [triviaId])
+  }, [triviaId, appTimezone])
 
   const handleDownloadReport = () => {
     if (!trivia) return

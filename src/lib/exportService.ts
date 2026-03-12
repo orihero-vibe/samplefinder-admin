@@ -545,7 +545,7 @@ export const exportService = {
         const hasDiscount = (event.discount != null && String(event.discount).trim() !== '') ||
           (event.discountImageURL != null && String(event.discountImageURL).trim() !== '')
         return {
-          date: formatDate(event.date, appTimezone),
+          date: formatDate(event.startTime || event.date, appTimezone),
           venueName: event.name || '',
           brand: brandName,
           startTime: formatTime(event.startTime, appTimezone),
@@ -638,7 +638,7 @@ export const exportService = {
         return {
           name: event.name || '',
           brandName,
-          eventDate: formatDateForUpload(event.date, appTimezone),
+          eventDate: formatDateForUpload(event.startTime || event.date, appTimezone),
           startTime: formatTimeForUpload(event.startTime, appTimezone),
           endTime: formatTimeForUpload(event.endTime, appTimezone),
           address: event.address || '',

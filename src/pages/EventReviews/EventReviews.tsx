@@ -375,7 +375,7 @@ const EventReviews = () => {
     setCurrentPage(1)
     fetchReviews(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId])
+  }, [eventId, appTimezone])
 
   // Fetch event name when viewing a single event (for header and download filename)
   useEffect(() => {

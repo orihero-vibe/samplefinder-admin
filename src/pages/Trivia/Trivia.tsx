@@ -301,7 +301,7 @@ const Trivia = () => {
       fetchTrivia(1, false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, sortBy])
+  }, [searchQuery, sortBy, appTimezone])
 
   const handleDeleteClick = (trivia: TriviaQuiz) => {
     setTriviaToDelete(trivia)
