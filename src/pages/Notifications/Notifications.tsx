@@ -212,7 +212,7 @@ const Notifications = () => {
     }, 300) // Debounce search
 
     return () => clearTimeout(timeoutId)
-  }, [searchQuery, typeFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchQuery, typeFilter, appTimezone]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = statistics
     ? [
