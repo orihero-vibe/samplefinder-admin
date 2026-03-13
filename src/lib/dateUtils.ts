@@ -19,6 +19,7 @@ export type AppTimezoneCode = keyof typeof APP_TIMEZONES
 
 /** IANA timezone strings we support */
 export const APP_TIMEZONE_VALUES = Object.values(APP_TIMEZONES) as readonly string[]
+const APP_TIMEZONE_CODES = Object.keys(APP_TIMEZONES) as AppTimezoneCode[]
 
 /** Default app timezone (Eastern) */
 export const DEFAULT_APP_TIMEZONE = APP_TIMEZONES.ET
@@ -29,6 +30,33 @@ export const DEFAULT_APP_TIMEZONE = APP_TIMEZONES.ET
 export function getAppTimezoneShortLabel(ianaTimezone: string): AppTimezoneCode | string {
   const entry = Object.entries(APP_TIMEZONES).find(([, v]) => v === ianaTimezone)
   return entry ? (entry[0] as AppTimezoneCode) : ianaTimezone
+}
+
+export type SupportedTimezoneResolution =
+  | { ok: true; timezone: string }
+  | { ok: false; error: string }
+
+/**
+ * Resolve user-provided timezone input to one of our supported IANA values.
+ * Accepts short app codes (ET, CT, etc.) or supported IANA values.
+ */
+export function resolveSupportedAppTimezone(input: string): SupportedTimezoneResolution {
+  const raw = input.trim()
+  const upper = raw.toUpperCase()
+  const matchedCode = APP_TIMEZONE_CODES.find((code) => code === upper)
+  if (matchedCode) {
+    return { ok: true, timezone: APP_TIMEZONES[matchedCode] }
+  }
+
+  const matchedIana = APP_TIMEZONE_VALUES.find((iana) => iana.toLowerCase() === raw.toLowerCase())
+  if (matchedIana) {
+    return { ok: true, timezone: matchedIana }
+  }
+
+  return {
+    ok: false,
+    error: `Unsupported timezone "${input}". Use one of codes: ${APP_TIMEZONE_CODES.join(', ')} or a supported IANA value: ${APP_TIMEZONE_VALUES.join(', ')}`,
+  }
 }
 
 /**
