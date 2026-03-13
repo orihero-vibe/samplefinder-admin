@@ -7,7 +7,13 @@ import { eventsService, categoriesService, clientsService, locationsService, sta
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useTimezoneStore } from '../../stores/timezoneStore'
-import { appTimeToUTC, formatDateInAppTimezone, formatTimeInAppTimezone, utcToAppTimeFormInputs } from '../../lib/dateUtils'
+import {
+  appTimeToUTC,
+  formatDateInAppTimezone,
+  formatTimeInAppTimezone,
+  resolveSupportedAppTimezone,
+  utcToAppTimeFormInputs,
+} from '../../lib/dateUtils'
 import { getEventStatus, getEventStatusColor, generateUniqueCheckInCode } from '../../lib/eventUtils'
 import type { EventDocument } from '../../lib/services'
 import { Query } from '../../lib/appwrite'
@@ -573,6 +579,8 @@ const Dashboard = () => {
         'longitude': 'Longitude',
         'lng': 'Longitude',
         'long': 'Longitude',
+        'timezone': 'Timezone',
+        'time zone': 'Timezone',
       }
       return headerMap[lower] || header
     }
@@ -687,6 +695,16 @@ const Dashboard = () => {
 
           // Parse date - handle multiple formats and normalize to YYYY-MM-DD
           const rawDateStr = row['Date'].trim()
+          const rowTimezoneRaw = row['Timezone']?.trim() || ''
+          let rowTimezone = appTimezone
+          if (rowTimezoneRaw) {
+            const timezoneResolution = resolveSupportedAppTimezone(rowTimezoneRaw)
+            if (!timezoneResolution.ok) {
+              throw new Error(timezoneResolution.error)
+            }
+            rowTimezone = timezoneResolution.timezone
+          }
+
           let eventDateStr: string
 
           // Try DD-MM-YYYY format (e.g., "20-01-2026")
@@ -718,11 +736,11 @@ const Dashboard = () => {
           }
 
           // Validate event date is not in the past (same rule as Add Event form),
-          // using the configured app timezone to avoid off-by-one issues.
+          // using the row timezone (or app timezone fallback) to avoid off-by-one issues.
           const nowIso = new Date().toISOString()
-          const { dateStr: todayDateStr } = utcToAppTimeFormInputs(nowIso, appTimezone)
-          const todayUtc = appTimeToUTC(todayDateStr, '00:00', appTimezone)
-          const eventDateUtc = appTimeToUTC(eventDateStr, '00:00', appTimezone)
+          const { dateStr: todayDateStr } = utcToAppTimeFormInputs(nowIso, rowTimezone)
+          const todayUtc = appTimeToUTC(todayDateStr, '00:00', rowTimezone)
+          const eventDateUtc = appTimeToUTC(eventDateStr, '00:00', rowTimezone)
           if (eventDateUtc.getTime() < todayUtc.getTime()) {
             throw new Error('Event date cannot be in the past. Please use today or a future date.')
           }
@@ -760,9 +778,9 @@ const Dashboard = () => {
           }
 
           // Validate start time is before end time (same rule as Add Event form),
-          // comparing in the app timezone.
-          const startUtc = appTimeToUTC(eventDateStr, startTimeStr, appTimezone)
-          const endUtc = appTimeToUTC(eventDateStr, endTimeStr, appTimezone)
+          // comparing in the row timezone (or app timezone fallback).
+          const startUtc = appTimeToUTC(eventDateStr, startTimeStr, rowTimezone)
+          const endUtc = appTimeToUTC(eventDateStr, endTimeStr, rowTimezone)
           if (startUtc.getTime() >= endUtc.getTime()) {
             throw new Error('Start time must be before end time. Please adjust the event times.')
           }
@@ -827,7 +845,7 @@ const Dashboard = () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const eventPayload: any = {
             name: row['Event Name'],
-            date: appTimeToUTC(eventDateStr, '00:00', appTimezone).toISOString(),
+            date: appTimeToUTC(eventDateStr, '00:00', rowTimezone).toISOString(),
             startTime: startUtc.toISOString(),
             endTime: endUtc.toISOString(),
             city: locationDoc.city || '',
@@ -872,7 +890,11 @@ const Dashboard = () => {
         } catch (err) {
           errorCount++
           const errorMsg = extractErrorMessage(err)
-          const errorDetail = `Row ${i + 2} (${row['Event Name'] || 'Unknown'}): ${errorMsg}`
+          const rowTimezoneRaw = row['Timezone']?.trim() || ''
+          const timezoneContext = rowTimezoneRaw
+            ? ` [Timezone: ${rowTimezoneRaw}]`
+            : ` [Timezone: app default ${appTimezone}]`
+          const errorDetail = `Row ${i + 2} (${row['Event Name'] || 'Unknown'}): ${errorMsg}${timezoneContext}`
           errors.push(errorDetail)
           console.error(`CSV Upload Error - ${errorDetail}`, err)
         }

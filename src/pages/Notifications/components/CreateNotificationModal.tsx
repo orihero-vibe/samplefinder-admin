@@ -64,10 +64,6 @@ interface NotificationTemplate {
 
 const APP_PUSH_TEMPLATES: NotificationTemplate[] = [
   { id: '', label: 'No template', title: '', body: '' },
-  { id: 'welcome', label: 'Welcome to SampleFinder', title: 'WELCOME TO SAMPLEFINDER!', body: 'Click here to start earning points and enjoying samples.' },
-  { id: 'trivia_tuesday', label: 'Trivia Tuesday', title: 'TRIVIA TUESDAY', body: 'Earn points by knowing fun facts about your favorite brands!' },
-  { id: 'sampling_today', label: 'Sampling Today', title: 'SAMPLING TODAY', body: 'Sampling at (Store Name) starts at (Time)! Click to learn more!' },
-  { id: 'new_sampling_event', label: 'New Sampling Event Near You', title: 'NEW SAMPLING EVENT NEAR YOU', body: 'Heads up, (Brand) has a sampling event coming up near you. Click to learn more!' },
   { id: 'monthly_winner_first', label: 'Monthly Winner: First Place', title: 'MONTHLY WINNER: FIRST PLACE!', body: 'Congratulations, you scored the most points of all SampleFinder users this month! Our team will be in touch with prize details!' },
   { id: 'monthly_winner_second', label: 'Monthly Winner: Second Place', title: 'MONTHLY WINNER: SECOND PLACE!', body: 'Congratulations, you scored the most points of all SampleFinder check-ins and reviews this month! Our team will be in touch with prize details!' },
   { id: 'monthly_winner_promo_loot', label: 'Monthly Winner: Promo Loot Crate', title: 'MONTHLY WINNER: PROMO LOOT CRATE!', body: "Congratulations, you're the lucky winner of our promo loot crate! Our team will be in touch with prize details!" },

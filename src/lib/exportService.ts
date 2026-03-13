@@ -1,6 +1,7 @@
 import { eventsService, clientsService, appUsersService, categoriesService, locationsService, reviewsService, triviaService, triviaResponsesService, isCorrectTriviaResponse } from './services'
 import type { EventDocument, ClientDocument, AppUser, TriviaDocument, TriviaResponseDocument, ReviewDocument } from './services'
 import { Query } from './appwrite'
+import { getAppTimezoneShortLabel } from './dateUtils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -59,6 +60,7 @@ const dashboardColumns: ReportColumn[] = [
   { header: 'End Time', key: 'endTime' },
   { header: 'Product Type', key: 'products' },
   { header: 'Discount?', key: 'discount' },
+  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // Event List columns - order matches report spec
@@ -81,6 +83,7 @@ const eventListColumns: ReportColumn[] = [
   { header: 'Check-In Code', key: 'checkInCode' },
   { header: 'Check-in Points', key: 'checkInPoints' },
   { header: 'Review Points', key: 'reviewPoints' },
+  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // Clients & Brands columns
@@ -90,6 +93,7 @@ const clientsBrandsColumns: ReportColumn[] = [
   { header: 'Signup Date', key: 'signupDate' },
   { header: 'Product Type', key: 'productType' },
   { header: '# of Favorites', key: 'favorites' },
+  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // App Users columns
@@ -110,6 +114,7 @@ const appUsersColumns: ReportColumn[] = [
   { header: 'Check-Ins', key: 'checkIns' },
   { header: 'Reviews', key: 'reviews' },
   { header: 'Trivias Won', key: 'triviasWon' },
+  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // Points Earned (All) columns
@@ -552,6 +557,7 @@ export const exportService = {
           endTime: formatTime(event.endTime, appTimezone),
           products: formatProducts(productsArray),
           discount: hasDiscount ? 'YES' : 'NO',
+          timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
         }
       })
     )
@@ -654,6 +660,7 @@ export const exportService = {
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
           location: locationName,
+          timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
         }
       })
     )
@@ -701,6 +708,7 @@ export const exportService = {
         signupDate: formatDate(client.$createdAt, appTimezone),
         productType: formatProducts(client.productType),
         favorites: String(totalFavorites),
+        timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
       }
     })
 
@@ -774,6 +782,7 @@ export const exportService = {
         checkIns: totalEvents.toString(),
         reviews: totalReviews.toString(),
         triviasWon: triviasWon.toString(),
+        timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
       }
     })
 
@@ -864,6 +873,7 @@ export const exportService = {
       { header: 'Reviewed At', key: 'reviewedAt' },
       { header: 'Answers', key: 'answers' },
       { header: 'Purchased Product', key: 'purchasedProduct' },
+      { header: 'Time Zone', key: 'timeZone' },
     ]
     const rows: Record<string, string | number>[] = []
     let offset = 0
@@ -915,6 +925,7 @@ export const exportService = {
           reviewedAt,
           answers: answersDisplay,
           purchasedProduct: doc.hasPurchased ? 'Yes' : 'No',
+          timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
         })
       }
       offset += limit

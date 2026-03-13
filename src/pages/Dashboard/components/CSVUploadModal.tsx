@@ -33,6 +33,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
   const optionalColumns = [
     'Discount',
     'Discount Image URL',
+    'Timezone',
   ]
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,6 +103,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
       '09:00',                              // Start Time (HH:MM)
       '10%',                                // Discount (optional)
       'https://example.com/image.jpg',      // Discount Image URL (optional)
+      'ET',                                 // Timezone (optional, ET/CT/PT... or IANA like America/New_York)
     ]
     // Properly escape CSV values (wrap in quotes if contains comma, quote, or newline)
     const escapeCSV = (value: string) => {
@@ -227,6 +229,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
               <li>Address and coordinates are taken from the Location record, not from the CSV</li>
               <li><strong>Date</strong> format: YYYY-MM-DD (e.g., 2026-01-25)</li>
               <li><strong>Time</strong> format: HH:MM (e.g., 09:00, 17:00)</li>
+              <li><strong>Timezone</strong> (optional): app code (NT, ET, CT, MT, PT, AKT, HAT) or supported IANA timezone (e.g., America/New_York); blank uses current app timezone</li>
               <li>If <strong>Start Time</strong>, <strong>End Time</strong>, <strong>Event Info</strong>, <strong>Points</strong>, or <strong>Review Points</strong> are left empty, defaults are applied: Start 00:00, End 23:59, Event info text, 10 and 50 points</li>
               <li>Download the template and replace sample values with your actual data</li>
             </ul>

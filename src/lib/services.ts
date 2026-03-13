@@ -1670,6 +1670,42 @@ export const notificationsService = {
       throw error
     }
   },
+
+  sendBadgeNotification: async (
+    authId: string,
+    badgeType: 'ambassador' | 'influencer'
+  ): Promise<void> => {
+    try {
+      if (!appwriteConfig.functions.notificationFunctionId) {
+        throw new Error('Notification function ID is not configured')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.notificationFunctionId,
+        xpath: '/send-badge-notification',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ userId: authId, badgeType }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (execution.status === 'failed') {
+        const errorMessage = execution.responseBody
+          ? (() => { try { return JSON.parse(execution.responseBody).error } catch { return execution.responseBody } })()
+          : 'Function execution failed'
+        throw new Error(errorMessage)
+      }
+
+      if (execution.responseStatusCode && execution.responseStatusCode >= 400) {
+        const errorMessage = execution.responseBody
+          ? (() => { try { return JSON.parse(execution.responseBody).error } catch { return execution.responseBody } })()
+          : `Function returned status ${execution.responseStatusCode}`
+        throw new Error(errorMessage)
+      }
+    } catch (error) {
+      console.error('Error sending badge notification:', error)
+      throw error
+    }
+  },
 }
 
 // Review Document interface
