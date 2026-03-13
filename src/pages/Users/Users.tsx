@@ -14,7 +14,7 @@ import {
   EditUserModal,
   StatsCards,
 } from './components'
-import { appUsersService, triviaResponsesService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
+import { appUsersService, triviaResponsesService, notificationsService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
@@ -625,8 +625,26 @@ const Users = () => {
               updateData.avatarURL = avatarURL
             }
             
+            // Detect badge changes before updating
+            const wasAmbassador = selectedUser.isAmbassador ?? (selectedUser as { baBadge?: boolean }).baBadge ?? false
+            const wasInfluencer = selectedUser.isInfluencer ?? (selectedUser as { influencerBadge?: boolean }).influencerBadge ?? false
+            const nowAmbassador = updateData.isAmbassador as boolean
+            const nowInfluencer = updateData.isInfluencer as boolean
+
             // Update user profile in database
             await appUsersService.update(selectedUser.$id, updateData)
+
+            // Send badge notifications if badges were just granted
+            if (nowAmbassador && !wasAmbassador && selectedUser.authID) {
+              notificationsService.sendBadgeNotification(selectedUser.authID, 'ambassador').catch((err) =>
+                console.error('Failed to send ambassador badge notification:', err)
+              )
+            }
+            if (nowInfluencer && !wasInfluencer && selectedUser.authID) {
+              notificationsService.sendBadgeNotification(selectedUser.authID, 'influencer').catch((err) =>
+                console.error('Failed to send influencer badge notification:', err)
+              )
+            }
 
             // Refresh the users list
             await fetchUsers(currentPage)

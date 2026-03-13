@@ -401,6 +401,32 @@
                     "min": 0,
                     "max": 1000000000,
                     "default": 0
+                },
+                {
+                    "key": "birthdayNotifYear",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 2000,
+                    "max": 2100,
+                    "default": null
+                },
+                {
+                    "key": "anniversaryNotifYear",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 2000,
+                    "max": 2100,
+                    "default": null
+                },
+                {
+                    "key": "lastInactivityNotifAt",
+                    "type": "datetime",
+                    "required": false,
+                    "array": false,
+                    "format": "",
+                    "default": null
                 }
             ],
             "indexes": []
