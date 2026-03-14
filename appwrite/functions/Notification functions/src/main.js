@@ -1,9 +1,10 @@
-import { Client, Databases, Messaging, ID, Query } from 'node-appwrite';
+import { Client, Databases, Messaging, Users, ID, Query } from 'node-appwrite';
 // Constants
 const DATABASE_ID = '69217af50038b9005a61';
 const NOTIFICATIONS_TABLE_ID = 'notifications';
 const USER_PROFILES_TABLE_ID = 'user_profiles';
 const EVENTS_TABLE_ID = 'events';
+const SETTINGS_TABLE_ID = 'settings';
 const PAGE_SIZE = 100;
 /**
  * Fetch all documents matching queries by paginating with limit/offset.
@@ -468,6 +469,336 @@ async function checkAndSendScheduledNotifications(databases, messaging, log) {
         throw error instanceof Error ? error : new Error(errorMessage);
     }
 }
+// ============================================================================
+// SETTINGS HELPERS
+// ============================================================================
+async function getSettingValue(databases, key) {
+    try {
+        const result = await databases.listDocuments(DATABASE_ID, SETTINGS_TABLE_ID, [Query.equal('key', key), Query.limit(1)]);
+        if (result.documents.length > 0) {
+            return result.documents[0].value;
+        }
+        return null;
+    }
+    catch {
+        return null;
+    }
+}
+async function setSettingValue(databases, key, value) {
+    const result = await databases.listDocuments(DATABASE_ID, SETTINGS_TABLE_ID, [Query.equal('key', key), Query.limit(1)]);
+    if (result.documents.length > 0) {
+        await databases.updateDocument(DATABASE_ID, SETTINGS_TABLE_ID, result.documents[0].$id, { value });
+    }
+    else {
+        await databases.createDocument(DATABASE_ID, SETTINGS_TABLE_ID, ID.unique(), {
+            key,
+            value,
+        });
+    }
+}
+// ============================================================================
+// AUTOMATED NOTIFICATION CHECKS
+// ============================================================================
+/**
+ * TRIVIA TUESDAY
+ * Sends "Earn points by knowing fun facts about your favorite brands!" to all users
+ * every Tuesday morning. Uses settings key `triviaTuesdayLastSent` to run once per Tuesday.
+ */
+async function checkAndSendTriviaTuesday(databases, messaging, log) {
+    const now = new Date();
+    if (now.getUTCDay() !== 2) {
+        log('Trivia Tuesday: not Tuesday, skipping');
+        return { sent: 0 };
+    }
+    const todayStr = now.toISOString().slice(0, 10);
+    const lastSent = await getSettingValue(databases, 'triviaTuesdayLastSent');
+    if (lastSent === todayStr) {
+        log('Trivia Tuesday: already sent today, skipping');
+        return { sent: 0 };
+    }
+    log('Trivia Tuesday: sending to all users');
+    const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
+    const authIds = allUsers
+        .map((u) => u.authID)
+        .filter((id) => id && typeof id === 'string');
+    const result = await sendPushNotificationToUsers(messaging, authIds, 'TRIVIA TUESDAY', 'Earn points by knowing fun facts about your favorite brands!', log, { type: 'Engagement' });
+    await setSettingValue(databases, 'triviaTuesdayLastSent', todayStr);
+    log(`Trivia Tuesday: sent to ${result.sentCount ?? 0} users`);
+    return { sent: result.sentCount ?? 0 };
+}
+/**
+ * SAMPLING TODAY
+ * Sends "Sampling at {storeName} starts at {time}!" the morning of the event
+ * to users who have that event in their savedEventIds calendar.
+ * Tracks `samplingTodaySent` flag per saved event entry to avoid resending.
+ */
+async function checkAndSendSamplingToday(databases, messaging, log) {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    log(`Sampling Today: checking for events on ${todayStr}`);
+    const allEvents = (await listAllDocuments(databases, DATABASE_ID, EVENTS_TABLE_ID, []));
+    const todaysEvents = allEvents.filter((e) => {
+        const eventDateStr = (e.startTime || e.date || '').slice(0, 10);
+        return eventDateStr === todayStr && !e.isArchived && !e.isHidden;
+    });
+    if (todaysEvents.length === 0) {
+        log('Sampling Today: no events today');
+        return { sent: 0 };
+    }
+    log(`Sampling Today: ${todaysEvents.length} event(s) today`);
+    const todaysEventIds = new Set(todaysEvents.map((e) => e.$id));
+    const eventsMap = new Map(todaysEvents.map((e) => [e.$id, e]));
+    const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
+    let totalSent = 0;
+    for (const user of allUsers) {
+        if (!user.savedEventIds || !user.authID)
+            continue;
+        let savedEvents;
+        try {
+            savedEvents = JSON.parse(user.savedEventIds);
+        }
+        catch {
+            continue;
+        }
+        let needsUpdate = false;
+        for (const saved of savedEvents) {
+            if (!todaysEventIds.has(saved.eventId) ||
+                saved.samplingTodaySent) {
+                continue;
+            }
+            const event = eventsMap.get(saved.eventId);
+            if (!event)
+                continue;
+            const startDate = new Date(event.startTime || event.date);
+            const timeStr = startDate.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+                timeZone: 'UTC',
+            });
+            const storeName = event.name || 'your event';
+            await sendPushNotificationToUsers(messaging, [user.authID], 'SAMPLING TODAY', `Sampling at ${storeName} starts at ${timeStr}! Click to learn more!`, log, { eventId: event.$id, type: 'Event Reminder' });
+            saved.samplingTodaySent = true;
+            needsUpdate = true;
+            totalSent++;
+        }
+        if (needsUpdate) {
+            try {
+                await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, { savedEventIds: JSON.stringify(savedEvents) });
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                log(`Sampling Today: failed to update flags for user ${user.$id}: ${msg}`);
+            }
+        }
+    }
+    log(`Sampling Today: sent ${totalSent} notification(s)`);
+    return { sent: totalSent };
+}
+/**
+ * HAPPY BIRTHDAY
+ * Sends birthday push + awards configurable points on the user's birthday.
+ * Uses `birthdayNotifYear` to send once per year.
+ */
+async function checkAndSendBirthdayNotifications(databases, messaging, log) {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const lastRun = await getSettingValue(databases, 'birthdayCheckLastRun');
+    if (lastRun === todayStr) {
+        log('Birthday: already checked today, skipping');
+        return { sent: 0 };
+    }
+    const currentYear = now.getUTCFullYear();
+    const currentMonth = now.getUTCMonth();
+    const currentDay = now.getUTCDate();
+    const pointsStr = await getSettingValue(databases, 'birthdayPoints');
+    const points = pointsStr ? parseInt(pointsStr, 10) : 100;
+    log(`Birthday: checking for birthdays on ${currentMonth + 1}/${currentDay}, awarding ${points} points`);
+    const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
+    let sent = 0;
+    for (const user of allUsers) {
+        if (!user.dob || !user.authID)
+            continue;
+        if (user.birthdayNotifYear === currentYear)
+            continue;
+        const dob = new Date(user.dob);
+        if (dob.getUTCMonth() !== currentMonth || dob.getUTCDate() !== currentDay)
+            continue;
+        log(`Birthday: sending to user ${user.$id}`);
+        await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY BIRTHDAY!', `We wish you a very happy birthday, from all of us here at SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        const currentPoints = user.totalPoints ?? 0;
+        try {
+            await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
+                birthdayNotifYear: currentYear,
+                totalPoints: currentPoints + points,
+            });
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`Birthday: failed to update user ${user.$id}: ${msg}`);
+        }
+        sent++;
+    }
+    await setSettingValue(databases, 'birthdayCheckLastRun', todayStr);
+    log(`Birthday: sent ${sent} notification(s)`);
+    return { sent };
+}
+/**
+ * HAPPY SAMPLING ANNIVERSARY
+ * Sends anniversary push + awards configurable points on the user's join date anniversary.
+ * Uses `anniversaryNotifYear` to send once per year. Only triggers after at least 1 full year.
+ */
+async function checkAndSendAnniversaryNotifications(databases, messaging, log) {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const lastRun = await getSettingValue(databases, 'anniversaryCheckLastRun');
+    if (lastRun === todayStr) {
+        log('Anniversary: already checked today, skipping');
+        return { sent: 0 };
+    }
+    const currentYear = now.getUTCFullYear();
+    const currentMonth = now.getUTCMonth();
+    const currentDay = now.getUTCDate();
+    const pointsStr = await getSettingValue(databases, 'anniversaryPoints');
+    const points = pointsStr ? parseInt(pointsStr, 10) : 200;
+    log(`Anniversary: checking for join-date anniversaries on ${currentMonth + 1}/${currentDay}, awarding ${points} points`);
+    const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
+    let sent = 0;
+    for (const user of allUsers) {
+        if (!user.$createdAt || !user.authID)
+            continue;
+        if (user.anniversaryNotifYear === currentYear)
+            continue;
+        const createdAt = new Date(user.$createdAt);
+        if (createdAt.getUTCMonth() !== currentMonth || createdAt.getUTCDate() !== currentDay)
+            continue;
+        const yearsOnPlatform = currentYear - createdAt.getUTCFullYear();
+        if (yearsOnPlatform < 1)
+            continue;
+        log(`Anniversary: sending to user ${user.$id} (${yearsOnPlatform} year(s))`);
+        await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY SAMPLING ANNIVERSARY!', `Congratulations on reaching a full new year of sampling with SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        const currentPoints = user.totalPoints ?? 0;
+        try {
+            await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
+                anniversaryNotifYear: currentYear,
+                totalPoints: currentPoints + points,
+            });
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`Anniversary: failed to update user ${user.$id}: ${msg}`);
+        }
+        sent++;
+    }
+    await setSettingValue(databases, 'anniversaryCheckLastRun', todayStr);
+    log(`Anniversary: sent ${sent} notification(s)`);
+    return { sent };
+}
+/**
+ * YOU'VE BEEN MISSING SAMPLES
+ * Sends re-engagement push to users who haven't logged in for 30+ days.
+ * Re-sends every 30 days of continued inactivity using `lastInactivityNotifAt`.
+ */
+async function checkAndSendInactivityNotifications(databases, messaging, users, log) {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const lastRun = await getSettingValue(databases, 'inactivityCheckLastRun');
+    if (lastRun === todayStr) {
+        log('Inactivity: already checked today, skipping');
+        return { sent: 0 };
+    }
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const cutoffDate = new Date(now.getTime() - thirtyDaysMs);
+    log(`Inactivity: checking for users inactive since before ${cutoffDate.toISOString()}`);
+    const allProfiles = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
+    const AUTH_BATCH_SIZE = 50;
+    let sent = 0;
+    for (let i = 0; i < allProfiles.length; i += AUTH_BATCH_SIZE) {
+        const batch = allProfiles.slice(i, i + AUTH_BATCH_SIZE);
+        const authIds = batch.map((u) => u.authID).filter(Boolean);
+        if (authIds.length === 0)
+            continue;
+        let authUsersMap;
+        try {
+            const authResult = await users.list([
+                Query.equal('$id', authIds),
+                Query.limit(AUTH_BATCH_SIZE),
+            ]);
+            authUsersMap = new Map(authResult.users.map((au) => [au.$id, { accessedAt: au.accessedAt }]));
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`Inactivity: failed to fetch auth users batch: ${msg}`);
+            continue;
+        }
+        for (const profile of batch) {
+            if (!profile.authID)
+                continue;
+            const authUser = authUsersMap.get(profile.authID);
+            if (!authUser?.accessedAt)
+                continue;
+            const lastAccess = new Date(authUser.accessedAt);
+            if (lastAccess >= cutoffDate)
+                continue;
+            if (profile.lastInactivityNotifAt) {
+                const lastNotif = new Date(profile.lastInactivityNotifAt);
+                if (now.getTime() - lastNotif.getTime() < thirtyDaysMs)
+                    continue;
+            }
+            log(`Inactivity: sending to user ${profile.$id} (last access: ${authUser.accessedAt})`);
+            await sendPushNotificationToUsers(messaging, [profile.authID], "YOU'VE BEEN MISSING SAMPLES!", 'Enjoy experiencing new brands, earning points and winning prizes!', log, { type: 'Engagement' });
+            try {
+                await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, profile.$id, { lastInactivityNotifAt: now.toISOString() });
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                log(`Inactivity: failed to update user ${profile.$id}: ${msg}`);
+            }
+            sent++;
+        }
+    }
+    await setSettingValue(databases, 'inactivityCheckLastRun', todayStr);
+    log(`Inactivity: sent ${sent} notification(s)`);
+    return { sent };
+}
+/**
+ * BADGE EARNED NOTIFICATION
+ * Sends a push notification when an admin assigns ambassador or influencer badge.
+ * Called via POST /send-badge-notification.
+ */
+async function sendBadgeNotification(databases, messaging, userId, badgeType, log) {
+    log(`Badge notification: sending ${badgeType} badge notification to auth user ${userId}`);
+    const title = badgeType === 'ambassador'
+        ? 'BRAND AMBASSADOR BADGE EARNED!'
+        : 'INFLUENCER BADGE EARNED!';
+    const body = badgeType === 'ambassador'
+        ? "Congratulations, you're an official SampleFinder Brand Ambassador!"
+        : 'Congratulations on earning your SampleFinder Influencer badge!';
+    const result = await sendPushNotificationToUsers(messaging, [userId], title, body, log, { type: 'Engagement', badgeType });
+    // Also append to user's in-app notifications
+    try {
+        const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
+        if (profileResult.documents.length > 0) {
+            const profile = profileResult.documents[0];
+            const entry = {
+                id: ID.unique(),
+                type: 'Engagement',
+                title,
+                message: body,
+                isRead: false,
+                createdAt: new Date().toISOString(),
+                data: { badgeType },
+            };
+            await appendNotificationToUserProfile(databases, profile.$id, entry, log);
+        }
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(`Badge notification: failed to append in-app notification: ${msg}`);
+    }
+    log(`Badge notification: sent ${result.sentCount ?? 0}`);
+    return { success: true, sentCount: result.sentCount ?? 0 };
+}
 /**
  * Archive events that completed more than 7 days ago (endTime < now - 7 days).
  * Runs on the same cron schedule as event reminders and scheduled notifications.
@@ -528,6 +859,7 @@ export default async function handler({ req, res, log, error }) {
             .setKey(apiKey);
         const databases = new Databases(client);
         const messaging = new Messaging(client);
+        const appwriteUsers = new Users(client);
         // Handle ping endpoint
         if (req.path === '/ping') {
             return res.text('Pong');
@@ -565,6 +897,34 @@ export default async function handler({ req, res, log, error }) {
                 ...result,
             });
         }
+        // Handle badge notification endpoint (triggered by admin portal)
+        if (req.path === '/send-badge-notification' && req.method === 'POST') {
+            log('Processing send-badge-notification request');
+            let requestBody;
+            try {
+                if (!req.body || typeof req.body !== 'object') {
+                    throw new Error('Request body is required');
+                }
+                const body = req.body;
+                if (!body.userId || typeof body.userId !== 'string') {
+                    throw new Error('userId is required and must be a string');
+                }
+                if (body.badgeType !== 'ambassador' && body.badgeType !== 'influencer') {
+                    throw new Error('badgeType must be "ambassador" or "influencer"');
+                }
+                requestBody = {
+                    userId: body.userId,
+                    badgeType: body.badgeType,
+                };
+            }
+            catch (validationError) {
+                const errorMessage = validationError instanceof Error ? validationError.message : String(validationError);
+                error(`Validation error: ${errorMessage}`);
+                return res.json({ success: false, error: errorMessage }, 400);
+            }
+            const result = await sendBadgeNotification(databases, messaging, requestBody.userId, requestBody.badgeType, log);
+            return res.json(result);
+        }
         // Handle scheduled execution: event reminders + due scheduled notifications
         // Triggered by: Appwrite cron (path / or empty) or manual GET /check-event-reminders
         const isScheduledRun = req.path === '/check-event-reminders' ||
@@ -581,6 +941,21 @@ export default async function handler({ req, res, log, error }) {
             // 3. Auto-archive events that completed more than 7 days ago
             const archiveResult = await archiveEventsCompletedOver7DaysAgo(databases, log);
             log(`Auto-archive events: ${archiveResult.archived}`);
+            // 4. Trivia Tuesday (sends once per Tuesday)
+            const triviaTuesdayResult = await checkAndSendTriviaTuesday(databases, messaging, log);
+            log(`Trivia Tuesday: sent=${triviaTuesdayResult.sent}`);
+            // 5. Sampling Today (morning of event day)
+            const samplingTodayResult = await checkAndSendSamplingToday(databases, messaging, log);
+            log(`Sampling Today: sent=${samplingTodayResult.sent}`);
+            // 6. Happy Birthday (once per year per user)
+            const birthdayResult = await checkAndSendBirthdayNotifications(databases, messaging, log);
+            log(`Birthday: sent=${birthdayResult.sent}`);
+            // 7. Happy Sampling Anniversary (once per year per user)
+            const anniversaryResult = await checkAndSendAnniversaryNotifications(databases, messaging, log);
+            log(`Anniversary: sent=${anniversaryResult.sent}`);
+            // 8. Inactivity re-engagement (30+ days inactive)
+            const inactivityResult = await checkAndSendInactivityNotifications(databases, messaging, appwriteUsers, log);
+            log(`Inactivity: sent=${inactivityResult.sent}`);
             return res.json({
                 success: true,
                 scheduledNotifications: {
@@ -593,6 +968,21 @@ export default async function handler({ req, res, log, error }) {
                 },
                 eventAutoArchive: {
                     archived: archiveResult.archived,
+                },
+                triviaTuesday: {
+                    sent: triviaTuesdayResult.sent,
+                },
+                samplingToday: {
+                    sent: samplingTodayResult.sent,
+                },
+                birthday: {
+                    sent: birthdayResult.sent,
+                },
+                anniversary: {
+                    sent: anniversaryResult.sent,
+                },
+                inactivity: {
+                    sent: inactivityResult.sent,
                 },
             });
         }
