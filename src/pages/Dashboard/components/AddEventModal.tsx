@@ -407,7 +407,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
 
     // Validate that event date is not in the past
     if (trimmed.eventDate) {
-      const eventDate = new Date(trimmed.eventDate)
+      const [y, m, d] = trimmed.eventDate.split('-').map(Number)
+      const eventDate = new Date(y, m - 1, d)
       const today = new Date()
       today.setHours(0, 0, 0, 0) // Reset time to start of day for comparison
       eventDate.setHours(0, 0, 0, 0)
