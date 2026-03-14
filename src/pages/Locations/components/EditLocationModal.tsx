@@ -186,10 +186,13 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
                 handleInputChange('longitude', lng)
               }}
               onAddressFromCoords={(components) => {
-                handleInputChange('address', components.address)
-                handleInputChange('city', components.city)
-                handleInputChange('state', components.state)
-                handleInputChange('zipCode', components.zipCode)
+                setFormData((prev) => ({
+                  ...prev,
+                  address: components.address,
+                  city: components.city,
+                  state: components.state,
+                  zipCode: components.zipCode,
+                }))
               }}
               address={formData.address}
               city={formData.city}

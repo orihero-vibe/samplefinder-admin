@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Icon } from '@iconify/react'
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAgWcy3f1AWmG9AgCKhwnSLFJGsxqVBiMc'
+const GOOGLE_MAPS_API_KEY = 'AIzaSyCVzb3tW45BGqtQGxl0MeLaXeDq9eZu0MU'
 
 // Declare Google Maps types on window
 declare global {
@@ -77,7 +77,7 @@ interface Prediction {
 }
 
 // Load Google Maps Script
-const loadGoogleMapsScript = (): Promise<void> => {
+export const loadGoogleMapsScript = (): Promise<void> => {
   return new Promise((resolve, reject) => {
     if (window.google?.maps?.places) {
       resolve()
@@ -391,7 +391,7 @@ const AddressAutocomplete = ({
       {isOpen && predictions.length > 0 && isScriptLoaded && (
         <div
           ref={dropdownRef}
-          className="absolute z-[9999] w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+          className="absolute z-9999 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto"
         >
           {predictions.map((prediction) => (
             <button
@@ -400,7 +400,7 @@ const AddressAutocomplete = ({
               onClick={() => handleSelect(prediction)}
               className="w-full px-4 py-3 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex items-center gap-3"
             >
-              <Icon icon="mdi:map-marker" className="w-5 h-5 text-gray-700 flex-shrink-0" />
+              <Icon icon="mdi:map-marker" className="w-5 h-5 text-gray-700 shrink-0" />
               <span className="text-sm text-gray-900">
                 <span className="font-semibold">{prediction.structured_formatting.main_text}</span>
                 {prediction.structured_formatting.secondary_text && (

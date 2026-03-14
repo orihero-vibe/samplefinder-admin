@@ -3,12 +3,25 @@ import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-lea
 import { Icon } from '@iconify/react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import AddressAutocomplete from './AddressAutocomplete'
+import AddressAutocomplete, { loadGoogleMapsScript } from './AddressAutocomplete'
 
 // Fix for default marker icon in react-leaflet
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+
+// Geocoder result shape from Maps JavaScript API (avoid conflicting with AddressAutocomplete's Window types)
+interface GeocoderResult {
+  address_components?: Array<{ types: string[]; long_name: string; short_name: string }>
+  formatted_address?: string
+}
+
+interface GoogleGeocoder {
+  geocode(
+    request: { location: { lat: number; lng: number } },
+    callback: (results: GeocoderResult[] | null, status: string) => void
+  ): void
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -17,8 +30,6 @@ L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
   shadowUrl: markerShadow,
 })
-
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAgWcy3f1AWmG9AgCKhwnSLFJGsxqVBiMc'
 
 interface AddressComponents {
   address: string
@@ -100,162 +111,114 @@ const LocationPicker = ({
   // Default center - use world center (no geolocation)
   const [defaultCenter] = useState<[number, number]>([40.7128, -74.0060]) // Default to New York City
 
-  // Reverse geocode coordinates to get address using Google Geocoding API
+  // Parse Geocoder result into AddressComponents (same logic as in src/location/LocationPicker.tsx)
+  const parseGeocoderResult = (results: GeocoderResult[]): AddressComponents | null => {
+    if (!results.length) return null
+
+    const isPlusCode = (str: string): boolean => /^[A-Z0-9]{4}\+[A-Z0-9]{2,}/.test(str)
+
+    let bestResult = results[0]
+    for (const result of results) {
+      const formatted = result.formatted_address || ''
+      const compCount = result.address_components?.length ?? 0
+      if (!isPlusCode(formatted.split(',')[0]) && compCount >= 4) {
+        bestResult = result
+        break
+      }
+    }
+
+    const components: AddressComponents = {
+      address: '',
+      city: '',
+      state: '',
+      zipCode: '',
+    }
+
+    let streetNumber = ''
+    let route = ''
+    let sublocality = ''
+    let locality = ''
+    let adminArea1 = ''
+    let country = ''
+
+    bestResult.address_components?.forEach((component) => {
+      const types = component.types
+      if (types.includes('street_number')) streetNumber = component.long_name
+      if (types.includes('route')) route = component.long_name
+      if (types.includes('sublocality') || types.includes('sublocality_level_1')) sublocality = component.long_name
+      if (types.includes('locality')) locality = component.long_name
+      if (types.includes('administrative_area_level_1')) adminArea1 = component.long_name
+      if (types.includes('country')) country = component.long_name
+      if (types.includes('postal_code')) components.zipCode = component.long_name
+    })
+
+    if (locality) {
+      components.city = locality
+      components.state = adminArea1 || country
+    } else {
+      components.city = adminArea1 || sublocality
+      components.state = country
+    }
+
+    if (streetNumber && route) {
+      components.address = `${streetNumber} ${route}`
+    } else if (route) {
+      components.address = route
+    } else if (bestResult.formatted_address) {
+      const parts = bestResult.formatted_address.split(',').map((p: string) => p.trim())
+      if (parts.length > 0 && isPlusCode(parts[0])) parts.shift()
+      if (parts.length > 0) components.address = parts[0]
+    }
+
+    if (!components.zipCode) {
+      for (const result of results) {
+        const postalComponent = result.address_components?.find((c) => c.types.includes('postal_code'))
+        if (postalComponent) {
+          components.zipCode = postalComponent.long_name
+          break
+        }
+      }
+    }
+
+    return components
+  }
+
+  // Reverse geocode using Maps JavaScript API Geocoder (works in browser; avoids CORS with REST API)
   const reverseGeocode = async (lat: number, lng: number): Promise<AddressComponents | null> => {
-    // Validate coordinates before making API call
     if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-      console.error('Invalid coordinates:', { lat, lng })
+      if (import.meta.env.DEV) console.error('Invalid coordinates:', { lat, lng })
       return null
     }
-    
+
     try {
       setIsReverseGeocoding(true)
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`
-      )
-      const data = await response.json()
+      await loadGoogleMapsScript()
 
-      console.log('=== Reverse Geocode API Response ===')
-      console.log('Status:', data.status)
-      console.log('Results:', data.results)
-      
-      if (data.status === 'OK' && data.results.length > 0) {
-        const components: AddressComponents = {
-          address: '',
-          city: '',
-          state: '',
-          zipCode: '',
-        }
-
-        // Helper to check if string is a Plus Code
-        const isPlusCode = (str: string): boolean => /^[A-Z0-9]{4}\+[A-Z0-9]{2,}/.test(str)
-
-        // Find the best result (one with street address, not Plus Code)
-        let bestResult = data.results[0]
-        for (const result of data.results) {
-          const formatted = result.formatted_address || ''
-          // Prefer results that don't start with Plus Code and have more address components
-          if (!isPlusCode(formatted.split(',')[0]) && result.address_components?.length >= 4) {
-            bestResult = result
-            break
-          }
-        }
-        
-        console.log('Best result:', bestResult)
-
-        let streetNumber = ''
-        let route = ''
-        let sublocality = ''
-        let locality = ''
-        let adminArea1 = ''
-        let country = ''
-
-        // Parse all address components
-        bestResult.address_components?.forEach((component: { types: string[]; long_name: string; short_name: string }) => {
-          const types = component.types
-
-          if (types.includes('street_number')) {
-            streetNumber = component.long_name
-          }
-          if (types.includes('route')) {
-            route = component.long_name
-          }
-          if (types.includes('sublocality') || types.includes('sublocality_level_1')) {
-            sublocality = component.long_name
-          }
-          if (types.includes('locality')) {
-            locality = component.long_name
-          }
-          if (types.includes('administrative_area_level_1')) {
-            adminArea1 = component.long_name
-          }
-          if (types.includes('country')) {
-            country = component.long_name
-          }
-          if (types.includes('postal_code')) {
-            components.zipCode = component.long_name
-          }
-        })
-
-        // Smart mapping based on available data:
-        // If locality exists (like USA cities): City = locality, State = admin_area_level_1
-        // If no locality (international): City = admin_area_level_1, State = country
-        if (locality) {
-          components.city = locality
-          components.state = adminArea1 || country
-        } else {
-          components.city = adminArea1 || sublocality
-          components.state = country
-        }
-        
-        // Build address - prefer street address, fallback to first part of formatted address
-        if (streetNumber && route) {
-          components.address = `${streetNumber} ${route}`
-        } else if (route) {
-          components.address = route
-        } else if (bestResult.formatted_address) {
-          // Use first part of formatted address (street part only)
-          const parts = bestResult.formatted_address.split(',').map((p: string) => p.trim())
-          
-          // Remove Plus Code from beginning if present
-          if (parts.length > 0 && isPlusCode(parts[0])) {
-            parts.shift()
-          }
-          
-          // Use only the first part (street address)
-          if (parts.length > 0) {
-            components.address = parts[0]
-          }
-        }
-
-        // If still no zip code, try to find it in other results
-        if (!components.zipCode) {
-          for (const result of data.results) {
-            const postalComponent = result.address_components?.find(
-              (c: { types: string[] }) => c.types.includes('postal_code')
-            )
-            if (postalComponent) {
-              components.zipCode = postalComponent.long_name
-              break
-            }
-          }
-        }
-
-        // If still no zip code, try a separate API call specifically for postal code
-        if (!components.zipCode) {
-          // Validate coordinates again before second API call
-          if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-            return components
-          }
-          
-          try {
-            const postalResponse = await fetch(
-              `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&result_type=postal_code&key=${GOOGLE_MAPS_API_KEY}`
-            )
-            const postalData = await postalResponse.json()
-            console.log('Postal code specific API response:', postalData)
-            
-            if (postalData.status === 'OK' && postalData.results.length > 0) {
-              const postalResult = postalData.results[0]
-              const postalComponent = postalResult.address_components?.find(
-                (c: { types: string[] }) => c.types.includes('postal_code')
-              )
-              if (postalComponent) {
-                components.zipCode = postalComponent.long_name
-                console.log('Found postal code from secondary request:', components.zipCode)
-              }
-            }
-          } catch (postalError) {
-            console.log('Could not fetch postal code:', postalError)
-          }
-        }
-
-        console.log('Final components:', components)
-        return components
+      const maps = (window as { google?: { maps?: { Geocoder?: new () => GoogleGeocoder } } }).google?.maps
+      const Geocoder = maps?.Geocoder
+      if (!Geocoder) {
+        if (import.meta.env.DEV) console.error('Reverse geocode failed: Geocoder not available')
+        return null
       }
-      return null
+
+      const geocoder = new Geocoder()
+      const result = await new Promise<GeocoderResult[] | null>((resolve) => {
+        geocoder.geocode(
+          { location: { lat, lng } },
+          (results: GeocoderResult[] | null, status: string) => {
+            if (status === 'OK' && results && results.length > 0) {
+              resolve(results)
+            } else {
+              if (import.meta.env.DEV) console.warn('Reverse geocode failed:', status)
+              resolve(null)
+            }
+          }
+        )
+      })
+
+      return result ? parseGeocoderResult(result) : null
     } catch (error) {
-      console.error('Reverse geocoding error:', error)
+      if (import.meta.env.DEV) console.error('Reverse geocoding error:', error)
       return null
     } finally {
       setIsReverseGeocoding(false)
@@ -283,25 +246,26 @@ const LocationPicker = ({
   const handlePositionChange = async (newPosition: [number, number], skipReverseGeocode = false) => {
     setPosition(newPosition)
     onLocationChange(newPosition[0].toString(), newPosition[1].toString())
-    
-    console.log('=== Map Location Selection ===')
-    console.log('Latitude:', newPosition[0])
-    console.log('Longitude:', newPosition[1])
+    if (import.meta.env.DEV) {
+      console.log('=== Map Location Selection ===')
+      console.log('Latitude:', newPosition[0])
+      console.log('Longitude:', newPosition[1])
+    }
     
     // Perform reverse geocoding to get address info
     if (!skipReverseGeocode && onAddressFromCoords) {
       const addressComponents = await reverseGeocode(newPosition[0], newPosition[1])
       if (addressComponents) {
-        console.log('Reverse Geocoded Address:', addressComponents)
-        console.log('Address:', addressComponents.address)
-        console.log('City:', addressComponents.city)
-        console.log('State:', addressComponents.state)
-        console.log('Zip Code:', addressComponents.zipCode)
-        console.log('==============================')
+        if (import.meta.env.DEV) {
+          console.log('Reverse Geocoded Address:', addressComponents)
+          console.log('Address:', addressComponents.address)
+          console.log('City:', addressComponents.city)
+          console.log('State:', addressComponents.state)
+          console.log('Zip Code:', addressComponents.zipCode)
+          console.log('==============================')
+        }
         onAddressFromCoords(addressComponents)
       }
-    } else {
-      console.log('==============================')
     }
   }
 
@@ -311,7 +275,7 @@ const LocationPicker = ({
       {/* Address Fields - Above Map */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Address */}
-        <div className="relative z-[1000]">
+        <div className="relative z-1000">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Address <span className="text-red-500">*</span>
           </label>
