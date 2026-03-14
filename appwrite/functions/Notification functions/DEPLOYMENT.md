@@ -54,16 +54,17 @@ If CLI push doesn't work, add fields manually:
 
 ### Step 2: Deploy the Function
 
+After building the function (`npm run build` in this directory), push it to Appwrite:
+
 ```bash
 # Navigate to the appwrite directory
 cd appwrite
 
-# Deploy the Notification functions
-appwrite deploy function 695d55bb002bc6b75430
-
-# Or deploy all functions
-appwrite deploy function
+# Push the Notification function (select "Notification functions" when prompted)
+appwrite push function -f 695d55bb002bc6b75430
 ```
+
+Alternatively, run `appwrite push function` and choose which function(s) to push from the list. You can also deploy via the Appwrite Console by uploading the built code from `functions/Notification functions/`.
 
 The deployment will:
 - Upload the updated function code

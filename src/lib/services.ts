@@ -1701,6 +1701,21 @@ export const notificationsService = {
           : `Function returned status ${execution.responseStatusCode}`
         throw new Error(errorMessage)
       }
+
+      const responseData = execution.responseBody
+        ? (() => {
+            try {
+              return JSON.parse(execution.responseBody) as { success?: boolean; error?: string }
+            } catch {
+              return null
+            }
+          })()
+        : null
+      if (!responseData?.success) {
+        throw new Error(
+          responseData?.error ?? 'Badge notification function returned unexpected response'
+        )
+      }
     } catch (error) {
       console.error('Error sending badge notification:', error)
       throw error

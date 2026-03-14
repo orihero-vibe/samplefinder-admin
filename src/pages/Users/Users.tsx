@@ -634,16 +634,32 @@ const Users = () => {
             // Update user profile in database
             await appUsersService.update(selectedUser.$id, updateData)
 
-            // Send badge notifications if badges were just granted
+            // Send badge notifications if badges were just granted (await and surface errors)
+            const badgePromises: Promise<void>[] = []
             if (nowAmbassador && !wasAmbassador && selectedUser.authID) {
-              notificationsService.sendBadgeNotification(selectedUser.authID, 'ambassador').catch((err) =>
-                console.error('Failed to send ambassador badge notification:', err)
+              badgePromises.push(
+                notificationsService.sendBadgeNotification(selectedUser.authID, 'ambassador')
               )
             }
             if (nowInfluencer && !wasInfluencer && selectedUser.authID) {
-              notificationsService.sendBadgeNotification(selectedUser.authID, 'influencer').catch((err) =>
-                console.error('Failed to send influencer badge notification:', err)
+              badgePromises.push(
+                notificationsService.sendBadgeNotification(selectedUser.authID, 'influencer')
               )
+            }
+            if (badgePromises.length > 0) {
+              const results = await Promise.allSettled(badgePromises)
+              const failed = results.filter((r) => r.status === 'rejected')
+              if (failed.length > 0) {
+                const message =
+                  failed.length === 1
+                    ? (failed[0] as PromiseRejectedResult).reason?.message ?? 'Badge notification could not be sent.'
+                    : 'One or more badge notifications could not be sent.'
+                addNotification({
+                  type: 'warning',
+                  title: 'Badge notification failed',
+                  message,
+                })
+              }
             }
 
             // Refresh the users list
