@@ -174,9 +174,12 @@ async function appendNotificationToUserProfiles(databases, userProfileIds, notif
         await appendNotificationToUserProfile(databases, userId, entry, log);
     }
 }
+const PUSH_BATCH_SIZE = 50;
+const PUSH_CONCURRENCY = 3;
 /**
  * Send push notification using Appwrite Messaging.
- * Uses the object API and sends one push per user to avoid known multi-user delivery issues.
+ * Uses object-based API and batches users for efficient delivery.
+ * Sends to multiple users per createPush call, with concurrent batch execution.
  * users: array of Appwrite Auth user IDs (each user must have a push target registered).
  */
 async function sendPushNotificationToUsers(messaging, userIds, title, body, log, data) {
@@ -185,41 +188,48 @@ async function sendPushNotificationToUsers(messaging, userIds, title, body, log,
         return { $id: null, status: 'skipped', sentCount: 0 };
     }
     const payload = data ?? {};
-    let lastResult = null;
+    const batches = [];
+    for (let i = 0; i < userIds.length; i += PUSH_BATCH_SIZE) {
+        batches.push(userIds.slice(i, i + PUSH_BATCH_SIZE));
+    }
+    log(`Sending push in ${batches.length} batch(es), ${userIds.length} total users`);
     let sentCount = 0;
-    for (const userId of userIds) {
-        try {
-            // Positional API: node-appwrite 14 types do not expose object overload; use positional args.
-            const result = await messaging.createPush(ID.unique(), title, body, [], // topics
-            [userId], // users
-            [], // targets
-            payload, // data
-            undefined, // action
-            undefined, // image
-            undefined, // icon
-            undefined, // sound
-            undefined, // color
-            undefined, // tag
-            undefined, // badge
-            false, // draft
-            undefined, // scheduledAt
-            undefined, // contentAvailable
-            undefined, // critical
-            undefined // priority
-            );
-            lastResult = result;
-            sentCount += 1;
-            log(`Push created for user ${userId}: messageId=${result.$id}, status=${result.status}`);
-        }
-        catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            log(`Failed to send push to user ${userId}: ${errorMessage}`);
+    let lastResult = null;
+    for (let i = 0; i < batches.length; i += PUSH_CONCURRENCY) {
+        const chunk = batches.slice(i, i + PUSH_CONCURRENCY);
+        const results = await Promise.allSettled(chunk.map((userBatch) => {
+            // Object-based API per Appwrite docs; node-appwrite 14 types only declare positional overload
+            const createPushObj = messaging.createPush;
+            return createPushObj({
+                messageId: ID.unique(),
+                title,
+                body,
+                topics: [],
+                users: userBatch,
+                targets: [],
+                data: payload,
+                draft: false,
+            });
+        }));
+        for (let j = 0; j < results.length; j++) {
+            const settled = results[j];
+            const batch = chunk[j];
+            if (settled.status === 'fulfilled') {
+                const result = settled.value;
+                lastResult = result;
+                sentCount += batch.length;
+                log(`Push batch ${i + j + 1}: messageId=${result.$id}, status=${result.status}, users=${batch.length}`);
+            }
+            else {
+                const errMsg = settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
+                log(`Failed to send push batch (${batch.length} users): ${errMsg}`);
+            }
         }
     }
     log(`Push notification summary: ${sentCount}/${userIds.length} users, last messageId: ${lastResult?.$id}, status: ${lastResult?.status}`);
     return lastResult
         ? { ...lastResult, sentCount }
-        : { $id: null, status: 'failed', sentCount: 0 };
+        : { $id: null, status: sentCount > 0 ? 'completed' : 'failed', sentCount };
 }
 /**
  * Send notification to all target users using Appwrite Messaging

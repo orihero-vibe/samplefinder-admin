@@ -140,7 +140,7 @@
             "$id": "695d55bb002bc6b75430",
             "name": "Notification functions",
             "runtime": "node-22",
-            "specification": "s-0.5vcpu-512mb",
+            "specification": "s-1vcpu-512mb",
             "execute": [
                 "any"
             ],
@@ -164,7 +164,7 @@
                 "subscribers.read"
             ],
             "schedule": "*/15 * * * *",
-            "timeout": 15,
+            "timeout": 300,
             "enabled": true,
             "logging": true,
             "entrypoint": "src/main.js",
@@ -740,7 +740,12 @@
         },
         {
             "$id": "notifications",
-            "$permissions": [],
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
             "databaseId": "69217af50038b9005a61",
             "name": "Notifications",
             "enabled": true,
@@ -883,7 +888,15 @@
                     "default": null
                 }
             ],
-            "indexes": []
+            "indexes": [
+                {
+                    "key": "status_scheduledAt",
+                    "type": "key",
+                    "status": "available",
+                    "attributes": ["status", "scheduledAt"],
+                    "orders": ["ASC", "ASC"]
+                }
+            ]
         },
         {
             "$id": "trivia",
