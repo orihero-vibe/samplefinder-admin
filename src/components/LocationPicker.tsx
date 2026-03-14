@@ -18,7 +18,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 })
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAgWcy3f1AWmG9AgCKhwnSLFJGsxqVBiMc'
+const GOOGLE_MAPS_API_KEY = 'AIzaSyAywmgeNZsxezVKVV8k3w3v9K8tssxh4mc'
 
 interface AddressComponents {
   address: string

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Icon } from '@iconify/react'
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAgWcy3f1AWmG9AgCKhwnSLFJGsxqVBiMc'
+const GOOGLE_MAPS_API_KEY = 'AIzaSyAywmgeNZsxezVKVV8k3w3v9K8tssxh4mc'
 
 // Declare Google Maps types on window
 declare global {
