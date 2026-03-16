@@ -527,6 +527,7 @@ export interface EventDocument extends Models.Document {
   locationId?: string // Location document ID (relationship) - used when event is linked to a Location
   client?: string // Client ID (relationship)
   categories?: string // Category ID (relationship)
+  timezone?: string // IANA timezone used when creating/editing the event
   [key: string]: unknown
 }
 

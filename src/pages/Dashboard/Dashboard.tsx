@@ -72,6 +72,7 @@ const Dashboard = () => {
     latitude?: string
     longitude?: string
     locationName?: string
+    timezone?: string
   } | undefined>(undefined)
   const [editModalInitialData, setEditModalInitialData] = useState<{
     eventName?: string
@@ -95,6 +96,7 @@ const Dashboard = () => {
     latitude?: string
     longitude?: string
     locationName?: string
+    timezone?: string
   } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
@@ -439,13 +441,14 @@ const Dashboard = () => {
       }
     }
 
-    // Derive date and time strings for form inputs using the configured app timezone
+    // Derive date and time strings for form inputs using the event's timezone
     // to avoid device-local timezone shifts that can move events to previous/next day.
     // Use startTime when available (matches EventsTable display logic), otherwise fall back to date.
+    const eventTimezone = eventDoc.timezone || appTimezone
     const baseDateForInput = eventDoc.startTime || eventDoc.date
-    const { dateStr: eventDateForInput } = utcToAppTimeFormInputs(baseDateForInput, appTimezone)
-    const { timeStr: startTimeForInput } = utcToAppTimeFormInputs(eventDoc.startTime, appTimezone)
-    const { timeStr: endTimeForInput } = utcToAppTimeFormInputs(eventDoc.endTime, appTimezone)
+    const { dateStr: eventDateForInput } = utcToAppTimeFormInputs(baseDateForInput, eventTimezone)
+    const { timeStr: startTimeForInput } = utcToAppTimeFormInputs(eventDoc.startTime, eventTimezone)
+    const { timeStr: endTimeForInput } = utcToAppTimeFormInputs(eventDoc.endTime, eventTimezone)
 
     return {
       eventName: eventDoc.name || '',
@@ -469,6 +472,7 @@ const Dashboard = () => {
       eventInfo: eventDoc.eventInfo || '',
       latitude: resolvedLatitude,
       longitude: resolvedLongitude,
+      timezone: eventTimezone,
     }
   }
 
@@ -965,14 +969,14 @@ const Dashboard = () => {
         }
       }
 
-      // 4. Convert app-timezone date/time to UTC for storage
+      // 4. Convert event-timezone date/time to UTC for storage
       // 5. Prepare event data according to database schema
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const eventPayload: any = {
         name: eventData.eventName,
-        date: appTimeToUTC(eventData.eventDate, '00:00', appTimezone).toISOString(),
-        startTime: appTimeToUTC(eventData.eventDate, eventData.startTime, appTimezone).toISOString(),
-        endTime: appTimeToUTC(eventData.eventDate, eventData.endTime, appTimezone).toISOString(),
+        date: appTimeToUTC(eventData.eventDate, '00:00', eventData.timezone).toISOString(),
+        startTime: appTimeToUTC(eventData.eventDate, eventData.startTime, eventData.timezone).toISOString(),
+        endTime: appTimeToUTC(eventData.eventDate, eventData.endTime, eventData.timezone).toISOString(),
         city: eventData.city,
         address: eventData.address,
         state: eventData.state,
@@ -987,6 +991,7 @@ const Dashboard = () => {
         brandDescription: eventData.brandDescription || '',
         isArchived: false,
         isHidden: false,
+        timezone: eventData.timezone,
       }
 
       // Add location as [longitude, latitude] array if both are provided
@@ -1087,14 +1092,14 @@ const Dashboard = () => {
         }
       }
 
-      // 4. Convert app-timezone date/time to UTC for storage
+      // 4. Convert event-timezone date/time to UTC for storage
       // 5. Prepare event data according to database schema
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const eventPayload: any = {
         name: eventData.eventName,
-        date: appTimeToUTC(eventData.eventDate, '00:00', appTimezone).toISOString(),
-        startTime: appTimeToUTC(eventData.eventDate, eventData.startTime, appTimezone).toISOString(),
-        endTime: appTimeToUTC(eventData.eventDate, eventData.endTime, appTimezone).toISOString(),
+        date: appTimeToUTC(eventData.eventDate, '00:00', eventData.timezone).toISOString(),
+        startTime: appTimeToUTC(eventData.eventDate, eventData.startTime, eventData.timezone).toISOString(),
+        endTime: appTimeToUTC(eventData.eventDate, eventData.endTime, eventData.timezone).toISOString(),
         city: eventData.city,
         address: eventData.address,
         state: eventData.state,
@@ -1107,6 +1112,7 @@ const Dashboard = () => {
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
         brandDescription: eventData.brandDescription !== undefined ? eventData.brandDescription : (selectedEventDoc.brandDescription ?? ''),
+        timezone: eventData.timezone ?? selectedEventDoc.timezone,
       }
 
       // Add location as [longitude, latitude] array if both are provided

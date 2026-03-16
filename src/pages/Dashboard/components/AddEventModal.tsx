@@ -9,6 +9,8 @@ import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
 import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
 import { useNotificationStore } from '../../../stores/notificationStore'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { DEFAULT_APP_TIMEZONE } from '../../../lib/dateUtils'
+import { TIMEZONE_OPTIONS } from '../../../stores/timezoneStore'
 
 interface Category extends Models.Document {
   title: string
@@ -45,6 +47,7 @@ interface EventData {
   latitude?: string
   longitude?: string
   locationName?: string
+  timezone?: string
 }
 
 interface AddEventModalProps {
@@ -79,6 +82,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     eventInfo: '',
     latitude: '',
     longitude: '',
+    timezone: DEFAULT_APP_TIMEZONE,
   }
   
   const [formData, setFormData] = useState<EventData>(initialFormData)
@@ -133,6 +137,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             eventInfo: initialData.eventInfo || '',
             latitude: initialData.latitude || '',
             longitude: initialData.longitude || '',
+            timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
           } : {
             eventName: '',
             eventDate: '',
@@ -154,6 +159,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             eventInfo: '',
             latitude: '',
             longitude: '',
+            timezone: DEFAULT_APP_TIMEZONE,
           }
           
           setFormData(newInitialData)
@@ -709,6 +715,25 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
+            </div>
+
+            {/* Timezone */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Timezone <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.timezone}
+                onChange={(e) => handleInputChange('timezone', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              >
+                {TIMEZONE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Start Time */}
