@@ -441,7 +441,9 @@ const Dashboard = () => {
 
     // Derive date and time strings for form inputs using the configured app timezone
     // to avoid device-local timezone shifts that can move events to previous/next day.
-    const { dateStr: eventDateForInput } = utcToAppTimeFormInputs(eventDoc.date, appTimezone)
+    // Use startTime when available (matches EventsTable display logic), otherwise fall back to date.
+    const baseDateForInput = eventDoc.startTime || eventDoc.date
+    const { dateStr: eventDateForInput } = utcToAppTimeFormInputs(baseDateForInput, appTimezone)
     const { timeStr: startTimeForInput } = utcToAppTimeFormInputs(eventDoc.startTime, appTimezone)
     const { timeStr: endTimeForInput } = utcToAppTimeFormInputs(eventDoc.endTime, appTimezone)
 
