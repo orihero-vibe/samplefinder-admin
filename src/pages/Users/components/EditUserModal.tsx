@@ -476,7 +476,7 @@ const EditUserModal = ({
           {/* Blocked Status Banner */}
           {formData.isBlocked && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
-              <Icon icon="mdi:alert-circle" className="w-6 h-6 text-red-600 flex-shrink-0" />
+              <Icon icon="mdi:alert-circle" className="w-6 h-6 text-red-600 shrink-0" />
               <div>
                 <h3 className="text-sm font-semibold text-red-900">User is Currently Blocked</h3>
                 <p className="text-xs text-red-700 mt-1">
@@ -873,16 +873,13 @@ const EditUserModal = ({
               {/* Referral Code */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Referral Code <span className="text-red-500">*</span>
+                  Referral Code
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter Referral Code"
-                  value={formData.referralCode}
-                  onChange={(e) => handleInputChange('referralCode', e.target.value)}
-                  required
-                  disabled
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent bg-gray-100 cursor-not-allowed"
+                  readOnly
+                  value={formData.referralCode || ''}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
               </div>
 
