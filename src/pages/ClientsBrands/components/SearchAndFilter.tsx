@@ -47,6 +47,10 @@ const SearchAndFilter = ({
     const sortLabels: Record<string, string> = {
       name: 'Client Name',
       $createdAt: 'Join Date',
+      totalEvents: 'Total Events',
+      numberOfFavorites: 'Number of Favorites',
+      numberOfCheckIns: 'Number of Check Ins',
+      totalPoints: 'Total Points',
     }
     const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
     return `${sortLabels[sortBy] || 'Sort'} ${orderIcon}`
@@ -79,6 +83,10 @@ const SearchAndFilter = ({
         >
           <option value="$createdAt">Sort by: Join Date</option>
           <option value="name">Sort by: Client Name</option>
+          <option value="totalEvents">Sort by: Total Events</option>
+          <option value="numberOfFavorites">Sort by: Number of Favorites</option>
+          <option value="numberOfCheckIns">Sort by: Number of Check Ins</option>
+          <option value="totalPoints">Sort by: Total Points</option>
         </select>
         <button
           onClick={handleSortOrderToggle}

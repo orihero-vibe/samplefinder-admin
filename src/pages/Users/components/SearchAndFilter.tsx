@@ -7,6 +7,8 @@ interface SearchAndFilterProps {
   onTierFilterChange: (value: string) => void
   sortBy: string
   onSortByChange: (value: string) => void
+  sortOrder: 'asc' | 'desc'
+  onSortOrderChange: (order: 'asc' | 'desc') => void
 }
 
 const SearchAndFilter = ({
@@ -16,7 +18,23 @@ const SearchAndFilter = ({
   onTierFilterChange,
   sortBy,
   onSortByChange,
+  sortOrder,
+  onSortOrderChange,
 }: SearchAndFilterProps) => {
+  const getSortDisplayText = () => {
+    const sortLabels: Record<string, string> = {
+      createdAt: 'Date',
+      name: 'Name',
+      points: 'Points',
+      events: 'Check Ins',
+      reviews: 'Reviews',
+      email: 'Email',
+      tierLevel: 'Tier Level',
+      dob: 'Date of Birth',
+    }
+    const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
+    return `Sort by: ${sortLabels[sortBy] || 'Date'} ${orderIcon}`
+  }
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
       <div className="flex items-center gap-2 mb-4">
@@ -54,12 +72,26 @@ const SearchAndFilter = ({
           onChange={(e) => onSortByChange(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
         >
-          <option>Sort by: Date</option>
-          <option>Sort by: Name</option>
-          <option>Sort by: Points</option>
-          <option>Sort by: Events</option>
-          <option>Sort by: Reviews</option>
+          <option value="createdAt">Sort by: Date</option>
+          <option value="name">Sort by: Name</option>
+          <option value="email">Sort by: Email</option>
+          <option value="tierLevel">Sort by: Tier Level</option>
+          <option value="dob">Sort by: Date of Birth</option>
+          <option value="points">Sort by: Points</option>
+          <option value="events">Sort by: Check Ins</option>
+          <option value="reviews">Sort by: Reviews</option>
         </select>
+        <button
+          onClick={() => onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc')}
+          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-gray-700"
+          title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
+        >
+          <Icon
+            icon={sortOrder === 'asc' ? 'mdi:arrow-up' : 'mdi:arrow-down'}
+            className="w-5 h-5"
+          />
+          {getSortDisplayText()}
+        </button>
       </div>
     </div>
   )

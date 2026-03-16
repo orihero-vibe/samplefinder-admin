@@ -112,50 +112,72 @@ const ClientsBrands = () => {
         queries.push(Query.contains('name', trimmedSearch))
       }
       
-      // Apply sorting
-      const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
-      if (sortBy === 'name') {
-        queries.push(orderMethod('name'))
-      } else if (sortBy === '$createdAt') {
-        queries.push(orderMethod('$createdAt'))
-      }
-      
-      // Add pagination
-      queries.push(Query.limit(pageSize))
-      queries.push(Query.offset((page - 1) * pageSize))
-      
-      // Fetch clients with search, filters, and pagination
-      const result = await clientsService.list(queries)
-      
-      // Extract pagination metadata
-      const total = result.total
-      const totalPagesCount = Math.ceil(total / pageSize)
-      setTotalClients(total)
-      setTotalPages(totalPagesCount)
-      
-      // Handle edge case: if current page exceeds total pages, reset to last valid page or page 1
-      if (totalPagesCount > 0 && page > totalPagesCount) {
-        const lastValidPage = totalPagesCount
-        setCurrentPage(lastValidPage)
-        if (page !== lastValidPage) {
-          return fetchClients(lastValidPage)
+      // Stats-based sort (totalEvents, numberOfFavorites, etc.) requires fetching more and sorting client-side
+      const isStatsSort =
+        sortBy === 'totalEvents' ||
+        sortBy === 'numberOfFavorites' ||
+        sortBy === 'numberOfCheckIns' ||
+        sortBy === 'totalPoints'
+
+      if (!isStatsSort) {
+        const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
+        if (sortBy === 'name') {
+          queries.push(orderMethod('name'))
+        } else {
+          queries.push(orderMethod('$createdAt'))
         }
-      } else if (totalPagesCount === 0) {
-        setCurrentPage(1)
+      } else {
+        queries.push(Query.orderDesc('$createdAt')) // default order for the big fetch
       }
-      
-      // Get client IDs for stats computation
+
+      if (isStatsSort) {
+        queries.push(Query.limit(500))
+        queries.push(Query.offset(0))
+      } else {
+        queries.push(Query.limit(pageSize))
+        queries.push(Query.offset((page - 1) * pageSize))
+      }
+
+      const result = await clientsService.list(queries)
+
       const clientIds = result.documents.map(doc => doc.$id)
-      
-      // Fetch stats for all clients on this page
       const statsMap = await clientsService.getClientsStats(clientIds)
-      
-      // Transform clients with stats
-      const transformedClients = result.documents.map(doc => {
+
+      let transformedClients = result.documents.map(doc => {
         const stats = statsMap.get(doc.$id)
         return transformToUIClient(doc, stats)
       })
-      
+
+      if (isStatsSort) {
+        const dir = sortOrder === 'asc' ? 1 : -1
+        transformedClients = [...transformedClients].sort((a, b) => {
+          const aVal = a[sortBy as keyof UIClient] as number
+          const bVal = b[sortBy as keyof UIClient] as number
+          return dir * (Number(aVal) - Number(bVal))
+        })
+        const total = transformedClients.length
+        const totalPagesCount = Math.ceil(total / pageSize)
+        setTotalClients(total)
+        setTotalPages(totalPagesCount)
+        if (totalPagesCount > 0 && page > totalPagesCount) {
+          const lastValidPage = totalPagesCount
+          setCurrentPage(lastValidPage)
+          return fetchClients(lastValidPage)
+        }
+        if (totalPagesCount === 0) setCurrentPage(1)
+        transformedClients = transformedClients.slice((page - 1) * pageSize, page * pageSize)
+      } else {
+        const total = result.total
+        const totalPagesCount = Math.ceil(total / pageSize)
+        setTotalClients(total)
+        setTotalPages(totalPagesCount)
+        if (totalPagesCount > 0 && page > totalPagesCount) {
+          const lastValidPage = totalPagesCount
+          setCurrentPage(lastValidPage)
+          if (page !== lastValidPage) return fetchClients(lastValidPage)
+        } else if (totalPagesCount === 0) setCurrentPage(1)
+      }
+
       setClients(transformedClients)
       setCurrentPage(page)
     } catch (err) {
