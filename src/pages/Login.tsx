@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { AuthLayout, Logo, AuthHeader, Input, Checkbox, Button } from '../components'
+import { AuthLayout, AppLogo, AuthHeader, Input, Checkbox, Button } from '../components'
 import { useAuthStore } from '../stores/authStore'
 import { useNotificationStore } from '../stores/notificationStore'
 
@@ -70,7 +70,14 @@ const Login = () => {
 
   return (
     <AuthLayout>
-      <Logo />
+      <div className="flex flex-col items-center gap-4 mb-12 w-full">
+        <AppLogo variant="icon" iconClassName="h-10 sm:h-12 w-auto" />
+        <AppLogo
+          variant="text"
+          className="max-w-full"
+          textClassName="h-9 w-auto max-w-full"
+        />
+      </div>
       
       <AuthHeader
         title="Log In"
