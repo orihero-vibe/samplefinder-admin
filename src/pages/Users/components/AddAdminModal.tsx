@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { trimFormStrings } from '../../../lib/formUtils'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '../../../components'
 
 interface AddAdminModalProps {
   isOpen: boolean
@@ -15,18 +17,25 @@ interface AddAdminModalProps {
 }
 
 const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     image: null as File | null,
     firstName: '',
     lastName: '',
     email: '',
     password: '',
-  })
+  }
+
+  const [formData, setFormData] = useState(initialFormData)
 
   const [showPassword, setShowPassword] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState('')
   const [formError, setFormError] = useState('')
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const initialDataRef = useRef(initialFormData)
+
+  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Password validation: no spaces, min 8 chars, at least one letter, one number, and one uppercase
   const validatePassword = (password: string): string => {
@@ -38,8 +47,6 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
     if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter'
     return ''
   }
-
-  if (!isOpen) return null
 
   const handleInputChange = (field: string, value: string) => {
     setFormError('')
@@ -93,31 +100,36 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
     setPasswordError(pwdError)
     if (pwdError) return
 
+    setIsSubmitting(true)
     onSave(trimmed)
     // Reset form
-    setFormData({
-      image: null,
-      firstName: '',
-      lastName: '',
-      email: '',
-      password: '',
-    })
+    setFormData(initialFormData)
+    initialDataRef.current = initialFormData
     setImagePreview(null)
     setShowPassword(false)
     setPasswordError('')
     setFormError('')
+    setShowUnsavedChangesModal(false)
+    setIsSubmitting(false)
     onClose()
   }
 
   const handleClose = () => {
-    // Reset form on close
-    setFormData({
-      image: null,
-      firstName: '',
-      lastName: '',
-      email: '',
-      password: '',
-    })
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      setFormData(initialFormData)
+      setImagePreview(null)
+      setShowPassword(false)
+      setPasswordError('')
+      setFormError('')
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
+    setFormData(initialFormData)
     setImagePreview(null)
     setShowPassword(false)
     setPasswordError('')
@@ -125,16 +137,22 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
     onClose()
   }
 
+  if (!isOpen) return null
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+    <>
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+
+        {/* Modal */}
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div>
@@ -298,6 +316,7 @@ const AddAdminModal = ({ isOpen, onClose, onSave }: AddAdminModalProps) => {
         </form>
       </div>
     </div>
+    </>
   )
 }
 

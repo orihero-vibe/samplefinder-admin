@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { categoriesService } from '../../../lib/services'
 import { trimFormStrings } from '../../../lib/formUtils'
+import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '../../../components'
 
 interface EditCategoryModalProps {
   isOpen: boolean
@@ -15,11 +17,20 @@ interface EditCategoryModalProps {
 }
 
 const EditCategoryModal = ({ isOpen, onClose, onSave, initialData, categoryId }: EditCategoryModalProps) => {
+  const initialFormData = {
+    title: '',
+    isAdult: false,
+  }
+
   const [title, setTitle] = useState('')
   const [isAdult, setIsAdult] = useState(false)
   const [showTooltip, setShowTooltip] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
+  const initialDataRef = useRef(initialFormData)
+
+  const hasUnsavedChanges = useUnsavedChanges({ title, isAdult }, initialDataRef.current, isOpen)
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
@@ -29,6 +40,10 @@ const EditCategoryModal = ({ isOpen, onClose, onSave, initialData, categoryId }:
       setShowTooltip(false)
       setError(null)
       setIsSubmitting(false)
+      initialDataRef.current = {
+        title: initialData.title || '',
+        isAdult: initialData.isAdult ?? false,
+      }
     }
   }, [isOpen, initialData])
 
@@ -55,6 +70,8 @@ const EditCategoryModal = ({ isOpen, onClose, onSave, initialData, categoryId }:
       }
 
       await onSave({ title: trimmed.title, isAdult: trimmed.isAdult })
+      setShowUnsavedChangesModal(false)
+      onClose()
     } catch (err) {
       // Error is handled by parent component via notification
       // Only set local error if it's not already set (duplicate check sets it before this)
@@ -65,19 +82,32 @@ const EditCategoryModal = ({ isOpen, onClose, onSave, initialData, categoryId }:
   }
 
   const handleClose = () => {
+    if (hasUnsavedChanges && !isSubmitting) {
+      setShowUnsavedChangesModal(true)
+    } else {
+      onClose()
+    }
+  }
+
+  const handleDiscardChanges = () => {
+    setShowUnsavedChangesModal(false)
     onClose()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
+    <>
+      <UnsavedChangesModal
+        isOpen={showUnsavedChangesModal}
+        onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md m-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+
+        {/* Modal */}
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md m-4">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-2xl font-bold text-gray-900">Edit Category</h2>
@@ -185,6 +215,7 @@ const EditCategoryModal = ({ isOpen, onClose, onSave, initialData, categoryId }:
         </form>
       </div>
     </div>
+    </>
   )
 }
 

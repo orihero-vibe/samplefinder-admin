@@ -188,19 +188,16 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
       
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={isSubmitting ? undefined : handleClose}
-      />
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+        {/* Modal */}
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div>
