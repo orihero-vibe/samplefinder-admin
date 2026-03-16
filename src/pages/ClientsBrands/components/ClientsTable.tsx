@@ -95,7 +95,17 @@ const ClientsTable = ({
               </tr>
             ) : (
             clients.map((client) => (
-              <tr key={client.id || client.clientName} className="hover:bg-gray-50">
+              <tr
+                key={client.id || client.clientName}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={(e) => {
+                  const target = e.target as HTMLElement
+                  if (target.closest('button')) {
+                    return
+                  }
+                  onEditClick(client)
+                }}
+              >
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                   {client.clientName}
                 </td>
@@ -115,21 +125,18 @@ const ClientsTable = ({
                   {client.joinDate}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="flex items-center gap-3">
+                  <div
+                    className="flex items-center gap-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onEditClick(client)
-                      }}
+                      onClick={() => onEditClick(client)}
                       className="hover:text-blue-600 transition-colors"
                     >
                       <Icon icon="mdi:pencil" className="w-5 h-5" />
                     </button>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDeleteClick(client)
-                      }}
+                      onClick={() => onDeleteClick(client)}
                       className="hover:text-red-600 transition-colors"
                     >
                       <Icon icon="mdi:trash-can" className="w-5 h-5" />

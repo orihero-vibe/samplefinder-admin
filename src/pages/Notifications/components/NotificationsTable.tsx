@@ -157,7 +157,17 @@ const NotificationsTable = ({
               </tr>
             ) : (
             notifications.map((notification) => (
-              <tr key={notification.id} className="hover:bg-gray-50">
+              <tr
+                key={notification.id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={(e) => {
+                  const target = e.target as HTMLElement
+                  if (target.closest('button')) {
+                    return
+                  }
+                  onEditClick(notification)
+                }}
+              >
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {notification.title}
                 </td>
@@ -192,7 +202,10 @@ const NotificationsTable = ({
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="flex items-center gap-3">
+                  <div
+                    className="flex items-center gap-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       onClick={() => onEditClick(notification)}
                       className="hover:text-blue-600 transition-colors"

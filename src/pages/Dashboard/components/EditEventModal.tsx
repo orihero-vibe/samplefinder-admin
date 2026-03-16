@@ -8,6 +8,8 @@ import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
 import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
 import { useNotificationStore } from '../../../stores/notificationStore'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { DEFAULT_APP_TIMEZONE } from '../../../lib/dateUtils'
+import { TIMEZONE_OPTIONS } from '../../../stores/timezoneStore'
 
 interface EventData {
   eventName?: string
@@ -30,6 +32,7 @@ interface EventData {
   eventInfo?: string
   latitude?: string
   longitude?: string
+  timezone?: string
 }
 
 interface Category extends Models.Document {
@@ -77,7 +80,7 @@ const EditEventModal = ({
   isHidden = false,
 }: EditEventModalProps) => {
   const { addNotification } = useNotificationStore()
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<EventData>({
     eventName: '',
     eventDate: '',
     startTime: '',
@@ -97,6 +100,7 @@ const EditEventModal = ({
     eventInfo: '',
     latitude: '',
     longitude: '',
+    timezone: DEFAULT_APP_TIMEZONE,
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -109,7 +113,11 @@ const EditEventModal = ({
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
   const initialDataRef = useRef(formData)
   
-  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
+  const hasUnsavedChanges = useUnsavedChanges(
+    formData as Record<string, unknown>,
+    initialDataRef.current as Record<string, unknown>,
+    isOpen
+  )
 
   useEffect(() => {
     if (initialData && isOpen) {
@@ -198,6 +206,7 @@ const EditEventModal = ({
               eventInfo: initialData.eventInfo || '',
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
+              timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
             
             setFormData(formDataToSet)
@@ -226,6 +235,7 @@ const EditEventModal = ({
               eventInfo: initialData.eventInfo || '',
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
+              timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
             
             setFormData(formDataToSet)
@@ -254,6 +264,7 @@ const EditEventModal = ({
             eventInfo: initialData.eventInfo || '',
             latitude: initialData.latitude || '',
             longitude: initialData.longitude || '',
+            timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
           }
           
           setFormData(formDataToSet)
@@ -323,7 +334,7 @@ const EditEventModal = ({
   const handleRemoveProduct = (type: string) => {
     setFormData((prev) => ({
       ...prev,
-      products: prev.products.filter((t) => t !== type),
+      products: (prev.products ?? []).filter((t) => t !== type),
     }))
   }
 
@@ -517,16 +528,13 @@ const EditEventModal = ({
       
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-          onClick={isSubmitting ? undefined : handleClose}
-        />
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
         {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto m-4">
@@ -721,6 +729,25 @@ const EditEventModal = ({
               />
             </div>
 
+            {/* Timezone */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Timezone <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.timezone}
+                onChange={(e) => handleInputChange('timezone', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              >
+                {TIMEZONE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Start Time */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -758,10 +785,10 @@ const EditEventModal = ({
                 value=""
                 onChange={(e) => {
                   const selectedProduct = e.target.value
-                  if (selectedProduct && !formData.products.includes(selectedProduct)) {
+                  if (selectedProduct && !(formData.products ?? []).includes(selectedProduct)) {
                     setFormData((prev) => ({
                       ...prev,
-                      products: [...prev.products, selectedProduct],
+                      products: [...(prev.products ?? []), selectedProduct],
                     }))
                   }
                 }}
@@ -779,16 +806,16 @@ const EditEventModal = ({
                   <option 
                     key={index} 
                     value={product}
-                    disabled={formData.products.includes(product)}
+                    disabled={(formData.products ?? []).includes(product)}
                   >
                     {product}
                   </option>
                 ))}
               </select>
               {/* Selected Products */}
-              {formData.products.length > 0 && (
+              {(formData.products ?? []).length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {formData.products.map((product, index) => (
+                  {(formData.products ?? []).map((product, index) => (
                     <span
                       key={index}
                       className="inline-flex items-center gap-1 px-3 py-1 bg-[#1D0A74]/10 text-[#1D0A74] rounded-full text-sm"

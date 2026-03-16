@@ -1,11 +1,10 @@
 import type { ReactNode } from 'react'
-import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import Notification from './Notification'
+import AppLogo from './AppLogo'
 import { useAuthStore } from '../stores/authStore'
 import { useNotificationStore } from '../stores/notificationStore'
-import { useTimezoneStore } from '../stores/timezoneStore'
 
 interface DashboardLayoutProps {
   children: ReactNode
@@ -16,36 +15,6 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
   const { addNotification } = useNotificationStore()
-  const {
-    appTimezone,
-    fetchAppTimezone,
-    setAppTimezoneAndPersist,
-    getTimezoneOptions,
-  } = useTimezoneStore()
-
-  useEffect(() => {
-    fetchAppTimezone()
-  }, [fetchAppTimezone])
-
-  const handleTimezoneChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const iana = e.target.value
-    try {
-      await setAppTimezoneAndPersist(iana)
-      addNotification({
-        type: 'success',
-        title: 'Timezone updated',
-        message: 'Refreshing to show all times in the selected timezone.',
-        duration: 2000,
-      })
-      window.location.reload()
-    } catch {
-      addNotification({
-        type: 'error',
-        title: 'Failed to save timezone',
-        message: 'Please try again.',
-      })
-    }
-  }
 
   const handleLogout = async () => {
     try {
@@ -107,30 +76,13 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-full">
         {/* Logo */}
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center gap-2">
-            <Icon icon="mdi:map-marker" className="w-8 h-8 text-[#1D0A74]" />
-            <span className="text-xl font-semibold text-[#1D0A74]">SampleFinder</span>
-          </div>
-        </div>
-
-        {/* Timezone selector */}
-        <div className="px-4 py-3 border-b border-gray-200">
-          <label htmlFor="app-timezone" className="block text-xs font-medium text-gray-500 mb-1">
-            Timezone
-          </label>
-          <select
-            id="app-timezone"
-            value={appTimezone}
-            onChange={handleTimezoneChange}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent bg-white"
-          >
-            {getTimezoneOptions().map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+        <div className="p-6 pb-4 border-b border-gray-200">
+          <AppLogo
+            variant="both"
+            className="max-w-full"
+            iconClassName="h-8 w-auto"
+            textClassName="h-6 w-auto max-w-full mt-1"
+          />
         </div>
 
         {/* Navigation */}

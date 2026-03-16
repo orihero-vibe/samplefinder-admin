@@ -734,6 +734,15 @@
                     "required": false,
                     "array": false,
                     "default": null
+                },
+                {
+                    "key": "timezone",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 191,
+                    "default": null,
+                    "encrypt": false
                 }
             ],
             "indexes": []

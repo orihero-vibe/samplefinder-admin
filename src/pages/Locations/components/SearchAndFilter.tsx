@@ -47,6 +47,10 @@ const SearchAndFilter = ({
     const sortLabels: Record<string, string> = {
       name: 'Location Name',
       $createdAt: 'Created Date',
+      address: 'Address',
+      city: 'City',
+      state: 'State',
+      zipCode: 'ZIP Code',
     }
     const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
     return `${sortLabels[sortBy] || 'Sort'} ${orderIcon}`
@@ -79,6 +83,10 @@ const SearchAndFilter = ({
         >
           <option value="$createdAt">Sort by: Created Date</option>
           <option value="name">Sort by: Location Name</option>
+          <option value="address">Sort by: Address</option>
+          <option value="city">Sort by: City</option>
+          <option value="state">Sort by: State</option>
+          <option value="zipCode">Sort by: ZIP Code</option>
         </select>
         <button
           onClick={handleSortOrderToggle}

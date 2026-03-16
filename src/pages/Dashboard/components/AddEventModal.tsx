@@ -9,6 +9,8 @@ import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
 import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
 import { useNotificationStore } from '../../../stores/notificationStore'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import { DEFAULT_APP_TIMEZONE } from '../../../lib/dateUtils'
+import { TIMEZONE_OPTIONS } from '../../../stores/timezoneStore'
 
 interface Category extends Models.Document {
   title: string
@@ -45,6 +47,7 @@ interface EventData {
   latitude?: string
   longitude?: string
   locationName?: string
+  timezone?: string
 }
 
 interface AddEventModalProps {
@@ -58,7 +61,7 @@ interface AddEventModalProps {
 
 const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], initialData }: AddEventModalProps) => {
   const { addNotification } = useNotificationStore()
-  const initialFormData = {
+  const initialFormData: EventData = {
     eventName: '',
     eventDate: '',
     startTime: '',
@@ -70,7 +73,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     category: '',
     products: [] as string[],
     discount: '',
-    discountImage: null as File | null,
+    discountImage: null,
     checkInCode: '',
     brandName: '',
     brandDescription: '',
@@ -79,10 +82,11 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     eventInfo: '',
     latitude: '',
     longitude: '',
+    timezone: DEFAULT_APP_TIMEZONE,
   }
   
-  const [formData, setFormData] = useState(initialFormData)
-  const initialDataRef = useRef(initialFormData)
+  const [formData, setFormData] = useState<EventData>(initialFormData)
+  const initialDataRef = useRef<EventData>(initialFormData)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [availableProducts, setAvailableProducts] = useState<string[]>([])
@@ -95,13 +99,13 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
   const [locationName, setLocationName] = useState('')
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
   
-  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
+  const hasUnsavedChanges = useUnsavedChanges(formData as Record<string, unknown>, initialDataRef.current as Record<string, unknown>, isOpen)
 
   // Reset form when modal opens and fetch default points from settings
   useEffect(() => {
     if (isOpen) {
       // Fetch default points from global settings
-      const fetchDefaults = async () => {
+          const fetchDefaults = async () => {
         try {
           const [defaultCheckInPoints, defaultReviewPoints, checkInCode] = await Promise.all([
             settingsService.getDefaultCheckInPoints(),
@@ -122,8 +126,10 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             category: initialData.category || '',
             products: initialData.products || [],
             discount: initialData.discount || '',
-            discountImage: null, // Don't copy the image for duplicates
-            checkInCode: checkInCode, // Always generate new check-in code
+            // Preserve existing discount image URL when duplicating so it is saved with the new event.
+            discountImage: initialData.discountImage || null,
+            // Always generate new check-in code for the duplicated event.
+            checkInCode: checkInCode,
             brandName: initialData.brandName || '',
             brandDescription: initialData.brandDescription || '',
             checkInPoints: initialData.checkInPoints || defaultCheckInPoints?.toString() || '',
@@ -131,6 +137,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             eventInfo: initialData.eventInfo || '',
             latitude: initialData.latitude || '',
             longitude: initialData.longitude || '',
+            timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
           } : {
             eventName: '',
             eventDate: '',
@@ -152,6 +159,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             eventInfo: '',
             latitude: '',
             longitude: '',
+            timezone: DEFAULT_APP_TIMEZONE,
           }
           
           setFormData(newInitialData)
@@ -300,7 +308,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
   const handleRemoveProduct = (type: string) => {
     setFormData((prev) => ({
       ...prev,
-      products: prev.products.filter((t) => t !== type),
+      products: (prev.products ?? []).filter((t) => t !== type),
     }))
   }
 
@@ -506,7 +514,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
       
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
+        onCancel={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
       />
       
@@ -709,6 +717,25 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
               />
             </div>
 
+            {/* Timezone */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Timezone <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.timezone}
+                onChange={(e) => handleInputChange('timezone', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              >
+                {TIMEZONE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Start Time */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -746,10 +773,10 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                 value=""
                 onChange={(e) => {
                   const selectedProduct = e.target.value
-                  if (selectedProduct && !formData.products.includes(selectedProduct)) {
+                  if (selectedProduct && !(formData.products ?? []).includes(selectedProduct)) {
                     setFormData((prev) => ({
                       ...prev,
-                      products: [...prev.products, selectedProduct],
+                      products: [...(prev.products ?? []), selectedProduct],
                     }))
                   }
                 }}
@@ -767,16 +794,16 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                   <option 
                     key={index} 
                     value={product}
-                    disabled={formData.products.includes(product)}
+                    disabled={(formData.products ?? []).includes(product)}
                   >
                     {product}
                   </option>
                 ))}
               </select>
               {/* Selected Products */}
-              {formData.products.length > 0 && (
+              {(formData.products ?? []).length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {formData.products.map((product, index) => (
+                  {(formData.products ?? []).map((product, index) => (
                     <span
                       key={index}
                       className="inline-flex items-center gap-1 px-3 py-1 bg-[#1D0A74]/10 text-[#1D0A74] rounded-full text-sm"
@@ -908,8 +935,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
 
                 {/* Location Picker */}
                 <LocationPicker
-                  latitude={formData.latitude}
-                  longitude={formData.longitude}
+                  latitude={formData.latitude ?? ''}
+                  longitude={formData.longitude ?? ''}
                   onLocationChange={(lat, lng) => {
                     setFormData((prev) => ({
                       ...prev,

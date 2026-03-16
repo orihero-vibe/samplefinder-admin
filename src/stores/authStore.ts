@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { account } from '../lib/appwrite'
-import { ID, type Models } from 'appwrite'
-import { userProfilesService, type UserProfile } from '../lib/services'
+import { type Models } from 'appwrite'
+import { appUsersService, userProfilesService, type UserProfile } from '../lib/services'
 
 interface User extends Omit<Models.User<Models.Preferences>, 'name' | 'email'> {
   name?: string
@@ -335,11 +335,30 @@ export const useAuthStore = create<AuthState>((set) => ({
   register: async (email: string, password: string, name?: string) => {
     try {
       set({ isLoading: true, error: null })
-      await account.create({ userId: ID.unique(), email, password, name })
-      // Optionally create a session after registration
+      // This avoids creating Auth-only users that have no `user_profiles` row.
+      await appUsersService.create({
+        email,
+        password,
+        firstname: name ?? '',
+        lastname: '',
+        username: '',
+        phoneNumber: '',
+        role: 'admin',
+        tierLevel: '',
+        totalPoints: 0,
+        dob: '',
+      })
+
       await account.createEmailPasswordSession({ email, password })
       const user = await account.get()
-      set({ user, isAuthenticated: true, isLoading: false })
+      const userProfile = await userProfilesService.findByAuthID(user.$id)
+
+      set({
+        user,
+        userProfile: userProfile ?? null,
+        isAuthenticated: true,
+        isLoading: false,
+      })
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to register. Please try again.'
       set({

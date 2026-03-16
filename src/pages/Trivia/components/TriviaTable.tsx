@@ -191,7 +191,17 @@ const TriviaTable = ({
               </tr>
             ) : (
               triviaQuizzes.map((trivia) => (
-                <tr key={trivia.id} className="hover:bg-gray-50">
+                <tr
+                  key={trivia.id}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement
+                    if (target.closest('button')) {
+                      return
+                    }
+                    onEditClick(trivia)
+                  }}
+                >
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                     {trivia.question.length > 30 
                       ? `${trivia.question.substring(0, 30)}...` 
@@ -259,7 +269,10 @@ const TriviaTable = ({
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <div className="flex items-center gap-3">
+                    <div
+                      className="flex items-center gap-3"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <button
                         onClick={() => onViewClick(trivia)}
                         className="hover:text-blue-600 transition-colors"

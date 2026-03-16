@@ -527,6 +527,7 @@ export interface EventDocument extends Models.Document {
   locationId?: string // Location document ID (relationship) - used when event is linked to a Location
   client?: string // Client ID (relationship)
   categories?: string // Category ID (relationship)
+  timezone?: string // IANA timezone used when creating/editing the event
   [key: string]: unknown
 }
 
@@ -1718,6 +1719,79 @@ export const notificationsService = {
       }
     } catch (error) {
       console.error('Error sending badge notification:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Send a tier-changed notification to a single auth user.
+   * Mirrors the mobile app's `tierChanged` notification semantics.
+   */
+  sendTierNotification: async (
+    authId: string,
+    oldTierName: string | null,
+    newTierName: string
+  ): Promise<void> => {
+    try {
+      if (!appwriteConfig.functions.notificationFunctionId) {
+        throw new Error('Notification function ID is not configured')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.notificationFunctionId,
+        xpath: '/send-tier-notification',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({
+          userId: authId,
+          oldTierName: oldTierName ?? undefined,
+          newTierName,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (execution.status === 'failed') {
+        const errorMessage = execution.responseBody
+          ? (() => {
+              try {
+                return JSON.parse(execution.responseBody).error
+              } catch {
+                return execution.responseBody
+              }
+            })()
+          : 'Function execution failed'
+        throw new Error(errorMessage)
+      }
+
+      if (execution.responseStatusCode && execution.responseStatusCode >= 400) {
+        const errorMessage = execution.responseBody
+          ? (() => {
+              try {
+                return JSON.parse(execution.responseBody).error
+              } catch {
+                return execution.responseBody
+              }
+            })()
+          : `Function returned status ${execution.responseStatusCode}`
+        throw new Error(errorMessage)
+      }
+
+      const responseData = execution.responseBody
+        ? (() => {
+            try {
+              return JSON.parse(execution.responseBody) as { success?: boolean; error?: string }
+            } catch {
+              return null
+            }
+          })()
+        : null
+
+      if (!responseData?.success) {
+        throw new Error(
+          responseData?.error ?? 'Tier notification function returned unexpected response'
+        )
+      }
+    } catch (error) {
+      console.error('Error sending tier notification:', error)
       throw error
     }
   },

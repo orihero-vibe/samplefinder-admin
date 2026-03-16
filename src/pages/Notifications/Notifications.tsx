@@ -31,7 +31,8 @@ const Notifications = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('All Types')
-  const [sortBy, setSortBy] = useState('Sort by: Date')
+  const [sortBy, setSortBy] = useState<'date' | 'name' | 'recipients' | 'target' | 'timing' | 'type' | 'status'>('date')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingNotification, setEditingNotification] = useState<{ id: string; data: NotificationFormData } | null>(null)
   const [duplicatingData, setDuplicatingData] = useState<NotificationFormData | null>(null)
@@ -437,21 +438,44 @@ const Notifications = () => {
   }
 
   const sortedNotifications = [...notifications].sort((a, b) => {
-    if (sortBy === 'Sort by: Date') {
+    const direction = sortOrder === 'asc' ? 1 : -1
+
+    if (sortBy === 'date') {
       const parseDate = (dateStr: string): Date => {
         const [month, day, year] = dateStr.split('/')
-        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+        return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10))
       }
       const dateA = parseDate(a.date)
       const dateB = parseDate(b.date)
-      return dateB.getTime() - dateA.getTime()
+      return direction * (dateA.getTime() - dateB.getTime())
     }
-    if (sortBy === 'Sort by: Name') {
-      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
+
+    if (sortBy === 'name') {
+      return (
+        direction *
+        a.title.localeCompare(b.title, undefined, {
+          sensitivity: 'base',
+        })
+      )
     }
-    if (sortBy === 'Sort by: Recipients') {
-      return b.recipients - a.recipients
+
+    if (sortBy === 'recipients') {
+      return direction * (a.recipients - b.recipients)
     }
+
+    if (sortBy === 'target') {
+      return direction * (a.target.localeCompare(b.target, undefined, { sensitivity: 'base' }))
+    }
+    if (sortBy === 'timing') {
+      return direction * (a.timing.localeCompare(b.timing, undefined, { sensitivity: 'base' }))
+    }
+    if (sortBy === 'type') {
+      return direction * (a.type.localeCompare(b.type, undefined, { sensitivity: 'base' }))
+    }
+    if (sortBy === 'status') {
+      return direction * (a.status.localeCompare(b.status, undefined, { sensitivity: 'base' }))
+    }
+
     return 0
   })
 
@@ -466,7 +490,9 @@ const Notifications = () => {
           typeFilter={typeFilter}
           onTypeFilterChange={setTypeFilter}
           sortBy={sortBy}
-          onSortByChange={setSortBy}
+          onSortByChange={(value) => setSortBy(value as typeof sortBy)}
+          sortOrder={sortOrder}
+          onSortOrderChange={setSortOrder}
         />
         <NotificationsTable
           notifications={sortedNotifications}

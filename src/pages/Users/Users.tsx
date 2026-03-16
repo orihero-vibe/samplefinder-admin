@@ -22,7 +22,8 @@ const Users = () => {
   const { addNotification } = useNotificationStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [tierFilter, setTierFilter] = useState('All Tiers')
-  const [sortBy, setSortBy] = useState('Sort by: Date')
+  const [sortBy, setSortBy] = useState<'createdAt' | 'name' | 'points' | 'events' | 'reviews' | 'email' | 'tierLevel' | 'dob'>('createdAt')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false)
@@ -100,24 +101,30 @@ const Users = () => {
         }
       }
       
-      // Apply sorting based on sortBy value
-      if (sortBy === 'Sort by: Points') {
-        queries.push(Query.orderDesc('totalPoints'))
-      } else if (sortBy === 'Sort by: Name') {
-        queries.push(Query.orderAsc('firstname'))
-      } else if (sortBy === 'Sort by: Events') {
-        queries.push(Query.orderDesc('totalEvents'))
-      } else if (sortBy === 'Sort by: Reviews') {
-        queries.push(Query.orderDesc('totalReviews'))
-      } else {
-        // Default: Sort by: Date
-        queries.push(Query.orderDesc('$createdAt'))
+      // Email sort requires client-side (email may come from Auth); fetch more then sort
+      const isEmailSort = sortBy === 'email'
+      if (!isEmailSort) {
+        const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
+        if (sortBy === 'points') {
+          queries.push(orderMethod('totalPoints'))
+        } else if (sortBy === 'name') {
+          queries.push(orderMethod('firstname'))
+        } else if (sortBy === 'events') {
+          queries.push(orderMethod('totalEvents'))
+        } else if (sortBy === 'reviews') {
+          queries.push(orderMethod('totalReviews'))
+        } else if (sortBy === 'tierLevel') {
+          queries.push(orderMethod('tierLevel'))
+        } else if (sortBy === 'dob') {
+          queries.push(orderMethod('dob'))
+        } else {
+          queries.push(orderMethod('$createdAt'))
+        }
       }
       
-      // For any search (text, email, or phone), fetch more results (up to 500) and filter client-side
-      // so only records that actually match are shown (improves accuracy; server contains() can be inconsistent)
       const hasSearch = trimmedSearch.length > 0
-      if (isEmailSearch || isPhoneSearch || hasSearch) {
+      const needLargeFetch = isEmailSearch || isPhoneSearch || hasSearch || isEmailSort
+      if (needLargeFetch) {
         queries.push(Query.limit(500))
         queries.push(Query.offset(0))
       } else {
@@ -163,6 +170,19 @@ const Users = () => {
         const startIndex = (page - 1) * pageSize
         const endIndex = startIndex + pageSize
         filteredUsers = filteredUsers.slice(startIndex, endIndex)
+      }
+
+      // Email sort: client-side (email from Auth); sort then paginate
+      if (isEmailSort) {
+        const sorted = [...filteredUsers].sort((a, b) => {
+          const ea = (a.email ?? '').toLowerCase()
+          const eb = (b.email ?? '').toLowerCase()
+          const cmp = ea.localeCompare(eb)
+          return sortOrder === 'asc' ? cmp : -cmp
+        })
+        filteredTotal = sorted.length
+        const startIndex = (page - 1) * pageSize
+        filteredUsers = sorted.slice(startIndex, startIndex + pageSize)
       }
 
       // Extract pagination metadata
@@ -303,13 +323,14 @@ const Users = () => {
       fetchUsers(1)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tierFilter, sortBy])
+  }, [tierFilter, sortBy, sortOrder])
 
   // Handle search change; reset tier and sort to default when keyword is removed
   const handleSearchChange = (value: string) => {
     if (value.trim() === '') {
       setTierFilter('All Tiers')
-      setSortBy('Sort by: Date')
+      setSortBy('createdAt')
+      setSortOrder('desc')
     }
     setSearchQuery(value)
     setCurrentPage(1) // Reset to page 1 when search changes
@@ -510,7 +531,9 @@ const Users = () => {
           tierFilter={tierFilter}
           onTierFilterChange={setTierFilter}
           sortBy={sortBy}
-          onSortByChange={setSortBy}
+          onSortByChange={(value) => setSortBy(value as typeof sortBy)}
+          sortOrder={sortOrder}
+          onSortOrderChange={setSortOrder}
         />
         <UsersTable
           users={users}
@@ -631,6 +654,14 @@ const Users = () => {
             const nowAmbassador = updateData.isAmbassador as boolean
             const nowInfluencer = updateData.isInfluencer as boolean
 
+            // Detect tier change before updating (tierLevel is the canonical tier source for the app)
+            const previousTier =
+              (selectedUser.tierLevel != null && String(selectedUser.tierLevel).trim().length > 0)
+                ? String(selectedUser.tierLevel)
+                : null
+            const updatedTierRaw = userData.tierLevel != null ? String(userData.tierLevel).trim() : ''
+            const newTier = updatedTierRaw.length > 0 ? updatedTierRaw : null
+
             // Update user profile in database
             await appUsersService.update(selectedUser.$id, updateData)
 
@@ -658,6 +689,27 @@ const Users = () => {
                   type: 'warning',
                   title: 'Badge notification failed',
                   message,
+                })
+              }
+            }
+
+            // Send tier notification if tier actually changed and we have the auth user ID
+            if (selectedUser.authID && previousTier !== newTier && newTier) {
+              try {
+                await notificationsService.sendTierNotification(
+                  selectedUser.authID,
+                  previousTier,
+                  newTier
+                )
+              } catch (tierError) {
+                console.error('Error sending tier notification:', tierError)
+                addNotification({
+                  type: 'warning',
+                  title: 'Tier notification failed',
+                  message:
+                    tierError instanceof Error
+                      ? tierError.message
+                      : 'Tier notification could not be sent.',
                 })
               }
             }

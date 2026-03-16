@@ -47,7 +47,8 @@ const Trivia = () => {
   const [isListLoading, setIsListLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortBy, setSortBy] = useState('Date')
+  const [sortBy, setSortBy] = useState<'date' | 'name' | 'status' | 'responses' | 'view' | 'skip' | 'incorrect' | 'winners'>('date')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [triviaToDelete, setTriviaToDelete] = useState<TriviaQuiz | null>(null)
   const [isDeletingTrivia, setIsDeletingTrivia] = useState(false)
@@ -228,22 +229,40 @@ const Trivia = () => {
 
       // Apply sorting - sort by original document dates, not formatted strings
       let sortedTrivia = [...transformedTrivia]
-      if (sortBy === 'Date') {
+      const direction = sortOrder === 'asc' ? 1 : -1
+      if (sortBy === 'date') {
         // Sort using original documents before transformation
         const triviaWithDates = documents.map((doc, index) => ({
           trivia: transformedTrivia[index],
           date: doc.startDate ? new Date(doc.startDate).getTime() : (doc.$createdAt ? new Date(doc.$createdAt).getTime() : 0)
         }))
-        triviaWithDates.sort((a, b) => b.date - a.date)
+        triviaWithDates.sort((a, b) => direction * (a.date - b.date))
         sortedTrivia = triviaWithDates.map(item => item.trivia)
-      } else if (sortBy === 'Status') {
+      } else if (sortBy === 'status') {
         sortedTrivia.sort((a, b) => {
-          return a.status.localeCompare(b.status)
+          return direction * a.status.localeCompare(b.status)
         })
-      } else if (sortBy === 'Responses') {
+      } else if (sortBy === 'responses') {
         sortedTrivia.sort((a, b) => {
-          return b.responses - a.responses // Most responses first
+          return direction * (a.responses - b.responses)
         })
+      } else if (sortBy === 'name') {
+        sortedTrivia.sort((a, b) => {
+          return (
+            direction *
+            a.question.localeCompare(b.question, undefined, {
+              sensitivity: 'base',
+            })
+          )
+        })
+      } else if (sortBy === 'view') {
+        sortedTrivia.sort((a, b) => direction * (a.view - b.view))
+      } else if (sortBy === 'skip') {
+        sortedTrivia.sort((a, b) => direction * (a.skip - b.skip))
+      } else if (sortBy === 'incorrect') {
+        sortedTrivia.sort((a, b) => direction * (a.incorrect - b.incorrect))
+      } else if (sortBy === 'winners') {
+        sortedTrivia.sort((a, b) => direction * (a.winnersCount - b.winnersCount))
       }
 
       setTriviaQuizzes(sortedTrivia)
@@ -301,7 +320,7 @@ const Trivia = () => {
       fetchTrivia(1, false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, sortBy, appTimezone])
+  }, [searchQuery, sortBy, sortOrder, appTimezone])
 
   const handleDeleteClick = (trivia: TriviaQuiz) => {
     setTriviaToDelete(trivia)
@@ -458,7 +477,9 @@ const Trivia = () => {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           sortBy={sortBy}
-          onSortChange={setSortBy}
+          onSortChange={(sort) => setSortBy(sort as typeof sortBy)}
+          sortOrder={sortOrder}
+          onSortOrderChange={setSortOrder}
         />
         <TriviaTable
           triviaQuizzes={filteredTrivia}
