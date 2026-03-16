@@ -119,6 +119,48 @@ interface CreateUserRequest {
   dob?: string;
 }
 
+/**
+ * Format: 6 uppercase alphanumeric characters (excluding I, O, 0, 1)
+ */
+function generateReferralCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+async function checkReferralCodeExists(databases: Databases, code: string): Promise<boolean> {
+  try {
+    const result = await databases.listDocuments(
+      DATABASE_ID,
+      USER_PROFILES_TABLE_ID,
+      [Query.equal('referralCode', code), Query.limit(1)]
+    );
+    return (result.total ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function generateUniqueReferralCode(databases: Databases): Promise<string> {
+  let code = generateReferralCode();
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while ((await checkReferralCodeExists(databases, code)) && attempts < maxAttempts) {
+    code = generateReferralCode();
+    attempts++;
+  }
+
+  if (attempts >= maxAttempts) {
+    code = generateReferralCode() + Date.now().toString(36).slice(-2).toUpperCase();
+  }
+
+  return code;
+}
+
 interface TriviaClientDocument {
   $id: string;
   name: string;
@@ -822,6 +864,7 @@ async function createUser(
     log(`Auth user created: ${userId}`);
 
     // 5. Create user profile
+    const referralCode = await generateUniqueReferralCode(databases);
     const profileData: Record<string, unknown> = {
       authID: userId,
       firstname: data.firstname || '',
@@ -832,6 +875,7 @@ async function createUser(
       tierLevel: data.tierLevel || '',
       isBlocked: false,
       idAdult: true,
+      referralCode,
       ...(data.dob?.trim() ? { dob: data.dob.trim().length === 10 ? `${data.dob.trim()}T00:00:00.000Z` : data.dob.trim() } : {}),
     };
 
