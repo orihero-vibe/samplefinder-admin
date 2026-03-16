@@ -631,6 +631,14 @@ const Users = () => {
             const nowAmbassador = updateData.isAmbassador as boolean
             const nowInfluencer = updateData.isInfluencer as boolean
 
+            // Detect tier change before updating (tierLevel is the canonical tier source for the app)
+            const previousTier =
+              (selectedUser.tierLevel != null && String(selectedUser.tierLevel).trim().length > 0)
+                ? String(selectedUser.tierLevel)
+                : null
+            const updatedTierRaw = userData.tierLevel != null ? String(userData.tierLevel).trim() : ''
+            const newTier = updatedTierRaw.length > 0 ? updatedTierRaw : null
+
             // Update user profile in database
             await appUsersService.update(selectedUser.$id, updateData)
 
@@ -658,6 +666,27 @@ const Users = () => {
                   type: 'warning',
                   title: 'Badge notification failed',
                   message,
+                })
+              }
+            }
+
+            // Send tier notification if tier actually changed and we have the auth user ID
+            if (selectedUser.authID && previousTier !== newTier && newTier) {
+              try {
+                await notificationsService.sendTierNotification(
+                  selectedUser.authID,
+                  previousTier,
+                  newTier
+                )
+              } catch (tierError) {
+                console.error('Error sending tier notification:', tierError)
+                addNotification({
+                  type: 'warning',
+                  title: 'Tier notification failed',
+                  message:
+                    tierError instanceof Error
+                      ? tierError.message
+                      : 'Tier notification could not be sent.',
                 })
               }
             }

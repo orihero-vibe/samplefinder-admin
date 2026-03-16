@@ -100,6 +100,12 @@ interface SendBadgeNotificationRequest {
   badgeType: 'ambassador' | 'influencer';
 }
 
+interface SendTierNotificationRequest {
+  userId: string;
+  oldTierName?: string;
+  newTierName: string;
+}
+
 // Constants
 const DATABASE_ID = '69217af50038b9005a61';
 const NOTIFICATIONS_TABLE_ID = 'notifications';
@@ -1306,6 +1312,72 @@ async function sendBadgeNotification(
 }
 
 /**
+ * TIER CHANGED NOTIFICATION
+ * Sends a push notification when a user's tier changes (e.g. via admin panel).
+ * Called via POST /send-tier-notification.
+ */
+async function sendTierNotification(
+  databases: Databases,
+  messaging: Messaging,
+  userId: string,
+  newTierName: string,
+  oldTierName: string | undefined,
+  log: (message: string) => void
+): Promise<{ success: boolean; sentCount: number }> {
+  log(`Tier notification: sending tierChanged notification to auth user ${userId}`);
+
+  const title = `NEW TIER: ${newTierName}!`;
+  const body = `Congratulations, you've reached the ${newTierName} tier! Keep earning points to level up!`;
+
+  const result = await sendPushNotificationToUsers(
+    messaging,
+    [userId],
+    title,
+    body,
+    log,
+    {
+      type: 'tierChanged',
+      oldTierName: oldTierName ?? '',
+      newTierName,
+      screen: 'Promotions',
+    }
+  );
+
+  // Also append to user's in-app notifications
+  try {
+    const profileResult = await databases.listDocuments(
+      DATABASE_ID,
+      USER_PROFILES_TABLE_ID,
+      [Query.equal('authID', userId), Query.limit(1)]
+    );
+
+    if (profileResult.documents.length > 0) {
+      const profile = profileResult.documents[0] as unknown as UserProfile;
+      const entry: UserProfileNotificationEntry = {
+        id: ID.unique(),
+        type: 'tierChanged',
+        title,
+        message: body,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        data: {
+          oldTierName: oldTierName ?? '',
+          newTierName,
+        },
+      };
+
+      await appendNotificationToUserProfile(databases, profile.$id, entry, log);
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`Tier notification: failed to append in-app notification: ${msg}`);
+  }
+
+  log(`Tier notification: sent ${result.sentCount ?? 0}`);
+  return { success: true, sentCount: result.sentCount ?? 0 };
+}
+
+/**
  * Archive events that completed more than 7 days ago (endTime < now - 7 days).
  * Runs on the same cron schedule as event reminders and scheduled notifications.
  */
@@ -1495,6 +1567,50 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
         messaging,
         requestBody.userId,
         requestBody.badgeType,
+        log
+      );
+
+      return res.json(result);
+    }
+
+    // Handle tier notification endpoint (triggered by admin portal)
+    if (req.path === '/send-tier-notification' && req.method === 'POST') {
+      log('Processing send-tier-notification request');
+
+      let requestBody: SendTierNotificationRequest;
+      try {
+        if (!req.body || typeof req.body !== 'object') {
+          throw new Error('Request body is required');
+        }
+        const body = req.body as Record<string, unknown>;
+        if (!body.userId || typeof body.userId !== 'string') {
+          throw new Error('userId is required and must be a string');
+        }
+        if (!body.newTierName || typeof body.newTierName !== 'string') {
+          throw new Error('newTierName is required and must be a string');
+        }
+
+        requestBody = {
+          userId: body.userId,
+          newTierName: body.newTierName,
+          oldTierName:
+            typeof body.oldTierName === 'string' && body.oldTierName.trim().length > 0
+              ? body.oldTierName
+              : undefined,
+        };
+      } catch (validationError: unknown) {
+        const errorMessage =
+          validationError instanceof Error ? validationError.message : String(validationError);
+        error(`Validation error: ${errorMessage}`);
+        return res.json({ success: false, error: errorMessage }, 400);
+      }
+
+      const result = await sendTierNotification(
+        databases,
+        messaging,
+        requestBody.userId,
+        requestBody.newTierName,
+        requestBody.oldTierName,
         log
       );
 
