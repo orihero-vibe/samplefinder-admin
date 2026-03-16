@@ -940,9 +940,11 @@ const Dashboard = () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleCreateEvent = async (eventData: any) => {
     try {
-      // 1. Upload discount image if provided
+      // 1. Use existing discount image URL if provided, otherwise upload new image file if present
       let discountImageURL: string | null = null
-      if (eventData.discountImage && eventData.discountImage instanceof File) {
+      if (typeof eventData.discountImage === 'string' && eventData.discountImage) {
+        discountImageURL = eventData.discountImage
+      } else if (eventData.discountImage && eventData.discountImage instanceof File) {
         discountImageURL = await uploadFile(eventData.discountImage)
       }
 
