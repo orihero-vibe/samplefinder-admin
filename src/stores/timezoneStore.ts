@@ -21,7 +21,7 @@ interface TimezoneState {
   getTimezoneOptions: () => { value: string; label: string }[]
 }
 
-export const useTimezoneStore = create<TimezoneState>((set) => ({
+export const useTimezoneStore = create<TimezoneState>(() => ({
   appTimezone:
     typeof window !== 'undefined'
       ? Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_APP_TIMEZONE

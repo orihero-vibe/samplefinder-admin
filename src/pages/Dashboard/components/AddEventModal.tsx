@@ -514,7 +514,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
       
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
+        onCancel={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
       />
       
