@@ -729,10 +729,24 @@ const Users = () => {
             })
           } catch (err) {
             console.error('Error updating user:', err)
+            const extractedMessage =
+              err instanceof Error
+                ? err.message
+                : typeof err === 'string'
+                  ? err
+                  : typeof (err as { message?: unknown })?.message === 'string'
+                    ? (err as { message?: string }).message
+                    : null
+
+            const normalized = extractedMessage?.toLowerCase() ?? ''
+            const isPhoneDuplicate =
+              normalized.includes('phone number already exists') ||
+              (normalized.includes('phone') && normalized.includes('already exists'))
+
             addNotification({
               type: 'error',
               title: 'Error',
-              message: 'Failed to update user. Please try again.',
+              message: isPhoneDuplicate && extractedMessage ? extractedMessage : 'Failed to update user. Please try again.',
             })
           }
         }}
