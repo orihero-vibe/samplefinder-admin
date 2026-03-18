@@ -316,7 +316,14 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
               maxLength={300}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent resize-none"
             />
-            <p className="text-xs text-gray-500 mt-1">This description will be shown in the Favorites section.</p>
+            <div className="flex items-start justify-between gap-4 mt-1">
+              <p className="text-xs text-gray-500">
+                This description will be shown in the Favorites section.
+              </p>
+              <p className="text-xs text-gray-500 whitespace-nowrap">
+                {formData.description.length}/300
+              </p>
+            </div>
           </div>
 
           {/* Product Type Multi-select */}
