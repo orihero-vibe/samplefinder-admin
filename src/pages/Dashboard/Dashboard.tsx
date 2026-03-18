@@ -855,6 +855,7 @@ const Dashboard = () => {
             address: locationDoc.address || '',
             state: locationDoc.state || '',
             zipCode: locationDoc.zipCode || '',
+            timezone: rowTimezone,
             products: productsString,
             checkInCode,
             checkInPoints,
