@@ -178,6 +178,14 @@ const AddClientModal = ({ isOpen, onClose, onSave }: AddClientModalProps) => {
       })
       return
     }
+    if (trimmed.description && trimmed.description.length > 300) {
+      addNotification({
+        type: 'error',
+        title: 'Brand Description Too Long',
+        message: 'Please limit the brand description to 300 characters.',
+      })
+      return
+    }
 
     // Set loading state immediately for instant UI feedback
     setIsSubmitting(true)

@@ -65,7 +65,6 @@ const Dashboard = () => {
     discountImage?: File | string | null
     checkInCode?: string
     brandName?: string
-    brandDescription?: string
     checkInPoints?: string
     reviewPoints?: string
     eventInfo?: string
@@ -89,7 +88,6 @@ const Dashboard = () => {
     discountImage?: File | string | null
     checkInCode?: string
     brandName?: string
-    brandDescription?: string
     checkInPoints?: string
     reviewPoints?: string
     eventInfo?: string
@@ -466,7 +464,6 @@ const Dashboard = () => {
       discountImage: eventDoc.discountImageURL || null,
       checkInCode: eventDoc.checkInCode || '',
       brandName: brandName,
-      brandDescription: eventDoc.brandDescription || '',
       checkInPoints: eventDoc.checkInPoints?.toString() || '',
       reviewPoints: eventDoc.reviewPoints?.toString() || '',
       eventInfo: eventDoc.eventInfo || '',
@@ -988,7 +985,6 @@ const Dashboard = () => {
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
-        brandDescription: eventData.brandDescription || '',
         isArchived: false,
         isHidden: false,
         timezone: eventData.timezone,
@@ -1111,7 +1107,6 @@ const Dashboard = () => {
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
-        brandDescription: eventData.brandDescription !== undefined ? eventData.brandDescription : (selectedEventDoc.brandDescription ?? ''),
         timezone: eventData.timezone ?? selectedEventDoc.timezone,
       }
 

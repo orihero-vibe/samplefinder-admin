@@ -26,7 +26,6 @@ interface EventData {
   discountImage?: File | string | null
   checkInCode?: string
   brandName?: string
-  brandDescription?: string
   checkInPoints?: string
   reviewPoints?: string
   eventInfo?: string
