@@ -14,7 +14,7 @@ import {
   EditUserModal,
   StatsCards,
 } from './components'
-import { appUsersService, triviaResponsesService, notificationsService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
+import { appUsersService, triviaResponsesService, notificationsService, type AppUser, type UserFormData, statisticsService, type UsersStats, tiersService } from '../../lib/services'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
@@ -45,6 +45,7 @@ const Users = () => {
   const [totalUsers, setTotalUsers] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
+  const [tierOrderMap, setTierOrderMap] = useState<Record<string, number>>({})
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchIdRef = useRef(0)
 
@@ -77,33 +78,15 @@ const Users = () => {
         ]))
       }
       
-      // Apply tier filter based on totalPoints ranges
+      // Apply tier filter by canonical tierLevel field
       if (tierFilter !== 'All Tiers') {
-        switch (tierFilter) {
-          case 'NewbieSampler':
-            queries.push(Query.lessThan('totalPoints', 1000))
-            break
-          case 'SampleFan':
-            queries.push(Query.greaterThanEqual('totalPoints', 1000))
-            queries.push(Query.lessThan('totalPoints', 5000))
-            break
-          case 'SuperSampler':
-            queries.push(Query.greaterThanEqual('totalPoints', 5000))
-            queries.push(Query.lessThan('totalPoints', 25000))
-            break
-          case 'VIS':
-            queries.push(Query.greaterThanEqual('totalPoints', 25000))
-            queries.push(Query.lessThan('totalPoints', 100000))
-            break
-          case 'SampleMaster':
-            queries.push(Query.greaterThanEqual('totalPoints', 100000))
-            break
-        }
+        queries.push(Query.equal('tierLevel', [tierFilter]))
       }
       
       // Email sort requires client-side (email may come from Auth); fetch more then sort
       const isEmailSort = sortBy === 'email'
-      if (!isEmailSort) {
+      const isTierSort = sortBy === 'tierLevel'
+      if (!isEmailSort && !isTierSort) {
         const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
         if (sortBy === 'points') {
           queries.push(orderMethod('totalPoints'))
@@ -113,8 +96,6 @@ const Users = () => {
           queries.push(orderMethod('totalEvents'))
         } else if (sortBy === 'reviews') {
           queries.push(orderMethod('totalReviews'))
-        } else if (sortBy === 'tierLevel') {
-          queries.push(orderMethod('tierLevel'))
         } else if (sortBy === 'dob') {
           queries.push(orderMethod('dob'))
         } else {
@@ -123,7 +104,7 @@ const Users = () => {
       }
       
       const hasSearch = trimmedSearch.length > 0
-      const needLargeFetch = isEmailSearch || isPhoneSearch || hasSearch || isEmailSort
+      const needLargeFetch = isEmailSearch || isPhoneSearch || hasSearch || isEmailSort || isTierSort
       if (needLargeFetch) {
         queries.push(Query.limit(500))
         queries.push(Query.offset(0))
@@ -180,6 +161,32 @@ const Users = () => {
           const cmp = ea.localeCompare(eb)
           return sortOrder === 'asc' ? cmp : -cmp
         })
+        filteredTotal = sorted.length
+        const startIndex = (page - 1) * pageSize
+        filteredUsers = sorted.slice(startIndex, startIndex + pageSize)
+      }
+
+      // Tier sort: client-side by tier order rank (not lexicographic), then paginate
+      if (isTierSort) {
+        const getTierOrder = (tierLevel?: string) => {
+          const tier = String(tierLevel ?? '').trim()
+          if (!tier) return null
+          return tierOrderMap[tier] ?? null
+        }
+
+        const sorted = [...filteredUsers].sort((a, b) => {
+          const orderA = getTierOrder(a.tierLevel)
+          const orderB = getTierOrder(b.tierLevel)
+
+          // Keep unknown/empty tiers at the end regardless of direction
+          if (orderA == null && orderB != null) return 1
+          if (orderA != null && orderB == null) return -1
+          if (orderA == null && orderB == null) return 0
+
+          const cmp = (orderA as number) - (orderB as number)
+          return sortOrder === 'asc' ? cmp : -cmp
+        })
+
         filteredTotal = sorted.length
         const startIndex = (page - 1) * pageSize
         filteredUsers = sorted.slice(startIndex, startIndex + pageSize)
@@ -244,10 +251,29 @@ const Users = () => {
     }
   }
 
+  // Fetch tier metadata for rank-based tier sorting
+  const fetchTierOrder = async () => {
+    try {
+      const tiers = await tiersService.list()
+      const nextTierOrderMap = tiers.reduce<Record<string, number>>((acc, tier, index) => {
+        const tierName = String(tier.name ?? '').trim()
+        if (tierName) {
+          acc[tierName] = Number.isFinite(tier.order) ? Number(tier.order) : index
+        }
+        return acc
+      }, {})
+      setTierOrderMap(nextTierOrderMap)
+    } catch (err) {
+      console.error('Error fetching tier order:', err)
+      // Keep existing map; sorting will gracefully fall back for unknown tiers.
+    }
+  }
+
   // Initial load
   useEffect(() => {
     fetchUsers(1)
     fetchStatistics()
+    fetchTierOrder()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -324,6 +350,14 @@ const Users = () => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tierFilter, sortBy, sortOrder])
+
+  // When tier ranks finish loading, refresh tier sort results once.
+  useEffect(() => {
+    if (!isInitialLoad && sortBy === 'tierLevel') {
+      fetchUsers(1)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tierOrderMap])
 
   // Handle search change; reset tier and sort to default when keyword is removed
   const handleSearchChange = (value: string) => {
