@@ -236,6 +236,18 @@ const formatProducts = (products?: string[]): string => {
 }
 
 /**
+ * Resolve event display timezone:
+ * prefer the timezone saved with the event, fallback to app timezone.
+ */
+const getEventDisplayTimezone = (
+  event: EventDocument,
+  appTimezone?: string
+): string | undefined => {
+  const eventTimezone = typeof event.timezone === 'string' ? event.timezone.trim() : ''
+  return eventTimezone || appTimezone
+}
+
+/**
  * Normalize event products from API (array, comma-separated string, or alternate key).
  * DB may store as string or array; ensures Products column has data in report rows.
  */
@@ -536,6 +548,7 @@ export const exportService = {
     // Map events to report rows (Products column populated via normalizeEventProducts)
     const rows = await Promise.all(
       allDocuments.map(async (event: EventDocument & Record<string, unknown>) => {
+        const eventTimezone = getEventDisplayTimezone(event, appTimezone)
         let brandName = ''
         if (event.client) {
           try {
@@ -550,14 +563,14 @@ export const exportService = {
         const hasDiscount = (event.discount != null && String(event.discount).trim() !== '') ||
           (event.discountImageURL != null && String(event.discountImageURL).trim() !== '')
         return {
-          date: formatDate(event.startTime || event.date, appTimezone),
+          date: formatDate(event.startTime || event.date, eventTimezone),
           venueName: event.name || '',
           brand: brandName,
-          startTime: formatTime(event.startTime, appTimezone),
-          endTime: formatTime(event.endTime, appTimezone),
+          startTime: formatTime(event.startTime, eventTimezone),
+          endTime: formatTime(event.endTime, eventTimezone),
           products: formatProducts(productsArray),
           discount: hasDiscount ? 'YES' : 'NO',
-          timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
+          timeZone: eventTimezone ? getAppTimezoneShortLabel(eventTimezone) : '',
         }
       })
     )
@@ -594,6 +607,7 @@ export const exportService = {
     // Map events to report rows
     const rows = await Promise.all(
       eventsResult.documents.map(async (event: EventDocument) => {
+        const eventTimezone = getEventDisplayTimezone(event, appTimezone)
         let brandName = ''
         if (event.client) {
           try {
@@ -644,9 +658,9 @@ export const exportService = {
         return {
           name: event.name || '',
           brandName,
-          eventDate: formatDateForUpload(event.startTime || event.date, appTimezone),
-          startTime: formatTimeForUpload(event.startTime, appTimezone),
-          endTime: formatTimeForUpload(event.endTime, appTimezone),
+          eventDate: formatDateForUpload(event.startTime || event.date, eventTimezone),
+          startTime: formatTimeForUpload(event.startTime, eventTimezone),
+          endTime: formatTimeForUpload(event.endTime, eventTimezone),
           address: event.address || '',
           city: event.city || '',
           state: event.state || '',
@@ -660,7 +674,7 @@ export const exportService = {
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
           location: locationName,
-          timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
+          timeZone: eventTimezone ? getAppTimezoneShortLabel(eventTimezone) : '',
         }
       })
     )
