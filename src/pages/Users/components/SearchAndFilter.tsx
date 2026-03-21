@@ -1,10 +1,12 @@
 import { Icon } from '@iconify/react'
+import type { TierDocument } from '../../../lib/services'
 
 interface SearchAndFilterProps {
   searchQuery: string
   onSearchChange: (value: string) => void
   tierFilter: string
   onTierFilterChange: (value: string) => void
+  tiers: TierDocument[]
   sortBy: string
   onSortByChange: (value: string) => void
   sortOrder: 'asc' | 'desc'
@@ -16,6 +18,7 @@ const SearchAndFilter = ({
   onSearchChange,
   tierFilter,
   onTierFilterChange,
+  tiers,
   sortBy,
   onSortByChange,
   sortOrder,
@@ -60,12 +63,16 @@ const SearchAndFilter = ({
           onChange={(e) => onTierFilterChange(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
         >
-          <option>All Tiers</option>
-          <option>NewbieSampler</option>
-          <option>SampleFan</option>
-          <option>SuperSampler</option>
-          <option>VIS</option>
-          <option>SampleMaster</option>
+          <option value="All Tiers">All Tiers</option>
+          {tiers.map((tier) => {
+            const name = String(tier.name ?? '').trim()
+            if (!name) return null
+            return (
+              <option key={tier.$id} value={name}>
+                {name}
+              </option>
+            )
+          })}
         </select>
         <select
           value={sortBy}
