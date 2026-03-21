@@ -14,7 +14,7 @@ import {
   EditUserModal,
   StatsCards,
 } from './components'
-import { appUsersService, triviaResponsesService, notificationsService, type AppUser, type UserFormData, statisticsService, type UsersStats, tiersService } from '../../lib/services'
+import { appUsersService, triviaResponsesService, notificationsService, type AppUser, type UserFormData, statisticsService, type UsersStats, tiersService, type TierDocument } from '../../lib/services'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
@@ -46,6 +46,7 @@ const Users = () => {
   const [totalPages, setTotalPages] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [tierOrderMap, setTierOrderMap] = useState<Record<string, number>>({})
+  const [filterTierList, setFilterTierList] = useState<TierDocument[]>([])
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchIdRef = useRef(0)
 
@@ -255,6 +256,7 @@ const Users = () => {
   const fetchTierOrder = async () => {
     try {
       const tiers = await tiersService.list()
+      setFilterTierList(tiers)
       const nextTierOrderMap = tiers.reduce<Record<string, number>>((acc, tier, index) => {
         const tierName = String(tier.name ?? '').trim()
         if (tierName) {
@@ -268,6 +270,15 @@ const Users = () => {
       // Keep existing map; sorting will gracefully fall back for unknown tiers.
     }
   }
+
+  // If tier names in Appwrite change, clear a filter value that no longer exists (avoids empty lists).
+  useEffect(() => {
+    if (tierFilter === 'All Tiers' || filterTierList.length === 0) return
+    const valid = filterTierList.some((t) => String(t.name ?? '').trim() === tierFilter)
+    if (!valid) {
+      setTierFilter('All Tiers')
+    }
+  }, [filterTierList, tierFilter])
 
   // Initial load
   useEffect(() => {
@@ -564,6 +575,7 @@ const Users = () => {
           onSearchChange={handleSearchChange}
           tierFilter={tierFilter}
           onTierFilterChange={setTierFilter}
+          tiers={filterTierList}
           sortBy={sortBy}
           onSortByChange={(value) => setSortBy(value as typeof sortBy)}
           sortOrder={sortOrder}

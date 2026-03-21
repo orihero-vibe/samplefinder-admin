@@ -273,60 +273,43 @@ const EditEventModal = ({
       }
       
       fetchDefaultsIfNeeded()
-      
-      // Set available products immediately when initialData has a brand
-      if (initialData.brandName) {
-        const selectedBrand = brands.find((brand) => brand.name === initialData.brandName)
-        if (selectedBrand && selectedBrand.productType) {
-          setAvailableProducts(selectedBrand.productType)
-        }
-      }
     } else {
       // Reset location display value when modal closes or no initial data
       setLocationDisplayValue('')
+      setAvailableProducts([])
     }
   }, [initialData, isOpen, eventId, brands])
 
-  // Track previous brand name to detect actual changes
+  // Track previous brand in form so we only clear the product picker when the user removes a brand,
+  // not while formData is still empty before hydration (avoids wiping options on first open).
   const prevBrandNameRef = useRef<string>('')
 
-  // Update available products when brand changes
+  // Update available products when brand or brands list changes; never clear selected products here
+  // (brand changes from the UI clear products in handleInputChange).
   useEffect(() => {
-    // Only clear products when brand actually changed (not on initial load with initialData)
-    const brandChanged = prevBrandNameRef.current !== '' && prevBrandNameRef.current !== formData.brandName
-
     if (formData.brandName) {
       const selectedBrand = brands.find((brand) => brand.name === formData.brandName)
-      if (selectedBrand) {
-        // Set available products
-        if (selectedBrand.productType) {
-          setAvailableProducts(selectedBrand.productType)
-        } else {
-          setAvailableProducts([])
-        }
-        if (brandChanged) {
-          setFormData((prev) => ({ ...prev, products: [] }))
-        }
-      } else {
-        setAvailableProducts([])
-        if (brandChanged) {
-          setFormData((prev) => ({ ...prev, products: [] }))
-        }
-      }
+      const fromBrand = selectedBrand?.productType ?? []
+      const fromSelection = formData.products ?? []
+      const merged = Array.from(new Set([...fromBrand, ...fromSelection]))
+      setAvailableProducts(merged)
       prevBrandNameRef.current = formData.brandName
-    } else {
+    } else if (prevBrandNameRef.current !== '') {
       setAvailableProducts([])
-      // Only clear if brand was removed (not on initial load)
-      if (prevBrandNameRef.current !== '') {
-        setFormData((prev) => ({ ...prev, products: [] }))
-      }
       prevBrandNameRef.current = ''
     }
-  }, [formData.brandName, brands])
+  }, [formData.brandName, formData.products, brands])
 
   if (!isOpen) return null
 
   const handleInputChange = (field: string, value: string) => {
+    if (field === 'brandName') {
+      setFormData((prev) => {
+        if (prev.brandName === value) return prev
+        return { ...prev, brandName: value, products: [] }
+      })
+      return
+    }
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
