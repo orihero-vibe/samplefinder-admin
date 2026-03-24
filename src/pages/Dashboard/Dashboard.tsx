@@ -140,6 +140,40 @@ const Dashboard = () => {
     return `${sign}${change}%`
   }
 
+  // Convert known share links (e.g. Google Drive) into embeddable image URLs
+  // so previews work in admin and consumer clients.
+  const normalizeDiscountImageUrl = (value?: string | null): string => {
+    const trimmed = value?.trim()
+    if (!trimmed) return ''
+
+    console.log(value)
+
+    try {
+      const parsed = new URL(trimmed)
+      const hostname = parsed.hostname.toLowerCase()
+
+      if (hostname === 'drive.google.com' || hostname === 'docs.google.com') {
+        let fileId = ''
+
+        const pathMatch = parsed.pathname.match(/\/file\/d\/([^/]+)/)
+        if (pathMatch?.[1]) {
+          fileId = pathMatch[1]
+        } else {
+          fileId = parsed.searchParams.get('id') || ''
+        }
+
+        if (fileId) {
+          // `thumbnail` is generally more reliable for <img> rendering than `/file/.../view`.
+          return `https://drive.google.com/thumbnail?id=${fileId}&sz=w2000`
+        }
+      }
+    } catch {
+      // Keep original value when URL parsing fails.
+    }
+
+    return trimmed
+  }
+
   // Helper function to map database event document to EventsTable format (dates in app timezone)
   const mapEventDocumentToEvent = (doc: LocalEventDocument): Event => {
     const formatDate = (dateStr?: string): string =>
@@ -461,7 +495,7 @@ const Dashboard = () => {
       category: categoryTitle,
       products: productsArray,
       discount: formatDiscountForInput(eventDoc.discount),
-      discountImage: eventDoc.discountImageURL || null,
+      discountImage: normalizeDiscountImageUrl(eventDoc.discountImageURL) || null,
       checkInCode: eventDoc.checkInCode || '',
       brandName: brandName,
       checkInPoints: eventDoc.checkInPoints?.toString() || '',
@@ -842,7 +876,7 @@ const Dashboard = () => {
           const eventInfo = row['Event Info']?.trim() || 'Event info'
 
           const discount = row['Discount']?.trim() || ''
-          const discountImageURL = row['Discount Image URL']?.trim() || ''
+          const discountImageURL = normalizeDiscountImageUrl(row['Discount Image URL'])
 
           // Prepare event payload: address/geo from Location document
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -945,7 +979,7 @@ const Dashboard = () => {
       // 1. Use existing discount image URL if provided, otherwise upload new image file if present
       let discountImageURL: string | null = null
       if (typeof eventData.discountImage === 'string' && eventData.discountImage) {
-        discountImageURL = eventData.discountImage
+        discountImageURL = normalizeDiscountImageUrl(eventData.discountImage)
       } else if (eventData.discountImage && eventData.discountImage instanceof File) {
         discountImageURL = await uploadFile(eventData.discountImage)
       }
@@ -1068,7 +1102,7 @@ const Dashboard = () => {
           discountImageURL = await uploadFile(eventData.discountImage)
         } else if (typeof eventData.discountImage === 'string') {
           // Existing image URL, keep it
-          discountImageURL = eventData.discountImage
+          discountImageURL = normalizeDiscountImageUrl(eventData.discountImage)
         }
       }
 
