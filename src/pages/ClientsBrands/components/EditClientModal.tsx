@@ -24,28 +24,29 @@ interface EditClientModalProps {
 
 const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientModalProps) => {
   const { addNotification } = useNotificationStore()
-  const [formData, setFormData] = useState({
+  const getInitialFormData = () => ({
     logo: null as File | null,
-    clientName: '',
-    productTypes: [] as string[],
-    description: '',
+    clientName: initialData?.clientName || '',
+    productTypes: initialData?.productTypes || [],
+    description: initialData?.description || '',
   })
-  const initialDataRef = useRef(formData)
 
+  const [formData, setFormData] = useState(getInitialFormData)
   const [newProductType, setNewProductType] = useState('')
-  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(initialData?.logoUrl || null)
   const [showCropper, setShowCropper] = useState(false)
   const [tempImageForCrop, setTempImageForCrop] = useState<string | null>(null)
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
+  const initialDataRef = useRef(formData)
+
   const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
     if (isOpen && initialData) {
       const newData = {
-        logo: null,
+        logo: null as File | null,
         clientName: initialData.clientName || '',
         productTypes: initialData.productTypes || [],
         description: initialData.description || '',

@@ -503,6 +503,7 @@ const ClientsBrands = () => {
 
       {/* Edit Client Modal */}
       <EditClientModal
+        key={selectedClient?.id || 'no-selected-client'}
         isOpen={isEditModalOpen}
         onClose={() => {
           setIsEditModalOpen(false)
