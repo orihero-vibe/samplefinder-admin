@@ -79,6 +79,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
   const [lastNameError, setLastNameError] = useState('')
   const [usernameError, setUsernameError] = useState('')
   const [emailError, setEmailError] = useState('')
+  const [dobError, setDobError] = useState('')
   
   const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
@@ -121,6 +122,12 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     if (username.length > maxLength) {
       return `Username must not exceed ${maxLength} characters`
     }
+    return ''
+  }
+
+  // DOB validation: required on admin add user flow
+  const validateDob = (dob: string): string => {
+    if (!dob) return 'Date of Birth is required'
     return ''
   }
 
@@ -386,6 +393,12 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
 
       return
     }
+
+    if (field === 'dob') {
+      setFormData((prev) => ({ ...prev, [field]: value }))
+      setDobError(validateDob(value.trim()))
+      return
+    }
     
     setFormData((prev) => ({ ...prev, [field]: value }))
 
@@ -404,14 +417,16 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     const lnError = trimmed.lastName ? validateName(trimmed.lastName, 'Last Name') : ''
     const unError = validateUsername(trimmed.username)
     const emailFormatErr = validateEmailFormat(trimmed.email)
+    const birthDateError = validateDob(trimmed.dob)
     
     setPasswordError(pwdError)
     setFirstNameError(fnError)
     setLastNameError(lnError)
     setUsernameError(unError)
     setEmailError(emailFormatErr)
+    setDobError(birthDateError)
     
-    if (pwdError || fnError || lnError || unError || emailFormatErr) return
+    if (pwdError || fnError || lnError || unError || emailFormatErr || birthDateError) return
 
     // Prevent submission if email or phone are known to be unavailable
     if (trimmed.email && emailValidation.isAvailable === false) {
@@ -441,6 +456,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       setLastNameError('')
       setUsernameError('')
       setEmailError('')
+      setDobError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -477,6 +493,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       setLastNameError('')
       setUsernameError('')
       setEmailError('')
+      setDobError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -505,6 +522,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     setLastNameError('')
     setUsernameError('')
     setEmailError('')
+    setDobError('')
     setUsernameValidation({
       isChecking: false,
       isAvailable: null,
@@ -693,19 +711,25 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
             {/* Date of Birth */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Date of Birth
+                Date of Birth <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
                 value={formData.dob}
                 onChange={(e) => handleInputChange('dob', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                required
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                  dobError ? 'border-red-500' : 'border-gray-300'
+                }`}
               />
+              {dobError && (
+                <p className="mt-1 text-xs text-red-500">{dobError}</p>
+              )}
             </div>
 
             {/* Username */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700 mb-2 flex items-center justify-between">
                 <span>
                   Username <span className="text-red-500">*</span>
                 </span>
@@ -900,6 +924,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                 !!lastNameError ||
                 !!usernameError ||
                 !!emailError ||
+                !!dobError ||
                 (!!formData.username.trim() && usernameValidation.isAvailable === false) ||
                 (!!formData.email.trim() && emailValidation.isAvailable === false) ||
                 (formData.phoneNumber.replace(/\D/g, '').length === 10 && phoneValidation.isAvailable === false)

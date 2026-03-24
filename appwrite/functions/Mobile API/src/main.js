@@ -512,6 +512,9 @@ async function createUser(users, databases, data, log) {
             isBlocked: false,
             idAdult: true,
             referralCode,
+            ...(data.dob?.trim()
+                ? { dob: data.dob.trim().length === 10 ? `${data.dob.trim()}T00:00:00.000Z` : data.dob.trim() }
+                : {}),
         };
         const profile = await databases.createDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, ID.unique(), profileData);
         log(`User profile created: ${profile.$id}`);
