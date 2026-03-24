@@ -54,7 +54,7 @@ export interface ReportColumn {
 // Dashboard (All) columns
 const dashboardColumns: ReportColumn[] = [
   { header: 'Date', key: 'date' },
-  { header: 'Venue Name', key: 'venueName' },
+  { header: 'Event Name', key: 'venueName' },
   { header: 'Brand', key: 'brand' },
   { header: 'Start Time', key: 'startTime' },
   { header: 'End Time', key: 'endTime' },
@@ -629,7 +629,7 @@ export const exportService = {
           }
         }
 
-        // Resolve location ID to location name (for Location column)
+        // Place / linked location label → "Address" column; street line is event.address → "Location" column
         let locationName = ''
         const locationId = (event as EventDocument & { locationId?: string }).locationId
         if (locationId) {
@@ -661,7 +661,7 @@ export const exportService = {
           eventDate: formatDateForUpload(event.startTime || event.date, eventTimezone),
           startTime: formatTimeForUpload(event.startTime, eventTimezone),
           endTime: formatTimeForUpload(event.endTime, eventTimezone),
-          address: event.address || '',
+          address: locationName,
           city: event.city || '',
           state: event.state || '',
           zip: event.zipCode || '',
@@ -673,7 +673,7 @@ export const exportService = {
           checkInCode: event.checkInCode || '',
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
-          location: locationName,
+          location: event.address || '',
           timeZone: eventTimezone ? getAppTimezoneShortLabel(eventTimezone) : '',
         }
       })
