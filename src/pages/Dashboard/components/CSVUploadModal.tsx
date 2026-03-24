@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '@iconify/react'
 
 interface CSVUploadModalProps {
@@ -11,6 +11,19 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Reset local modal state whenever modal closes so stale files are not shown on next open.
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedFile(null)
+      setIsDragging(false)
+      setIsUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 
@@ -169,9 +182,14 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
                 <p className="text-xs text-gray-500">Your CSV file here</p>
               </div>
               <input
+                ref={fileInputRef}
                 type="file"
                 accept=".csv"
                 onChange={handleFileChange}
+                onClick={(e) => {
+                  // Always clear value before picking, so selecting the same filename still triggers onChange.
+                  e.currentTarget.value = ''
+                }}
                 className="hidden"
               />
             </label>
