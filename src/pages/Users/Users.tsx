@@ -794,6 +794,7 @@ const Users = () => {
               title: 'Error',
               message: isPhoneDuplicate && extractedMessage ? extractedMessage : 'Failed to update user. Please try again.',
             })
+            throw new Error(extractedMessage ?? 'Failed to update user. Please try again.')
           }
         }}
         onAddToBlacklist={() => {

@@ -1038,6 +1038,8 @@ export const appUsersService = {
   // Update user profile
   update: async (id: string, data: Record<string, unknown>): Promise<AppUser> => {
     try {
+      const currentUser = await userProfilesService.getById(id)
+
       // Validate username uniqueness if username is being updated
       if (data.username && typeof data.username === 'string' && data.username.trim()) {
       const existingUsers = await userProfilesService.list([
@@ -1053,14 +1055,29 @@ export const appUsersService = {
 
     // Validate phone number uniqueness if phoneNumber is being updated
     if (data.phoneNumber && typeof data.phoneNumber === 'string' && data.phoneNumber.trim()) {
-      const phoneValue = data.phoneNumber.trim()
-      const existingByPhone = await userProfilesService.list([
-        Query.equal('phoneNumber', [phoneValue])
-      ])
+      const normalizePhone = (value: string) => value.replace(/\D/g, '')
+      const incomingPhoneRaw = data.phoneNumber.trim()
+      const incomingPhoneNormalized = normalizePhone(incomingPhoneRaw)
+      const currentPhoneNormalized = normalizePhone(String(currentUser.phoneNumber ?? ''))
 
-      const duplicatePhoneUser = existingByPhone.documents.find(user => user.$id !== id)
-      if (duplicatePhoneUser) {
-        throw new Error('Phone number already exists. Please use a different phone number.')
+      // Skip duplicate checks when the effective phone number is unchanged.
+      if (incomingPhoneNormalized !== currentPhoneNormalized) {
+        const candidateValues = Array.from(
+          new Set([incomingPhoneRaw, incomingPhoneNormalized].filter(Boolean))
+        )
+
+        let duplicatePhoneUser: UserProfile | undefined
+        for (const candidate of candidateValues) {
+          const existingByPhone = await userProfilesService.list([
+            Query.equal('phoneNumber', [candidate])
+          ])
+          duplicatePhoneUser = existingByPhone.documents.find(user => user.$id !== id)
+          if (duplicatePhoneUser) break
+        }
+
+        if (duplicatePhoneUser) {
+          throw new Error('Phone number already exists. Please use a different phone number.')
+        }
       }
     }
       

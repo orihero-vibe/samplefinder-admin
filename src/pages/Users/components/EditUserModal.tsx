@@ -33,7 +33,7 @@ interface UserData {
 interface EditUserModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (userData: UserData) => void
+  onSave: (userData: UserData) => Promise<void>
   onAddToBlacklist?: () => void
   onDelete?: () => void
   initialData?: UserData
@@ -93,6 +93,7 @@ const EditUserModal = ({
   const previousUserIdRef = useRef<string | undefined>(undefined)
   const initialDataRef = useRef(formData)
   const [passwordError, setPasswordError] = useState('')
+  const [phoneError, setPhoneError] = useState('')
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
 
@@ -327,6 +328,9 @@ const EditUserModal = ({
     if (field === 'phoneNumber') {
       const formatted = formatPhoneNumber(value)
       setFormData((prev) => ({ ...prev, [field]: formatted }))
+      if (phoneError) {
+        setPhoneError('')
+      }
       return
     }
 
@@ -416,6 +420,7 @@ const EditUserModal = ({
       await onSave(trimmed)
       setShowUnsavedChangesModal(false)
       setPasswordError('')
+      setPhoneError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -424,6 +429,19 @@ const EditUserModal = ({
       onClose()
     } catch (error) {
       console.error('Error saving user:', error)
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : 'Failed to update user. Please try again.'
+      const normalized = message.toLowerCase()
+      const isPhoneDuplicate =
+        normalized.includes('phone number already exists') ||
+        (normalized.includes('phone') && normalized.includes('already exists'))
+      if (isPhoneDuplicate) {
+        setPhoneError(message)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -586,8 +604,13 @@ const EditUserModal = ({
                   value={formData.phoneNumber}
                   onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
                   required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                    phoneError ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 />
+                {phoneError && (
+                  <p className="mt-1 text-xs text-red-500">{phoneError}</p>
+                )}
               </div>
 
               {/* User Points */}
