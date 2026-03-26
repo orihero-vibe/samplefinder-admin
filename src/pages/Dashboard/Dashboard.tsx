@@ -1094,7 +1094,7 @@ const Dashboard = () => {
 
       const eventId = selectedEventDoc.$id
 
-      // 1. Upload discount image if provided and it's a new file
+      // 1. Resolve discount image update state
       let discountImageURL: string | null = null
       if (eventData.discountImage) {
         if (eventData.discountImage instanceof File) {
@@ -1105,6 +1105,7 @@ const Dashboard = () => {
           discountImageURL = normalizeDiscountImageUrl(eventData.discountImage)
         }
       }
+      const shouldClearDiscountImage = eventData.discountImage === null
 
       // 2. Find category by title (if category is provided)
       let categoryId: string | null = null
@@ -1176,7 +1177,9 @@ const Dashboard = () => {
         eventPayload.client = selectedEventDoc.client
       }
 
-      if (discountImageURL) {
+      if (shouldClearDiscountImage) {
+        eventPayload.discountImageURL = null
+      } else if (discountImageURL) {
         eventPayload.discountImageURL = discountImageURL
       }
 
