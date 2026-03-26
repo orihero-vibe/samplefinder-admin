@@ -603,6 +603,37 @@ export const exportService = {
     }
 
     const eventsResult = await eventsService.list(queries)
+
+    // Build a lookup of saved Locations by normalized address fields.
+    // Many events do not persist locationId, so we recover location name via address/city/state/zip match.
+    const locationsByAddressKey = new Map<string, string>()
+    try {
+      const allLocations: Array<{ name?: string; address?: string; city?: string; state?: string; zipCode?: string }> = []
+      let offset = 0
+      let locationChunk: Array<{ name?: string; address?: string; city?: string; state?: string; zipCode?: string }> = []
+      do {
+        const result = await locationsService.list([
+          Query.limit(REPORT_LIST_PAGE_SIZE),
+          Query.offset(offset),
+        ])
+        locationChunk = (result.documents ?? []) as Array<{ name?: string; address?: string; city?: string; state?: string; zipCode?: string }>
+        allLocations.push(...locationChunk)
+        offset += REPORT_LIST_PAGE_SIZE
+      } while (locationChunk.length === REPORT_LIST_PAGE_SIZE)
+
+      const toPart = (value?: string): string => (value ?? '').trim().toLowerCase()
+      const toKey = (address?: string, city?: string, state?: string, zip?: string): string =>
+        `${toPart(address)}|${toPart(city)}|${toPart(state)}|${toPart(zip)}`
+
+      for (const location of allLocations) {
+        const key = toKey(location.address, location.city, location.state, location.zipCode)
+        if (!locationsByAddressKey.has(key) && location.name?.trim()) {
+          locationsByAddressKey.set(key, location.name.trim())
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching locations for event list report:', err)
+    }
     
     // Map events to report rows
     const rows = await Promise.all(
@@ -636,6 +667,8 @@ export const exportService = {
         let resolvedCity = event.city || ''
         let resolvedState = event.state || ''
         let resolvedZip = event.zipCode || ''
+        const toPart = (value?: string): string => (value ?? '').trim().toLowerCase()
+        const eventAddressKey = `${toPart(resolvedAddress)}|${toPart(resolvedCity)}|${toPart(resolvedState)}|${toPart(resolvedZip)}`
         const locationId = (event as EventDocument & { locationId?: string }).locationId
         if (locationId) {
           try {
@@ -650,7 +683,7 @@ export const exportService = {
           }
         }
         if (!locationName) {
-          locationName = '-'
+          locationName = locationsByAddressKey.get(eventAddressKey) || ''
         }
 
         // Normalize products: DB may store array or comma-separated string
