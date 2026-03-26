@@ -629,19 +629,28 @@ export const exportService = {
           }
         }
 
-        // Place / linked location label → "Address" column; street line is event.address → "Location" column
+        // Resolve linked Location document values first, then fallback to event fields.
+        // Report mapping: Address=street address, Location=location name.
         let locationName = ''
+        let resolvedAddress = event.address || ''
+        let resolvedCity = event.city || ''
+        let resolvedState = event.state || ''
+        let resolvedZip = event.zipCode || ''
         const locationId = (event as EventDocument & { locationId?: string }).locationId
         if (locationId) {
           try {
             const location = await locationsService.getById(locationId)
             locationName = location?.name || ''
+            if (!resolvedAddress) resolvedAddress = location?.address || ''
+            if (!resolvedCity) resolvedCity = location?.city || ''
+            if (!resolvedState) resolvedState = location?.state || ''
+            if (!resolvedZip) resolvedZip = location?.zipCode || ''
           } catch (err) {
             console.error('Error fetching location for event:', err)
           }
         }
-        if (!locationName && (event.address || event.city)) {
-          locationName = [event.address, event.city].filter(Boolean).join(', ') || ''
+        if (!locationName) {
+          locationName = '-'
         }
 
         // Normalize products: DB may store array or comma-separated string
@@ -661,10 +670,10 @@ export const exportService = {
           eventDate: formatDateForUpload(event.startTime || event.date, eventTimezone),
           startTime: formatTimeForUpload(event.startTime, eventTimezone),
           endTime: formatTimeForUpload(event.endTime, eventTimezone),
-          address: locationName,
-          city: event.city || '',
-          state: event.state || '',
-          zip: event.zipCode || '',
+          address: resolvedAddress,
+          city: resolvedCity,
+          state: resolvedState,
+          zip: resolvedZip,
           productType,
           products: formatProducts(productsArray),
           eventInfo: event.eventInfo || '',
@@ -673,7 +682,7 @@ export const exportService = {
           checkInCode: event.checkInCode || '',
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
-          location: event.address || '',
+          location: locationName,
           timeZone: eventTimezone ? getAppTimezoneShortLabel(eventTimezone) : '',
         }
       })
