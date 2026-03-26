@@ -94,6 +94,16 @@ const EditUserModal = ({
   const initialDataRef = useRef(formData)
   const [passwordError, setPasswordError] = useState('')
   const [phoneError, setPhoneError] = useState('')
+
+  const resetValidationState = () => {
+    setPasswordError('')
+    setPhoneError('')
+    setUsernameValidation({
+      isChecking: false,
+      isAvailable: null,
+      message: ''
+    })
+  }
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
 
@@ -150,6 +160,7 @@ const EditUserModal = ({
     if (shouldReset) {
       setFormData(newFormData)
       initialDataRef.current = newFormData
+      resetValidationState()
 
       // Reset file input so switching between users doesn't keep a stale selected file.
       const input = document.getElementById('user-image-upload') as HTMLInputElement | null
@@ -451,24 +462,14 @@ const EditUserModal = ({
     if (hasUnsavedChanges && !isSubmitting) {
       setShowUnsavedChangesModal(true)
     } else {
-      setPasswordError('')
-      setUsernameValidation({
-        isChecking: false,
-        isAvailable: null,
-        message: ''
-      })
+      resetValidationState()
       onClose()
     }
   }
 
   const handleDiscardChanges = () => {
     setShowUnsavedChangesModal(false)
-    setPasswordError('')
-    setUsernameValidation({
-      isChecking: false,
-      isAvailable: null,
-      message: ''
-    })
+    resetValidationState()
     onClose()
   }
 
