@@ -205,8 +205,7 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
                 !formData.name ||
                 !formData.address ||
                 !formData.city ||
-                !formData.state ||
-                !formData.zipCode
+                !formData.state
               }
               className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
