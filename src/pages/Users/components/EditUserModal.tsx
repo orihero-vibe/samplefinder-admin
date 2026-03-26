@@ -94,6 +94,16 @@ const EditUserModal = ({
   const initialDataRef = useRef(formData)
   const [passwordError, setPasswordError] = useState('')
   const [phoneError, setPhoneError] = useState('')
+
+  const resetValidationState = () => {
+    setPasswordError('')
+    setPhoneError('')
+    setUsernameValidation({
+      isChecking: false,
+      isAvailable: null,
+      message: ''
+    })
+  }
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
 
@@ -150,6 +160,7 @@ const EditUserModal = ({
     if (shouldReset) {
       setFormData(newFormData)
       initialDataRef.current = newFormData
+      resetValidationState()
 
       // Reset file input so switching between users doesn't keep a stale selected file.
       const input = document.getElementById('user-image-upload') as HTMLInputElement | null
@@ -334,10 +345,22 @@ const EditUserModal = ({
       return
     }
 
-    // First/Last name: alphabets only, auto-capitalize
+    // First/Last name: alphabetic words with spaces, auto-capitalize each word
     if (field === 'firstName' || field === 'lastName') {
-      const filtered = value.replace(/[^a-zA-Z]/g, '')
-      const capitalized = filtered.charAt(0).toUpperCase() + filtered.slice(1).toLowerCase()
+      const lettersAndSpaces = value.replace(/[^a-zA-Z\s]/g, '')
+      const hasTrailingSpace = /\s$/.test(lettersAndSpaces)
+      const normalizedBase = lettersAndSpaces
+        .replace(/\s+/g, ' ')
+        .trimStart()
+      const words = normalizedBase
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+      const capitalizedWords = words.map(
+        (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      )
+      const capitalized =
+        capitalizedWords.join(' ') + (hasTrailingSpace && capitalizedWords.length > 0 ? ' ' : '')
       setFormData((prev) => ({ ...prev, [field]: capitalized }))
       return
     }
@@ -451,24 +474,14 @@ const EditUserModal = ({
     if (hasUnsavedChanges && !isSubmitting) {
       setShowUnsavedChangesModal(true)
     } else {
-      setPasswordError('')
-      setUsernameValidation({
-        isChecking: false,
-        isAvailable: null,
-        message: ''
-      })
+      resetValidationState()
       onClose()
     }
   }
 
   const handleDiscardChanges = () => {
     setShowUnsavedChangesModal(false)
-    setPasswordError('')
-    setUsernameValidation({
-      isChecking: false,
-      isAvailable: null,
-      message: ''
-    })
+    resetValidationState()
     onClose()
   }
 
@@ -673,12 +686,13 @@ const EditUserModal = ({
               {/* Date of Birth */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date of Birth
+                  Date of Birth <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
                   value={formData.dob ?? ''}
                   onChange={(e) => handleInputChange('dob', e.target.value)}
+                  required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
                 />
               </div>

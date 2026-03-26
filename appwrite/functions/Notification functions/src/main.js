@@ -194,7 +194,9 @@ async function sendPushNotificationToUsers(messaging, userIds, title, body, log,
     }
     log(`Sending push in ${batches.length} batch(es), ${userIds.length} total users`);
     let sentCount = 0;
+    let failedCount = 0;
     let lastResult = null;
+    let lastError = '';
     for (let i = 0; i < batches.length; i += PUSH_CONCURRENCY) {
         const chunk = batches.slice(i, i + PUSH_CONCURRENCY);
         const results = await Promise.allSettled(chunk.map((userBatch) => {
@@ -222,11 +224,13 @@ async function sendPushNotificationToUsers(messaging, userIds, title, body, log,
             }
             else {
                 const errMsg = settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
+                failedCount += batch.length;
+                lastError = errMsg;
                 log(`Failed to send push batch (${batch.length} users): ${errMsg}`);
             }
         }
     }
-    log(`Push notification summary: ${sentCount}/${userIds.length} users, last messageId: ${lastResult?.$id}, status: ${lastResult?.status}`);
+    log(`Push notification summary: sent=${sentCount}/${userIds.length}, failed=${failedCount}, last messageId: ${lastResult?.$id}, status: ${lastResult?.status}${lastError ? `, lastError: ${lastError}` : ''}`);
     return lastResult
         ? { ...lastResult, sentCount }
         : { $id: null, status: sentCount > 0 ? 'completed' : 'failed', sentCount };
@@ -273,10 +277,11 @@ async function sendNotification(databases, messaging, notificationId, log) {
             .map(user => user.authID)
             .filter(id => id && typeof id === 'string');
         if (userAuthIds.length === 0) {
-            log('No valid user auth IDs found');
+            log(`ERROR: Found ${users.length} user profile(s) but none have a valid authID. Push cannot be sent.`);
             return {
                 success: false,
                 recipients: 0,
+                error: `Found ${users.length} user profile(s) but none have a valid authID linked. Push notifications require users to have an authenticated account.`,
             };
         }
         log(`Preparing to send push notification to ${userAuthIds.length} users`);
@@ -288,6 +293,15 @@ async function sendNotification(databases, messaging, notificationId, log) {
         });
         const recipientCount = pushResult.sentCount ?? userAuthIds.length;
         log(`Push result: ID=${pushResult.$id}, status=${pushResult.status}, sentCount=${recipientCount}`);
+        if (recipientCount === 0 && userAuthIds.length > 0) {
+            log(`ERROR: All push batches failed. ${userAuthIds.length} users targeted but 0 reached. Notification will NOT be marked as Sent.`);
+            await databases.updateDocument(DATABASE_ID, NOTIFICATIONS_TABLE_ID, notificationId, { status: 'Draft' });
+            return {
+                success: false,
+                recipients: 0,
+                error: `Push delivery failed for all ${userAuthIds.length} targeted users. The notification remains in Draft status. Check that Appwrite Messaging has a push provider (FCM/APNS) configured and that users have registered push targets.`,
+            };
+        }
         // Update notification status
         const now = new Date().toISOString();
         await databases.updateDocument(DATABASE_ID, NOTIFICATIONS_TABLE_ID, notificationId, {
@@ -922,10 +936,16 @@ export default async function handler({ req, res, log, error }) {
             // Parse and validate request body
             let requestBody;
             try {
-                if (!req.body || typeof req.body !== 'object') {
+                let body;
+                if (typeof req.body === 'string') {
+                    body = JSON.parse(req.body);
+                }
+                else if (req.body && typeof req.body === 'object') {
+                    body = req.body;
+                }
+                else {
                     throw new Error('Request body is required');
                 }
-                const body = req.body;
                 if (!body.notificationId || typeof body.notificationId !== 'string') {
                     throw new Error('notificationId is required and must be a string');
                 }
@@ -954,10 +974,16 @@ export default async function handler({ req, res, log, error }) {
             log('Processing send-badge-notification request');
             let requestBody;
             try {
-                if (!req.body || typeof req.body !== 'object') {
+                let body;
+                if (typeof req.body === 'string') {
+                    body = JSON.parse(req.body);
+                }
+                else if (req.body && typeof req.body === 'object') {
+                    body = req.body;
+                }
+                else {
                     throw new Error('Request body is required');
                 }
-                const body = req.body;
                 if (!body.userId || typeof body.userId !== 'string') {
                     throw new Error('userId is required and must be a string');
                 }
@@ -982,10 +1008,16 @@ export default async function handler({ req, res, log, error }) {
             log('Processing send-tier-notification request');
             let requestBody;
             try {
-                if (!req.body || typeof req.body !== 'object') {
+                let body;
+                if (typeof req.body === 'string') {
+                    body = JSON.parse(req.body);
+                }
+                else if (req.body && typeof req.body === 'object') {
+                    body = req.body;
+                }
+                else {
                     throw new Error('Request body is required');
                 }
-                const body = req.body;
                 if (!body.userId || typeof body.userId !== 'string') {
                     throw new Error('userId is required and must be a string');
                 }

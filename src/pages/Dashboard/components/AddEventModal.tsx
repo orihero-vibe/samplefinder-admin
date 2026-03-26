@@ -464,13 +464,13 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     setIsSubmitting(true)
     try {
       // If location name is filled, create location first
-      if (showAddLocationFields && locationName.trim() && trimmed.address && trimmed.city && trimmed.state && trimmed.zipCode && trimmed.latitude && trimmed.longitude) {
+      if (showAddLocationFields && locationName.trim() && trimmed.address && trimmed.city && trimmed.state && trimmed.latitude && trimmed.longitude) {
         await locationsService.create({
           name: locationName.trim(),
           address: trimmed.address,
           city: trimmed.city,
           state: trimmed.state,
-          zipCode: trimmed.zipCode,
+          zipCode: trimmed.zipCode || '',
           location: [parseFloat(trimmed.longitude), parseFloat(trimmed.latitude)],
         })
       }

@@ -248,13 +248,15 @@ const Dashboard = () => {
       const [sortField, sortOrder] = sortBy.split('-')
       const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
       if (sortField === 'date') {
-        queries.push(orderMethod('date'))
+        // Use startTime for chronological ordering; sorting by date (midnight UTC) can
+        // produce inaccurate results across mixed event timezones.
+        queries.push(orderMethod('startTime'))
       } else if (sortField === 'name') {
         queries.push(orderMethod('name'))
       } else if (sortField === 'brand') {
         // For brand sorting, we'll sort by date first, then handle brand sorting client-side
         // since brand is a relationship field
-        queries.push(orderMethod('date'))
+        queries.push(orderMethod('startTime'))
       }
       
       // Determine if we're searching or filtering by derived status (Active / In Active)
@@ -274,6 +276,22 @@ const Dashboard = () => {
       // When searching: use list() then filter by search term (including brand name) after resolving clients
       // When not searching: use list() with server-side pagination
       const result = await eventsService.list(queries)
+
+      // Auto-transition expired hidden events to inactive by clearing hidden flag in DB.
+      const now = new Date()
+      const hiddenExpiredEvents = result.documents.filter((doc) => {
+        if (!doc.isHidden) return false
+        const eventEnd = doc.endTime ? new Date(doc.endTime) : null
+        return !!eventEnd && !isNaN(eventEnd.getTime()) && now > eventEnd
+      })
+      if (hiddenExpiredEvents.length > 0) {
+        await Promise.all(
+          hiddenExpiredEvents.map((doc) => eventsService.update(doc.$id, { isHidden: false }))
+        )
+        hiddenExpiredEvents.forEach((doc) => {
+          doc.isHidden = false
+        })
+      }
 
       // Collect client IDs from all fetched documents (needed for both search and non-search to resolve brand names)
       const clientIds = [...new Set(
@@ -1094,7 +1112,7 @@ const Dashboard = () => {
 
       const eventId = selectedEventDoc.$id
 
-      // 1. Upload discount image if provided and it's a new file
+      // 1. Resolve discount image update state
       let discountImageURL: string | null = null
       if (eventData.discountImage) {
         if (eventData.discountImage instanceof File) {
@@ -1105,6 +1123,7 @@ const Dashboard = () => {
           discountImageURL = normalizeDiscountImageUrl(eventData.discountImage)
         }
       }
+      const shouldClearDiscountImage = eventData.discountImage === null
 
       // 2. Find category by title (if category is provided)
       let categoryId: string | null = null
@@ -1176,7 +1195,9 @@ const Dashboard = () => {
         eventPayload.client = selectedEventDoc.client
       }
 
-      if (discountImageURL) {
+      if (shouldClearDiscountImage) {
+        eventPayload.discountImageURL = null
+      } else if (discountImageURL) {
         eventPayload.discountImageURL = discountImageURL
       }
 
