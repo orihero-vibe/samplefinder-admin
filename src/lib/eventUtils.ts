@@ -118,13 +118,13 @@ export function getEventStatus(doc: {
   isHidden?: boolean
 }): EventDisplayStatus {
   if (doc.isArchived) return 'Archived'
-  if (doc.isHidden) return 'Hidden'
   const now = new Date()
   const eventStart = doc.startTime ? new Date(doc.startTime) : null
   const eventEnd = doc.endTime ? new Date(doc.endTime) : null
   if (!eventStart || !eventEnd || isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
     return 'In Active'
   }
+  if (doc.isHidden && now <= eventEnd) return 'Hidden'
   if (now > eventEnd) return 'In Active' // completed
   return 'Active' // upcoming or live
 }

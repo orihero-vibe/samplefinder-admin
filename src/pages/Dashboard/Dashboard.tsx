@@ -277,6 +277,22 @@ const Dashboard = () => {
       // When not searching: use list() with server-side pagination
       const result = await eventsService.list(queries)
 
+      // Auto-transition expired hidden events to inactive by clearing hidden flag in DB.
+      const now = new Date()
+      const hiddenExpiredEvents = result.documents.filter((doc) => {
+        if (!doc.isHidden) return false
+        const eventEnd = doc.endTime ? new Date(doc.endTime) : null
+        return !!eventEnd && !isNaN(eventEnd.getTime()) && now > eventEnd
+      })
+      if (hiddenExpiredEvents.length > 0) {
+        await Promise.all(
+          hiddenExpiredEvents.map((doc) => eventsService.update(doc.$id, { isHidden: false }))
+        )
+        hiddenExpiredEvents.forEach((doc) => {
+          doc.isHidden = false
+        })
+      }
+
       // Collect client IDs from all fetched documents (needed for both search and non-search to resolve brand names)
       const clientIds = [...new Set(
         result.documents
