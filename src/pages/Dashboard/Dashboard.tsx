@@ -248,13 +248,15 @@ const Dashboard = () => {
       const [sortField, sortOrder] = sortBy.split('-')
       const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
       if (sortField === 'date') {
-        queries.push(orderMethod('date'))
+        // Use startTime for chronological ordering; sorting by date (midnight UTC) can
+        // produce inaccurate results across mixed event timezones.
+        queries.push(orderMethod('startTime'))
       } else if (sortField === 'name') {
         queries.push(orderMethod('name'))
       } else if (sortField === 'brand') {
         // For brand sorting, we'll sort by date first, then handle brand sorting client-side
         // since brand is a relationship field
-        queries.push(orderMethod('date'))
+        queries.push(orderMethod('startTime'))
       }
       
       // Determine if we're searching or filtering by derived status (Active / In Active)
