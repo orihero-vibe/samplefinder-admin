@@ -106,11 +106,11 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     return ''
   }
 
-  // Name validation: only alphabets, starting with capital letter
+  // Name validation: alphabetic words separated by single spaces, each starting with capital
   const validateName = (name: string, fieldName: string): string => {
     if (!name) return `${fieldName} is required`
-    if (!/^[A-Z][a-zA-Z]*$/.test(name)) {
-      return `${fieldName} must start with a capital letter and contain only alphabets`
+    if (!/^[A-Z][a-zA-Z]*(?: [A-Z][a-zA-Z]*)*$/.test(name)) {
+      return `${fieldName} must contain only alphabets, and each word must start with a capital letter`
     }
     return ''
   }
@@ -296,12 +296,23 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       return
     }
     
-    // Filter out non-alphabetic characters for name fields and auto-capitalize
+    // Allow alphabetic names with spaces and auto-capitalize each word
     if (field === 'firstName' || field === 'lastName') {
-      // Only allow alphabetic characters (a-z, A-Z)
-      const filteredValue = value.replace(/[^a-zA-Z]/g, '')
-      // Auto-capitalize first letter
-      const capitalizedValue = filteredValue.charAt(0).toUpperCase() + filteredValue.slice(1).toLowerCase()
+      // Keep only letters/spaces, collapse multiple spaces, and preserve one trailing space while typing.
+      const lettersAndSpaces = value.replace(/[^a-zA-Z\s]/g, '')
+      const hasTrailingSpace = /\s$/.test(lettersAndSpaces)
+      const normalizedBase = lettersAndSpaces
+        .replace(/\s+/g, ' ')
+        .trimStart()
+      const words = normalizedBase
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+      const capitalizedWords = words.map(
+        (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      )
+      const capitalizedValue =
+        capitalizedWords.join(' ') + (hasTrailingSpace && capitalizedWords.length > 0 ? ' ' : '')
       setFormData((prev) => ({ ...prev, [field]: capitalizedValue }))
       
       if (field === 'firstName') {

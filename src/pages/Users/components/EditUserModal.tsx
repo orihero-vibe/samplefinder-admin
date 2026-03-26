@@ -345,10 +345,22 @@ const EditUserModal = ({
       return
     }
 
-    // First/Last name: alphabets only, auto-capitalize
+    // First/Last name: alphabetic words with spaces, auto-capitalize each word
     if (field === 'firstName' || field === 'lastName') {
-      const filtered = value.replace(/[^a-zA-Z]/g, '')
-      const capitalized = filtered.charAt(0).toUpperCase() + filtered.slice(1).toLowerCase()
+      const lettersAndSpaces = value.replace(/[^a-zA-Z\s]/g, '')
+      const hasTrailingSpace = /\s$/.test(lettersAndSpaces)
+      const normalizedBase = lettersAndSpaces
+        .replace(/\s+/g, ' ')
+        .trimStart()
+      const words = normalizedBase
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+      const capitalizedWords = words.map(
+        (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      )
+      const capitalized =
+        capitalizedWords.join(' ') + (hasTrailingSpace && capitalizedWords.length > 0 ? ' ' : '')
       setFormData((prev) => ({ ...prev, [field]: capitalized }))
       return
     }
