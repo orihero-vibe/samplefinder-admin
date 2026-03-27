@@ -289,7 +289,7 @@ const Notifications = () => {
           title: 'Notification Updated',
           message: notificationData.schedule === 'Send Immediately'
             ? 'Notification has been sent successfully.'
-            : 'Notification has been updated successfully.',
+            : 'Notification has been updated and scheduled for 1:00 PM EST.',
         })
         
         setEditingNotification(null)
@@ -302,7 +302,7 @@ const Notifications = () => {
           title: 'Notification Created',
           message: notificationData.schedule === 'Send Immediately' 
             ? 'Notification has been sent successfully.' 
-            : 'Notification has been scheduled successfully.',
+            : 'Notification has been scheduled for 1:00 PM EST.',
         })
         
         // Reset to page 1 after creating
