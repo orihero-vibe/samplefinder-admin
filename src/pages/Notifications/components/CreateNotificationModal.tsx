@@ -48,7 +48,7 @@ const defaultFormData: NotificationFormData = {
   category: 'AppPush',
   schedule: 'Send Immediately',
   scheduledAt: '',
-  scheduledTime: '',
+  scheduledTime: '13:00',
   selectedUserIds: [],
   selectedZipCodes: [],
   newUsersTimeRange: undefined,
@@ -191,7 +191,7 @@ const CreateNotificationModal = ({
       REQUIRED_FIELD: (field) => `${field} is required`,
       MIN_LENGTH: (field, rules) => `${field} must be at least ${rules.minLength} characters`,
       MAX_LENGTH: (field, rules) => `${field} must not exceed ${rules.maxLength} characters`,
-      INVALID_DATE: () => 'Please select both date and time',
+      INVALID_DATE: () => 'Please select a date',
       PAST_DATE: () => 'Scheduled date and time must be in the future',
       USERS_REQUIRED: () => 'Please select at least one user',
     }
@@ -231,9 +231,7 @@ const CreateNotificationModal = ({
       if (field === 'scheduledAt' && !value) {
         return { code: 'REQUIRED_FIELD', field: 'Scheduled Date', fieldName: 'scheduledAt', message: '' }
       }
-      if (field === 'scheduledTime' && !value) {
-        return { code: 'REQUIRED_FIELD', field: 'Scheduled Time', fieldName: 'scheduledTime', message: '' }
-      }
+      if (field === 'scheduledTime') return null
     }
 
     return null
@@ -261,7 +259,7 @@ const CreateNotificationModal = ({
 
     // Validate scheduled date/time if scheduling for later
     if (data.schedule === 'Schedule for Later') {
-      if (!data.scheduledAt || !data.scheduledTime) {
+      if (!data.scheduledAt) {
         const error: StructuredError = { 
           code: 'INVALID_DATE', 
           field: 'Scheduled Date/Time',
@@ -273,8 +271,8 @@ const CreateNotificationModal = ({
       } else {
         // Validate that scheduled time is in the future (in app timezone when provided)
         const scheduledDate = appTimezone
-          ? appTimeToUTC(data.scheduledAt, data.scheduledTime, appTimezone)
-          : new Date(`${data.scheduledAt}T${data.scheduledTime}`)
+          ? appTimeToUTC(data.scheduledAt, '13:00', appTimezone)
+          : new Date(`${data.scheduledAt}T13:00`)
         if (scheduledDate <= new Date()) {
           const error: StructuredError = { 
             code: 'PAST_DATE', 
@@ -349,12 +347,15 @@ const CreateNotificationModal = ({
     e.preventDefault()
     
     const trimmed = trimFormStrings(formData)
+    const normalized = trimmed.schedule === 'Schedule for Later'
+      ? { ...trimmed, scheduledTime: '13:00' }
+      : trimmed
 
     // Mark all fields as touched to show validation errors
     setTouchedFields(new Set(['title', 'message', 'scheduledAt', 'scheduledTime', 'selectedUserIds']))
     
     // Validate form using trimmed data
-    const { isValid, errors } = validateForm(trimmed)
+    const { isValid, errors } = validateForm(normalized)
     
     if (!isValid) {
       console.error('Validation failed:', errors)
@@ -363,7 +364,7 @@ const CreateNotificationModal = ({
 
     setIsSubmitting(true)
     try {
-      await onSave(trimmed)
+      await onSave(normalized)
       setShowUnsavedChangesModal(false)
       setFormData(defaultFormData)
       setValidationErrors({})
@@ -855,27 +856,8 @@ const CreateNotificationModal = ({
                       </div>
                     )}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Scheduled Time <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="time"
-                      value={formData.scheduledTime}
-                      onChange={(e) => handleInputChange('scheduledTime', e.target.value)}
-                      onBlur={() => handleBlur('scheduledTime')}
-                      className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
-                        validationErrors.scheduledTime
-                          ? 'border-red-500 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-[#1D0A74]'
-                      }`}
-                    />
-                    {validationErrors.scheduledTime && (
-                      <div className="flex items-center gap-1 mt-1 text-red-500 text-sm">
-                        <Icon icon="mdi:alert-circle" className="w-4 h-4" />
-                        <span>{validationErrors.scheduledTime}</span>
-                      </div>
-                    )}
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                    Scheduled notifications are sent at <span className="font-semibold">1:00 PM EST</span>.
                   </div>
                 </>
               )}

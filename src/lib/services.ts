@@ -1465,6 +1465,8 @@ function normalizeNotificationPayload(
   return normalizeNotificationFormData(data)
 }
 
+const NOTIFICATION_SEND_TIME_EST = '13:00'
+
 // Notifications service
 export const notificationsService = {
   create: async (
@@ -1478,7 +1480,7 @@ export const notificationsService = {
       type,
       targetAudience,
       category: data.category || 'AppPush',
-      // Always start with 'Draft' status - function will update to 'Sent' after sending
+      // Send Immediately stays immediate; Schedule for Later uses fixed 1:00 PM EST
       status: data.schedule === 'Schedule for Later' ? 'Scheduled' : 'Draft',
       recipients: 0, // Will be updated when notification is sent
     }
@@ -1497,21 +1499,14 @@ export const notificationsService = {
       }
     }
 
-    // Handle scheduling: store in UTC when app timezone is provided
-    if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
-      if (appTimezone) {
-        const utcDate = appTimeToUTC(
-          data.scheduledAt,
-          data.scheduledTime,
-          appTimezone
-        )
-        dbData.scheduledAt = utcDate.toISOString()
-      } else {
-        const [hours, minutes] = data.scheduledTime.split(':')
-        const scheduledDate = new Date(data.scheduledAt)
-        scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-        dbData.scheduledAt = scheduledDate.toISOString()
-      }
+    if (data.schedule === 'Schedule for Later' && data.scheduledAt) {
+      const sourceTimezone = appTimezone || DEFAULT_APP_TIMEZONE
+      const utcDate = appTimeToUTC(
+        data.scheduledAt,
+        NOTIFICATION_SEND_TIME_EST,
+        sourceTimezone
+      )
+      dbData.scheduledAt = utcDate.toISOString()
     }
 
     const notification = await DatabaseService.create<NotificationDocument>(
@@ -1519,16 +1514,9 @@ export const notificationsService = {
       dbData
     )
 
-    // If sending immediately, trigger the send function
-    // The function will update status to 'Sent' and set sentAt after sending
+    // If sending immediately, trigger send now.
     if (data.schedule === 'Send Immediately') {
-      try {
-        await notificationsService.sendNotification(notification.$id)
-      } catch (error) {
-        console.error('Error sending notification:', error)
-        // Status is already Draft, so just re-throw the error
-        throw error
-      }
+      await notificationsService.sendNotification(notification.$id)
     }
 
     return notification
@@ -1569,24 +1557,17 @@ export const notificationsService = {
       }
     }
 
-    // Handle scheduling updates
-    if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
-      if (appTimezone) {
-        const utcDate = appTimeToUTC(
-          data.scheduledAt,
-          data.scheduledTime,
-          appTimezone
-        )
-        dbData.scheduledAt = utcDate.toISOString()
-      } else {
-        const [hours, minutes] = data.scheduledTime.split(':')
-        const scheduledDate = new Date(data.scheduledAt)
-        scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-        dbData.scheduledAt = scheduledDate.toISOString()
-      }
+    // Handle scheduling updates (all sends are pinned to 1:00 PM EST)
+    if (data.schedule === 'Schedule for Later' && data.scheduledAt) {
+      const sourceTimezone = appTimezone || DEFAULT_APP_TIMEZONE
+      const utcDate = appTimeToUTC(
+        data.scheduledAt,
+        NOTIFICATION_SEND_TIME_EST,
+        sourceTimezone
+      )
+      dbData.scheduledAt = utcDate.toISOString()
       dbData.status = 'Scheduled'
     } else if (data.schedule === 'Send Immediately') {
-      // Clear scheduledAt if switching to immediate
       dbData.scheduledAt = null
       dbData.status = 'Draft'
     }
@@ -1597,14 +1578,8 @@ export const notificationsService = {
       dbData
     )
 
-    // If publishing (Send Immediately), trigger the send function after updating the document
     if (data.schedule === 'Send Immediately') {
-      try {
-        await notificationsService.sendNotification(id)
-      } catch (error) {
-        console.error('Error sending notification:', error)
-        throw error
-      }
+      await notificationsService.sendNotification(id)
     }
 
     return updated

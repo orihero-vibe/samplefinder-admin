@@ -114,6 +114,77 @@ const EVENTS_TABLE_ID = 'events';
 const SETTINGS_TABLE_ID = 'settings';
 
 const PAGE_SIZE = 100;
+const NOTIFICATION_SEND_HOUR_EST = 13;
+const EST_TIMEZONE = 'America/New_York';
+
+function getTimePartsInTimezone(
+  date: Date,
+  timezone: string
+): { year: number; month: number; day: number; hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const year = parseInt(parts.find((p) => p.type === 'year')?.value ?? '0', 10);
+  const month = parseInt(parts.find((p) => p.type === 'month')?.value ?? '0', 10);
+  const day = parseInt(parts.find((p) => p.type === 'day')?.value ?? '0', 10);
+  const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10);
+  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10);
+  return { year, month, day, hour, minute };
+}
+
+function timezoneLocalToUTC(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timezone: string
+): Date {
+  let guess = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  for (let i = 0; i < 5; i++) {
+    const comp = getTimePartsInTimezone(new Date(guess), timezone);
+    if (
+      comp.year === year &&
+      comp.month === month &&
+      comp.day === day &&
+      comp.hour === hour &&
+      comp.minute === minute
+    ) {
+      return new Date(guess);
+    }
+    const diffMs =
+      (hour - comp.hour) * 36e5 +
+      (minute - comp.minute) * 6e4 +
+      (day - comp.day) * 864e5;
+    guess += diffMs;
+  }
+  return new Date(guess);
+}
+
+function getNextOnePmEasternUTC(date: Date = new Date()): string {
+  const nowEastern = getTimePartsInTimezone(date, EST_TIMEZONE);
+  const useNextDay =
+    nowEastern.hour > NOTIFICATION_SEND_HOUR_EST ||
+    (nowEastern.hour === NOTIFICATION_SEND_HOUR_EST && nowEastern.minute > 0);
+  const targetDay = new Date(
+    Date.UTC(nowEastern.year, nowEastern.month - 1, nowEastern.day + (useNextDay ? 1 : 0))
+  );
+  const targetUtc = timezoneLocalToUTC(
+    targetDay.getUTCFullYear(),
+    targetDay.getUTCMonth() + 1,
+    targetDay.getUTCDate(),
+    NOTIFICATION_SEND_HOUR_EST,
+    0,
+    EST_TIMEZONE
+  );
+  return targetUtc.toISOString();
+}
 
 /**
  * Fetch all documents matching queries by paginating with limit/offset.
@@ -1282,7 +1353,8 @@ async function sendBadgeNotification(
   badgeType: 'ambassador' | 'influencer',
   log: (message: string) => void
 ): Promise<{ success: boolean; sentCount: number }> {
-  log(`Badge notification: sending ${badgeType} badge notification to auth user ${userId}`);
+  void messaging;
+  log(`Badge notification: scheduling ${badgeType} badge notification for auth user ${userId}`);
 
   const title =
     badgeType === 'ambassador'
@@ -1293,42 +1365,37 @@ async function sendBadgeNotification(
       ? "Congratulations, you're an official SampleFinder Brand Ambassador!"
       : 'Congratulations on earning your SampleFinder Influencer badge!';
 
-  const result = await sendPushNotificationToUsers(
-    messaging,
-    [userId],
-    title,
-    body,
-    log,
-    { type: 'Engagement', badgeType }
+  const profileResult = await databases.listDocuments(
+    DATABASE_ID,
+    USER_PROFILES_TABLE_ID,
+    [Query.equal('authID', userId), Query.limit(1)]
   );
-
-  // Also append to user's in-app notifications
-  try {
-    const profileResult = await databases.listDocuments(
-      DATABASE_ID,
-      USER_PROFILES_TABLE_ID,
-      [Query.equal('authID', userId), Query.limit(1)]
-    );
-    if (profileResult.documents.length > 0) {
-      const profile = profileResult.documents[0] as unknown as UserProfile;
-      const entry: UserProfileNotificationEntry = {
-        id: ID.unique(),
-        type: 'Engagement',
-        title,
-        message: body,
-        isRead: false,
-        createdAt: new Date().toISOString(),
-        data: { badgeType },
-      };
-      await appendNotificationToUserProfile(databases, profile.$id, entry, log);
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log(`Badge notification: failed to append in-app notification: ${msg}`);
+  if (profileResult.documents.length === 0) {
+    throw new Error('Badge notification target profile not found');
   }
 
-  log(`Badge notification: sent ${result.sentCount ?? 0}`);
-  return { success: true, sentCount: result.sentCount ?? 0 };
+  const profile = profileResult.documents[0] as unknown as UserProfile;
+  const scheduledAt = getNextOnePmEasternUTC();
+
+  await databases.createDocument(
+    DATABASE_ID,
+    NOTIFICATIONS_TABLE_ID,
+    ID.unique(),
+    {
+      title,
+      message: body,
+      type: 'Engagement',
+      targetAudience: 'Targeted',
+      category: 'AppPush',
+      status: 'Scheduled',
+      scheduledAt,
+      recipients: 0,
+      selectedUserIds: [profile.$id],
+    }
+  );
+
+  log(`Badge notification: scheduled for ${scheduledAt} UTC`);
+  return { success: true, sentCount: 0 };
 }
 
 /**
@@ -1344,57 +1411,42 @@ async function sendTierNotification(
   oldTierName: string | undefined,
   log: (message: string) => void
 ): Promise<{ success: boolean; sentCount: number }> {
-  log(`Tier notification: sending tierChanged notification to auth user ${userId}`);
+  void messaging;
+  log(`Tier notification: scheduling tierChanged notification for auth user ${userId}`);
 
   const title = `NEW TIER: ${newTierName}!`;
   const body = `Congratulations, you've reached the ${newTierName} tier! Keep earning points to level up!`;
 
-  const result = await sendPushNotificationToUsers(
-    messaging,
-    [userId],
-    title,
-    body,
-    log,
+  const profileResult = await databases.listDocuments(
+    DATABASE_ID,
+    USER_PROFILES_TABLE_ID,
+    [Query.equal('authID', userId), Query.limit(1)]
+  );
+  if (profileResult.documents.length === 0) {
+    throw new Error('Tier notification target profile not found');
+  }
+
+  const profile = profileResult.documents[0] as unknown as UserProfile;
+  const scheduledAt = getNextOnePmEasternUTC();
+  await databases.createDocument(
+    DATABASE_ID,
+    NOTIFICATIONS_TABLE_ID,
+    ID.unique(),
     {
-      type: 'tierChanged',
-      oldTierName: oldTierName ?? '',
-      newTierName,
-      screen: 'Promotions',
+      title,
+      message: body,
+      type: 'Engagement',
+      targetAudience: 'Targeted',
+      category: 'AppPush',
+      status: 'Scheduled',
+      scheduledAt,
+      recipients: 0,
+      selectedUserIds: [profile.$id],
     }
   );
 
-  // Also append to user's in-app notifications
-  try {
-    const profileResult = await databases.listDocuments(
-      DATABASE_ID,
-      USER_PROFILES_TABLE_ID,
-      [Query.equal('authID', userId), Query.limit(1)]
-    );
-
-    if (profileResult.documents.length > 0) {
-      const profile = profileResult.documents[0] as unknown as UserProfile;
-      const entry: UserProfileNotificationEntry = {
-        id: ID.unique(),
-        type: 'tierChanged',
-        title,
-        message: body,
-        isRead: false,
-        createdAt: new Date().toISOString(),
-        data: {
-          oldTierName: oldTierName ?? '',
-          newTierName,
-        },
-      };
-
-      await appendNotificationToUserProfile(databases, profile.$id, entry, log);
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log(`Tier notification: failed to append in-app notification: ${msg}`);
-  }
-
-  log(`Tier notification: sent ${result.sentCount ?? 0}`);
-  return { success: true, sentCount: result.sentCount ?? 0 };
+  log(`Tier notification: scheduled for ${scheduledAt} UTC`);
+  return { success: true, sentCount: 0 };
 }
 
 /**
@@ -1657,6 +1709,17 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       req.path === '';
     if (isScheduledRun) {
       log('Processing scheduled run: event reminders + scheduled notifications');
+      const { hour: easternHour } = getTimePartsInTimezone(new Date(), EST_TIMEZONE);
+      if (easternHour !== NOTIFICATION_SEND_HOUR_EST) {
+        log(
+          `Skipping scheduled notification processing. Current ET hour is ${easternHour}; notifications only send at 1:00 PM ET.`
+        );
+        return res.json({
+          success: true,
+          skipped: true,
+          reason: 'Outside 1:00 PM ET notification send window',
+        });
+      }
 
       // 1. Send due scheduled notifications (status=Scheduled, scheduledAt <= now)
       const scheduledResult = await checkAndSendScheduledNotifications(
