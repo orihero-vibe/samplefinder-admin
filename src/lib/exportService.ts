@@ -590,7 +590,6 @@ export const exportService = {
     appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const queries: string[] = [
-      Query.equal('isArchived', false),
       Query.orderDesc('date'),
     ]
     if (dateRange?.start) {
@@ -602,7 +601,20 @@ export const exportService = {
       queries.push(Query.lessThanEqual('date', endDate.toISOString()))
     }
 
-    const eventsResult = await eventsService.list(queries)
+    // Fetch all events in pages so report includes full list, not Appwrite's default first page.
+    const allEvents: EventDocument[] = []
+    let offset = 0
+    let chunk: EventDocument[]
+    do {
+      const pageResult = await eventsService.list([
+        ...queries,
+        Query.limit(REPORT_LIST_PAGE_SIZE),
+        Query.offset(offset),
+      ])
+      chunk = (pageResult.documents ?? []) as EventDocument[]
+      allEvents.push(...chunk)
+      offset += REPORT_LIST_PAGE_SIZE
+    } while (chunk.length === REPORT_LIST_PAGE_SIZE)
 
     // Build a lookup of saved Locations by normalized address fields.
     // Many events do not persist locationId, so we recover location name via address/city/state/zip match.
@@ -637,7 +649,7 @@ export const exportService = {
     
     // Map events to report rows
     const rows = await Promise.all(
-      eventsResult.documents.map(async (event: EventDocument) => {
+      allEvents.map(async (event: EventDocument) => {
         const eventTimezone = getEventDisplayTimezone(event, appTimezone)
         let brandName = ''
         if (event.client) {
