@@ -1,16 +1,4 @@
 import { Client, Databases, Query, ID, Users } from 'node-appwrite';
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-const DATABASE_ID = '69217af50038b9005a61';
-const EVENTS_TABLE_ID = 'events';
-const CLIENTS_TABLE_ID = 'clients';
-const TRIVIA_TABLE_ID = 'trivia';
-const TRIVIA_RESPONSES_TABLE_ID = 'trivia_responses';
-const USER_PROFILES_TABLE_ID = 'user_profiles';
-const DEFAULT_PAGE_SIZE = 10;
-const DEFAULT_PAGE = 1;
-
 /**
  * Format: 6 uppercase alphanumeric characters (excluding I, O, 0, 1)
  */
@@ -44,6 +32,17 @@ async function generateUniqueReferralCode(databases) {
     }
     return code;
 }
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const DATABASE_ID = '69217af50038b9005a61';
+const EVENTS_TABLE_ID = 'events';
+const CLIENTS_TABLE_ID = 'clients';
+const TRIVIA_TABLE_ID = 'trivia';
+const TRIVIA_RESPONSES_TABLE_ID = 'trivia_responses';
+const USER_PROFILES_TABLE_ID = 'user_profiles';
+const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE = 1;
 // ============================================================================
 // EVENT FUNCTIONS
 // ============================================================================
@@ -118,6 +117,7 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
         Query.greaterThanEqual('date', todayISO),
         Query.orderAsc('date'),
         Query.select(['*', 'client.*']),
+        Query.limit(1000),
     ];
     // Fetch all matching events
     const eventsResponse = await databases.listDocuments(DATABASE_ID, EVENTS_TABLE_ID, queries);
@@ -224,7 +224,7 @@ const GET_ACTIVE_TRIVIA_RESPONSES_LIMIT = 500;
 async function getActiveTrivia(databases, userId, log) {
     const now = new Date().toISOString();
     // Fetch active trivia and user's responses in parallel to minimize execution time
-    const [activeTriviaResponse, userResponsesResult] = await Promise.all([
+    const [activeTriviaResponse, userResponsesResult, userProfile] = await Promise.all([
         databases.listDocuments(DATABASE_ID, TRIVIA_TABLE_ID, [
             Query.lessThanEqual('startDate', now),
             Query.greaterThanEqual('endDate', now),
@@ -234,6 +234,7 @@ async function getActiveTrivia(databases, userId, log) {
             Query.equal('user', userId),
             Query.limit(GET_ACTIVE_TRIVIA_RESPONSES_LIMIT),
         ]),
+        databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId),
     ]);
     log(`Found ${activeTriviaResponse.total} active trivia questions`);
     if (activeTriviaResponse.total === 0) {
@@ -249,13 +250,20 @@ async function getActiveTrivia(databases, userId, log) {
         }
     }
     log(`User has answered ${answeredTriviaIds.size} trivia questions`);
+    // Build a set of the user's favorite brand/client IDs for fast lookup
+    const favoriteIdsArray = Array.isArray(userProfile.favoriteIds)
+        ? userProfile.favoriteIds
+        : [];
+    const favoriteIds = new Set(favoriteIdsArray);
     // Filter out trivia that the user has already answered or skipped
     // Also remove correctOptionIndex from the response for security
     const unansweredTrivia = [];
     const triviaToIncrementViews = [];
     for (const trivia of activeTriviaResponse.documents) {
         const wasSkippedByUser = Array.isArray(trivia.skippedUsers) && trivia.skippedUsers.includes(userId);
-        if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser) {
+        const clientId = trivia.client?.$id;
+        const isFavoritedBrand = !clientId || favoriteIds.has(clientId);
+        if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser && isFavoritedBrand) {
             unansweredTrivia.push({
                 $id: trivia.$id,
                 question: trivia.question,
@@ -268,18 +276,14 @@ async function getActiveTrivia(databases, userId, log) {
             triviaToIncrementViews.push(trivia);
         }
     }
-    // Increment views for each trivia returned (admin View column)
-    if (triviaToIncrementViews.length > 0) {
-        await Promise.all(
-            triviaToIncrementViews.map((trivia) =>
-                databases
-                    .updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id, {
-                        views: (trivia.views ?? 0) + 1,
-                    })
-                    .catch((err) => log(`Failed to increment views for trivia ${trivia.$id}: ${String(err)}`))
-            )
-        );
-    }
+    // Increment views for each trivia returned (admin View column).
+    // Uses the already-fetched trivia objects and runs updates in parallel to avoid
+    // redundant getDocument calls that can fail due to relationship expansion issues.
+    await Promise.allSettled(triviaToIncrementViews.map((trivia) => databases
+        .updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, trivia.$id, {
+        views: (trivia.views ?? 0) + 1,
+    })
+        .catch((err) => log(`Failed to increment views for trivia ${trivia.$id}: ${String(err)}`))));
     log(`Returning ${unansweredTrivia.length} unanswered trivia questions`);
     return unansweredTrivia;
 }
@@ -391,6 +395,7 @@ async function dismissTrivia(databases, userId, triviaId, log) {
     skippedUsers.push(userId);
     const updatePayload = {
         skippedUsers,
+        skips: (trivia.skips ?? 0) + 1,
     };
     if (typeof trivia.skips === 'number') {
         updatePayload.skips = trivia.skips + 1;
@@ -512,9 +517,7 @@ async function createUser(users, databases, data, log) {
             isBlocked: false,
             idAdult: true,
             referralCode,
-            ...(data.dob?.trim()
-                ? { dob: data.dob.trim().length === 10 ? `${data.dob.trim()}T00:00:00.000Z` : data.dob.trim() }
-                : {}),
+            ...(data.dob?.trim() ? { dob: data.dob.trim().length === 10 ? `${data.dob.trim()}T00:00:00.000Z` : data.dob.trim() } : {}),
         };
         const profile = await databases.createDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, ID.unique(), profileData);
         log(`User profile created: ${profile.$id}`);

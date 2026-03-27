@@ -897,15 +897,7 @@
                     "default": null
                 }
             ],
-            "indexes": [
-                {
-                    "key": "status_scheduledAt",
-                    "type": "key",
-                    "status": "available",
-                    "attributes": ["status", "scheduledAt"],
-                    "orders": ["ASC", "ASC"]
-                }
-            ]
+            "indexes": []
         },
         {
             "$id": "trivia",

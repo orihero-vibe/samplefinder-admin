@@ -5,6 +5,20 @@ interface SendNotificationRequest {
   notificationId: string;
 }
 
+interface SendUserPushRequest {
+  userId: string;
+  title: string;
+  message: string;
+  data?: Record<string, string>;
+}
+
+interface SendBatchPushRequest {
+  userIds: string[];
+  title: string;
+  message: string;
+  data?: Record<string, string>;
+}
+
 interface NotificationData {
   $id: string;
   title: string;
@@ -1433,8 +1447,8 @@ async function sendTierNotification(
     NOTIFICATIONS_TABLE_ID,
     ID.unique(),
     {
-      title,
-      message: body,
+    title,
+    message: body,
       type: 'Engagement',
       targetAudience: 'Targeted',
       category: 'AppPush',
@@ -1699,6 +1713,163 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       );
 
       return res.json(result);
+    }
+
+    if (req.path === '/send-user-push' && req.method === 'POST') {
+      log('Processing send-user-push request');
+
+      let requestBody: SendUserPushRequest;
+      try {
+        if (!req.body || typeof req.body !== 'object') {
+          throw new Error('Request body is required');
+        }
+
+        const body = req.body as Record<string, unknown>;
+        const { userId, title, message, data } = body;
+
+        if (!userId || typeof userId !== 'string') {
+          throw new Error('userId is required and must be a string');
+        }
+        if (!title || typeof title !== 'string') {
+          throw new Error('title is required and must be a string');
+        }
+        if (!message || typeof message !== 'string') {
+          throw new Error('message is required and must be a string');
+        }
+
+        if (data && typeof data !== 'object') {
+          throw new Error('data must be an object if provided');
+        }
+
+        // Normalize data to Record<string, string>
+        const payloadData: Record<string, string> = {};
+        if (data && typeof data === 'object') {
+          Object.entries(data as Record<string, unknown>).forEach(([key, value]) => {
+            payloadData[key] = String(value);
+          });
+        }
+
+        requestBody = {
+          userId,
+          title,
+          message,
+          data: payloadData,
+        };
+      } catch (validationError: unknown) {
+        const errorMessage =
+          validationError instanceof Error ? validationError.message : String(validationError);
+        error(`Validation error (send-user-push): ${errorMessage}`);
+        return res.json(
+          {
+            success: false,
+            error: errorMessage,
+          },
+          400
+        );
+      }
+
+      log(`Sending push notification to user: ${requestBody.userId}`);
+
+      const pushResult = await sendPushNotificationToUsers(
+        messaging,
+        [requestBody.userId],
+        requestBody.title,
+        requestBody.message,
+        log,
+        requestBody.data
+      );
+
+      const success = pushResult.status !== 'failed';
+
+      return res.json({
+        success,
+        status: pushResult.status,
+        messageId: pushResult.$id,
+        sentCount: pushResult.sentCount ?? (success ? 1 : 0),
+      });
+    }
+
+    // Handle batch push endpoint (used by mobile app)
+    if (req.path === '/send-batch-push' && req.method === 'POST') {
+      log('Processing send-batch-push request');
+
+      let requestBody: SendBatchPushRequest;
+      try {
+        if (!req.body || typeof req.body !== 'object') {
+          throw new Error('Request body is required');
+        }
+
+        const body = req.body as Record<string, unknown>;
+        const { userIds, title, message, data } = body;
+
+        if (!Array.isArray(userIds) || userIds.length === 0) {
+          throw new Error('userIds is required and must be a non-empty array of strings');
+        }
+        if (!title || typeof title !== 'string') {
+          throw new Error('title is required and must be a string');
+        }
+        if (!message || typeof message !== 'string') {
+          throw new Error('message is required and must be a string');
+        }
+
+        if (data && typeof data !== 'object') {
+          throw new Error('data must be an object if provided');
+        }
+
+        const normalizedUserIds = userIds.filter(
+          (id): id is string => typeof id === 'string' && id.trim().length > 0
+        );
+
+        if (normalizedUserIds.length === 0) {
+          throw new Error('userIds must contain at least one valid string');
+        }
+
+        // Normalize data to Record<string, string>
+        const payloadData: Record<string, string> = {};
+        if (data && typeof data === 'object') {
+          Object.entries(data as Record<string, unknown>).forEach(([key, value]) => {
+            payloadData[key] = String(value);
+          });
+        }
+
+        requestBody = {
+          userIds: normalizedUserIds,
+          title,
+          message,
+          data: payloadData,
+        };
+      } catch (validationError: unknown) {
+        const errorMessage =
+          validationError instanceof Error ? validationError.message : String(validationError);
+        error(`Validation error (send-batch-push): ${errorMessage}`);
+        return res.json(
+          {
+            success: false,
+            error: errorMessage,
+          },
+          400
+        );
+      }
+
+      log(`Sending batch push notification to ${requestBody.userIds.length} users`);
+
+      const pushResult = await sendPushNotificationToUsers(
+        messaging,
+        requestBody.userIds,
+        requestBody.title,
+        requestBody.message,
+        log,
+        requestBody.data
+      );
+
+      const success = pushResult.status !== 'failed';
+
+      return res.json({
+        success,
+        status: pushResult.status,
+        messageId: pushResult.$id,
+        sentCount: pushResult.sentCount ?? (success ? requestBody.userIds.length : 0),
+      });
     }
 
     // Handle scheduled execution: event reminders + due scheduled notifications

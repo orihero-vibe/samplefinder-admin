@@ -333,6 +333,7 @@ async function getEventsByLocation(
     Query.greaterThanEqual('date', todayISO),
     Query.orderAsc('date'),
     Query.select(['*', 'client.*']),
+    Query.limit(1000),
   ];
 
   // Fetch all matching events
@@ -475,7 +476,7 @@ async function getActiveTrivia(
   const now = new Date().toISOString();
 
   // Fetch active trivia and user's responses in parallel to minimize execution time
-  const [activeTriviaResponse, userResponsesResult] = await Promise.all([
+  const [activeTriviaResponse, userResponsesResult, userProfile] = await Promise.all([
     databases.listDocuments(DATABASE_ID, TRIVIA_TABLE_ID, [
       Query.lessThanEqual('startDate', now),
       Query.greaterThanEqual('endDate', now),
@@ -485,6 +486,7 @@ async function getActiveTrivia(
       Query.equal('user', userId),
       Query.limit(GET_ACTIVE_TRIVIA_RESPONSES_LIMIT),
     ]),
+    databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId),
   ]);
 
   log(`Found ${activeTriviaResponse.total} active trivia questions`);
@@ -506,6 +508,12 @@ async function getActiveTrivia(
 
   log(`User has answered ${answeredTriviaIds.size} trivia questions`);
 
+  // Build a set of the user's favorite brand/client IDs for fast lookup
+  const favoriteIdsArray = Array.isArray((userProfile as any).favoriteIds)
+    ? ((userProfile as any).favoriteIds as string[])
+    : [];
+  const favoriteIds = new Set<string>(favoriteIdsArray);
+
   // Filter out trivia that the user has already answered or skipped
   // Also remove correctOptionIndex from the response for security
   const unansweredTrivia: ActiveTriviaResponse[] = [];
@@ -514,7 +522,10 @@ async function getActiveTrivia(
   for (const trivia of activeTriviaResponse.documents as unknown as TriviaDocument[]) {
     const wasSkippedByUser =
       Array.isArray(trivia.skippedUsers) && trivia.skippedUsers.includes(userId);
-    if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser) {
+    const clientId = trivia.client?.$id;
+    const isFavoritedBrand = !clientId || favoriteIds.has(clientId);
+
+    if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser && isFavoritedBrand) {
       unansweredTrivia.push({
         $id: trivia.$id,
         question: trivia.question,
@@ -709,6 +720,9 @@ async function dismissTrivia(
     skippedUsers,
     skips: (trivia.skips ?? 0) + 1,
   };
+  if (typeof trivia.skips === 'number') {
+    updatePayload.skips = trivia.skips + 1;
+  }
   await databases.updateDocument(
     DATABASE_ID,
     TRIVIA_TABLE_ID,
