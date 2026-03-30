@@ -426,7 +426,7 @@ const PUSH_CONCURRENCY = 3;
 
 /**
  * Send push notification using Appwrite Messaging.
- * Uses object-based API and batches users for efficient delivery.
+ * Uses positional createPush (node-appwrite does not accept an object as the first argument).
  * Sends to multiple users per createPush call, with concurrent batch execution.
  * users: array of Appwrite Auth user IDs (each user must have a push target registered).
  */
@@ -457,29 +457,29 @@ async function sendPushNotificationToUsers(
   for (let i = 0; i < batches.length; i += PUSH_CONCURRENCY) {
     const chunk = batches.slice(i, i + PUSH_CONCURRENCY);
     const results = await Promise.allSettled(
-      chunk.map((userBatch) => {
-        // Object-based API per Appwrite docs; node-appwrite 14 types only declare positional overload
-        const createPushObj = messaging.createPush as unknown as (opts: {
-          messageId: string;
-          title: string;
-          body: string;
-          topics: string[];
-          users: string[];
-          targets: string[];
-          data: Record<string, string>;
-          draft: boolean;
-        }) => Promise<PushResult>;
-        return createPushObj({
-          messageId: ID.unique(),
+      chunk.map((userBatch) =>
+        messaging.createPush(
+          ID.unique(),
           title,
           body,
-          topics: [],
-          users: userBatch,
-          targets: [],
-          data: payload,
-          draft: false,
-        });
-      })
+          [],
+          userBatch,
+          [],
+          payload,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          undefined
+        )
+      )
     );
     for (let j = 0; j < results.length; j++) {
       const settled = results[j];
@@ -1447,8 +1447,8 @@ async function sendTierNotification(
     NOTIFICATIONS_TABLE_ID,
     ID.unique(),
     {
-    title,
-    message: body,
+      title,
+      message: body,
       type: 'Engagement',
       targetAudience: 'Targeted',
       category: 'AppPush',
