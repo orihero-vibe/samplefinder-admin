@@ -9,7 +9,11 @@ import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
 import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
 import { useNotificationStore } from '../../../stores/notificationStore'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
-import { DEFAULT_APP_TIMEZONE } from '../../../lib/dateUtils'
+import {
+  DEFAULT_APP_TIMEZONE,
+  getTodayDateStringInTimezone,
+  isDateStringBeforeTodayInTimezone,
+} from '../../../lib/dateUtils'
 import { TIMEZONE_OPTIONS } from '../../../stores/timezoneStore'
 
 interface Category extends Models.Document {
@@ -359,14 +363,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     if (input) input.value = ''
   }
 
-  // Get today's date in YYYY-MM-DD format for date input min attribute
-  const getTodayDateString = () => {
-    const today = new Date()
-    const year = today.getFullYear()
-    const month = String(today.getMonth() + 1).padStart(2, '0')
-    const day = String(today.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
+  // Get today's date in YYYY-MM-DD for the selected event timezone.
+  const getTodayDateString = () => getTodayDateStringInTimezone(formData.timezone || DEFAULT_APP_TIMEZONE)
 
   const handleClose = () => {
     if (hasUnsavedChanges && !isSubmitting) {
@@ -400,15 +398,10 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
       return
     }
 
-    // Validate that event date is not in the past
+    // Validate that event date is not in the past (in the selected event timezone)
     if (trimmed.eventDate) {
-      const [y, m, d] = trimmed.eventDate.split('-').map(Number)
-      const eventDate = new Date(y, m - 1, d)
-      const today = new Date()
-      today.setHours(0, 0, 0, 0) // Reset time to start of day for comparison
-      eventDate.setHours(0, 0, 0, 0)
-
-      if (eventDate < today) {
+      const tz = trimmed.timezone || DEFAULT_APP_TIMEZONE
+      if (isDateStringBeforeTodayInTimezone(trimmed.eventDate, tz)) {
         addNotification({
           type: 'error',
           title: 'Invalid Event Date',
