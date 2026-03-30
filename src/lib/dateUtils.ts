@@ -231,6 +231,40 @@ export function formatDateTimeInAppTimezone(
 }
 
 /**
+ * Get a YYYY-MM-DD string for a given instant in a specific IANA timezone.
+ * Useful for HTML date input constraints and timezone-correct "today" checks.
+ */
+export function getDateStringInTimezone(date: Date, ianaTimezone: string): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ianaTimezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  // en-CA with numeric parts formats as YYYY-MM-DD in all modern browsers
+  return formatter.format(date)
+}
+
+/**
+ * Get today's date in YYYY-MM-DD for a specific timezone.
+ */
+export function getTodayDateStringInTimezone(ianaTimezone: string, now: Date = new Date()): string {
+  return getDateStringInTimezone(now, ianaTimezone)
+}
+
+/**
+ * Compare a YYYY-MM-DD date string to "today" in the provided timezone.
+ */
+export function isDateStringBeforeTodayInTimezone(
+  dateStr: string,
+  ianaTimezone: string,
+  now: Date = new Date()
+): boolean {
+  const todayStr = getTodayDateStringInTimezone(ianaTimezone, now)
+  return dateStr < todayStr
+}
+
+/**
  * Formats a Date object as ISO 8601 string with timezone offset.
  * This preserves the local timezone instead of converting to UTC.
  * 
