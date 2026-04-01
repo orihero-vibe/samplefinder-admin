@@ -6,8 +6,13 @@ const USER_PROFILES_TABLE_ID = 'user_profiles';
 const EVENTS_TABLE_ID = 'events';
 const SETTINGS_TABLE_ID = 'settings';
 const PAGE_SIZE = 100;
+/** Admin-scheduled notifications (notifications collection) send at 1:00 PM Eastern */
 const NOTIFICATION_SEND_HOUR_EST = 13;
 const EST_TIMEZONE = 'America/New_York';
+/** App push campaigns that should feel like "morning" (Trivia Tuesday, Sampling Today, nearby favorite) */
+const MORNING_START_HOUR_ET = 8;
+const MORNING_END_HOUR_ET = 10; // exclusive: runs during 08:00–09:59 ET
+const CLIENTS_TABLE_ID = 'clients';
 function getTimePartsInTimezone(date, timezone) {
     const parts = new Intl.DateTimeFormat('en-US', {
         timeZone: timezone,
@@ -50,6 +55,21 @@ function getNextOnePmEasternUTC(date = new Date()) {
     const targetDay = new Date(Date.UTC(nowEastern.year, nowEastern.month - 1, nowEastern.day + (useNextDay ? 1 : 0)));
     const targetUtc = timezoneLocalToUTC(targetDay.getUTCFullYear(), targetDay.getUTCMonth() + 1, targetDay.getUTCDate(), NOTIFICATION_SEND_HOUR_EST, 0, EST_TIMEZONE);
     return targetUtc.toISOString();
+}
+function getEasternDateString(date) {
+    const p = getTimePartsInTimezone(date, EST_TIMEZONE);
+    return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+function isInMorningWindowET(date) {
+    const { hour } = getTimePartsInTimezone(date, EST_TIMEZONE);
+    return hour >= MORNING_START_HOUR_ET && hour < MORNING_END_HOUR_ET;
+}
+function isTuesdayEastern(date) {
+    const wd = new Intl.DateTimeFormat('en-US', {
+        timeZone: EST_TIMEZONE,
+        weekday: 'short',
+    }).format(date);
+    return wd === 'Tue';
 }
 /**
  * Fetch all documents matching queries by paginating with limit/offset.
@@ -590,14 +610,14 @@ async function setSettingValue(databases, key, value) {
  */
 async function checkAndSendTriviaTuesday(databases, messaging, log) {
     const now = new Date();
-    if (now.getUTCDay() !== 2) {
-        log('Trivia Tuesday: not Tuesday, skipping');
+    if (!isTuesdayEastern(now)) {
+        log('Trivia Tuesday: not Tuesday (America/New_York), skipping');
         return { sent: 0 };
     }
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = getEasternDateString(now);
     const lastSent = await getSettingValue(databases, 'triviaTuesdayLastSent');
     if (lastSent === todayStr) {
-        log('Trivia Tuesday: already sent today, skipping');
+        log('Trivia Tuesday: already sent this Eastern date, skipping');
         return { sent: 0 };
     }
     log('Trivia Tuesday: sending to all users');
@@ -621,12 +641,16 @@ async function checkAndSendTriviaTuesday(databases, messaging, log) {
  */
 async function checkAndSendSamplingToday(databases, messaging, log) {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    log(`Sampling Today: checking for events on ${todayStr}`);
+    const todayStr = getEasternDateString(now);
+    log(`Sampling Today: checking for events on ${todayStr} (America/New_York)`);
     const allEvents = (await listAllDocuments(databases, DATABASE_ID, EVENTS_TABLE_ID, []));
     const todaysEvents = allEvents.filter((e) => {
-        const eventDateStr = (e.startTime || e.date || '').slice(0, 10);
-        return eventDateStr === todayStr && !e.isArchived && !e.isHidden;
+        if (e.isArchived || e.isHidden)
+            return false;
+        const start = new Date(e.startTime || e.date || '');
+        if (Number.isNaN(start.getTime()))
+            return false;
+        return getEasternDateString(start) === todayStr;
     });
     if (todaysEvents.length === 0) {
         log('Sampling Today: no events today');
@@ -661,7 +685,7 @@ async function checkAndSendSamplingToday(databases, messaging, log) {
                 hour: 'numeric',
                 minute: '2-digit',
                 hour12: true,
-                timeZone: 'UTC',
+                timeZone: EST_TIMEZONE,
             });
             const storeName = event.name || 'your event';
             const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'SAMPLING TODAY', `Sampling at ${storeName} starts at ${timeStr}! Click to learn more!`, log, { eventId: event.$id, type: 'Event Reminder' });
@@ -686,6 +710,196 @@ async function checkAndSendSamplingToday(databases, messaging, log) {
     log(`Sampling Today: sent ${totalSent} notification(s)`);
     return { sent: totalSent };
 }
+const NEARBY_MAX_MILES = 50;
+const NEARBY_MAX_DAYS = 7;
+const EARTH_RADIUS_MILES = 3958.8;
+function haversineMiles(lat1, lon1, lat2, lon2) {
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * EARTH_RADIUS_MILES * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function getEventLatLng(e) {
+    const loc = e.location;
+    if (!loc)
+        return null;
+    if (Array.isArray(loc) && loc.length >= 2) {
+        const a = Number(loc[0]);
+        const b = Number(loc[1]);
+        if (Number.isNaN(a) || Number.isNaN(b))
+            return null;
+        return { lng: a, lat: b };
+    }
+    if (typeof loc === 'object' && loc !== null && 'coordinates' in loc) {
+        const c = loc.coordinates;
+        if (Array.isArray(c) && c.length >= 2) {
+            return { lng: c[0], lat: c[1] };
+        }
+    }
+    return null;
+}
+function getEventClientId(e) {
+    const c = e.client;
+    if (!c)
+        return null;
+    if (typeof c === 'string')
+        return c;
+    if (typeof c === 'object' && c !== null && '$id' in c)
+        return c.$id;
+    return null;
+}
+async function geocodeUsZip(zip) {
+    const cleaned = zip.replace(/\D/g, '').slice(0, 5);
+    if (cleaned.length !== 5)
+        return null;
+    try {
+        const res = await fetch(`https://api.zippopotam.us/us/${cleaned}`);
+        if (!res.ok)
+            return null;
+        const data = (await res.json());
+        const p = data.places?.[0];
+        if (!p)
+            return null;
+        return { lat: parseFloat(p.latitude), lng: parseFloat(p.longitude) };
+    }
+    catch {
+        return null;
+    }
+}
+function parseNearbyNotifiedIds(raw) {
+    if (!raw || typeof raw !== 'string')
+        return [];
+    try {
+        const p = JSON.parse(raw);
+        return Array.isArray(p) ? p.filter((x) => typeof x === 'string') : [];
+    }
+    catch {
+        return [];
+    }
+}
+async function resolveUserLatLng(databases, user, log) {
+    const hLat = user.homeLatitude;
+    const hLng = user.homeLongitude;
+    if (typeof hLat === 'number' && typeof hLng === 'number' && !Number.isNaN(hLat) && !Number.isNaN(hLng)) {
+        return { lat: hLat, lng: hLng };
+    }
+    const zLat = user.zipGeoLat;
+    const zLng = user.zipGeoLng;
+    if (typeof zLat === 'number' && typeof zLng === 'number' && !Number.isNaN(zLat) && !Number.isNaN(zLng)) {
+        return { lat: zLat, lng: zLng };
+    }
+    const zip = typeof user.zipCode === 'string' ? user.zipCode.trim() : '';
+    if (!zip)
+        return null;
+    const geo = await geocodeUsZip(zip);
+    if (geo) {
+        try {
+            await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
+                zipGeoLat: geo.lat,
+                zipGeoLng: geo.lng,
+            });
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`Nearby favorite: could not cache zip geocode for user ${user.$id}: ${msg}`);
+        }
+    }
+    return geo;
+}
+/**
+ * NEW SAMPLING EVENT NEAR YOU
+ * Favorite brand has an event in the next 7 days within 50 miles of the user's zip/home.
+ */
+async function checkAndSendNearbyFavoriteSampling(databases, messaging, log) {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + NEARBY_MAX_DAYS * 24 * 60 * 60 * 1000);
+    const allEvents = (await listAllDocuments(databases, DATABASE_ID, EVENTS_TABLE_ID, []));
+    const upcoming = allEvents.filter((e) => {
+        if (e.isArchived || e.isHidden)
+            return false;
+        const start = new Date(e.startTime || e.date || '');
+        if (Number.isNaN(start.getTime()))
+            return false;
+        return start >= now && start <= horizon;
+    });
+    if (upcoming.length === 0) {
+        log('Nearby favorite: no upcoming events in window');
+        return { sent: 0 };
+    }
+    const clientNameCache = new Map();
+    async function getBrandName(clientId) {
+        if (clientNameCache.has(clientId)) {
+            return clientNameCache.get(clientId) ?? 'A brand';
+        }
+        try {
+            const doc = await databases.getDocument(DATABASE_ID, CLIENTS_TABLE_ID, clientId);
+            const row = doc;
+            const name = (row.title || row.name || 'A brand').trim();
+            clientNameCache.set(clientId, name);
+            return name;
+        }
+        catch {
+            clientNameCache.set(clientId, 'A brand');
+            return 'A brand';
+        }
+    }
+    const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
+    let totalSent = 0;
+    for (const user of allUsers) {
+        if (!user.authID)
+            continue;
+        const favRaw = user.favoriteIds;
+        const favorites = Array.isArray(favRaw)
+            ? favRaw.filter((x) => typeof x === 'string')
+            : [];
+        if (favorites.length === 0)
+            continue;
+        const userPos = await resolveUserLatLng(databases, user, log);
+        if (!userPos) {
+            continue;
+        }
+        let notified = parseNearbyNotifiedIds(user.nearbyFavoriteNotifiedEventIds);
+        let needsProfileUpdate = false;
+        for (const event of upcoming) {
+            const clientId = getEventClientId(event);
+            if (!clientId || !favorites.includes(clientId))
+                continue;
+            const evPos = getEventLatLng(event);
+            if (!evPos)
+                continue;
+            const miles = haversineMiles(userPos.lat, userPos.lng, evPos.lat, evPos.lng);
+            if (miles > NEARBY_MAX_MILES)
+                continue;
+            if (notified.includes(event.$id))
+                continue;
+            const brandName = await getBrandName(clientId);
+            const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'NEW SAMPLING EVENT NEAR YOU', `Heads up, ${brandName} has a sampling event coming up near you. Click to learn more!`, log, { eventId: event.$id, type: 'Promotional' });
+            if ((pushResult.sentCount ?? 0) === 0) {
+                log(`Nearby favorite: push failed for user ${user.$id} event ${event.$id}`);
+                continue;
+            }
+            notified = [...notified, event.$id];
+            needsProfileUpdate = true;
+            totalSent++;
+        }
+        if (needsProfileUpdate) {
+            const trimmed = notified.slice(-500);
+            try {
+                await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
+                    nearbyFavoriteNotifiedEventIds: JSON.stringify(trimmed),
+                });
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                log(`Nearby favorite: failed to save notified ids for ${user.$id}: ${msg}`);
+            }
+        }
+    }
+    log(`Nearby favorite: sent ${totalSent} notification(s)`);
+    return { sent: totalSent };
+}
 /**
  * HAPPY BIRTHDAY
  * Sends birthday push + awards configurable points on the user's birthday.
@@ -693,18 +907,19 @@ async function checkAndSendSamplingToday(databases, messaging, log) {
  */
 async function checkAndSendBirthdayNotifications(databases, messaging, log) {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayEastern = getEasternDateString(now);
     const lastRun = await getSettingValue(databases, 'birthdayCheckLastRun');
-    if (lastRun === todayStr) {
-        log('Birthday: already checked today, skipping');
+    if (lastRun === todayEastern) {
+        log('Birthday: already checked this Eastern calendar day, skipping');
         return { sent: 0 };
     }
-    const currentYear = now.getUTCFullYear();
-    const currentMonth = now.getUTCMonth();
-    const currentDay = now.getUTCDate();
+    const todayParts = getTimePartsInTimezone(now, EST_TIMEZONE);
+    const currentYear = todayParts.year;
+    const currentMonth = todayParts.month;
+    const currentDay = todayParts.day;
     const pointsStr = await getSettingValue(databases, 'birthdayPoints');
     const points = pointsStr ? parseInt(pointsStr, 10) : 100;
-    log(`Birthday: checking for birthdays on ${currentMonth + 1}/${currentDay}, awarding ${points} points`);
+    log(`Birthday: checking for birthdays on ${currentMonth}/${currentDay} (${EST_TIMEZONE}), awarding ${points} points`);
     const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
     let sent = 0;
     for (const user of allUsers) {
@@ -713,7 +928,10 @@ async function checkAndSendBirthdayNotifications(databases, messaging, log) {
         if (user.birthdayNotifYear === currentYear)
             continue;
         const dob = new Date(user.dob);
-        if (dob.getUTCMonth() !== currentMonth || dob.getUTCDate() !== currentDay)
+        if (Number.isNaN(dob.getTime()))
+            continue;
+        const dobParts = getTimePartsInTimezone(dob, EST_TIMEZONE);
+        if (dobParts.month !== currentMonth || dobParts.day !== currentDay)
             continue;
         log(`Birthday: sending to user ${user.$id}`);
         const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY BIRTHDAY!', `We wish you a very happy birthday, from all of us here at SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
@@ -734,7 +952,7 @@ async function checkAndSendBirthdayNotifications(databases, messaging, log) {
         }
         sent++;
     }
-    await setSettingValue(databases, 'birthdayCheckLastRun', todayStr);
+    await setSettingValue(databases, 'birthdayCheckLastRun', todayEastern);
     log(`Birthday: sent ${sent} notification(s)`);
     return { sent };
 }
@@ -745,18 +963,19 @@ async function checkAndSendBirthdayNotifications(databases, messaging, log) {
  */
 async function checkAndSendAnniversaryNotifications(databases, messaging, log) {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayEastern = getEasternDateString(now);
     const lastRun = await getSettingValue(databases, 'anniversaryCheckLastRun');
-    if (lastRun === todayStr) {
-        log('Anniversary: already checked today, skipping');
+    if (lastRun === todayEastern) {
+        log('Anniversary: already checked this Eastern calendar day, skipping');
         return { sent: 0 };
     }
-    const currentYear = now.getUTCFullYear();
-    const currentMonth = now.getUTCMonth();
-    const currentDay = now.getUTCDate();
+    const todayParts = getTimePartsInTimezone(now, EST_TIMEZONE);
+    const currentYear = todayParts.year;
+    const currentMonth = todayParts.month;
+    const currentDay = todayParts.day;
     const pointsStr = await getSettingValue(databases, 'anniversaryPoints');
     const points = pointsStr ? parseInt(pointsStr, 10) : 200;
-    log(`Anniversary: checking for join-date anniversaries on ${currentMonth + 1}/${currentDay}, awarding ${points} points`);
+    log(`Anniversary: checking for join-date anniversaries on ${currentMonth}/${currentDay} (${EST_TIMEZONE}), awarding ${points} points`);
     const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
     let sent = 0;
     for (const user of allUsers) {
@@ -765,9 +984,12 @@ async function checkAndSendAnniversaryNotifications(databases, messaging, log) {
         if (user.anniversaryNotifYear === currentYear)
             continue;
         const createdAt = new Date(user.$createdAt);
-        if (createdAt.getUTCMonth() !== currentMonth || createdAt.getUTCDate() !== currentDay)
+        if (Number.isNaN(createdAt.getTime()))
             continue;
-        const yearsOnPlatform = currentYear - createdAt.getUTCFullYear();
+        const createdParts = getTimePartsInTimezone(createdAt, EST_TIMEZONE);
+        if (createdParts.month !== currentMonth || createdParts.day !== currentDay)
+            continue;
+        const yearsOnPlatform = currentYear - createdParts.year;
         if (yearsOnPlatform < 1)
             continue;
         log(`Anniversary: sending to user ${user.$id} (${yearsOnPlatform} year(s))`);
@@ -789,7 +1011,7 @@ async function checkAndSendAnniversaryNotifications(databases, messaging, log) {
         }
         sent++;
     }
-    await setSettingValue(databases, 'anniversaryCheckLastRun', todayStr);
+    await setSettingValue(databases, 'anniversaryCheckLastRun', todayEastern);
     log(`Anniversary: sent ${sent} notification(s)`);
     return { sent };
 }
@@ -1250,15 +1472,16 @@ export default async function handler({ req, res, log, error }) {
         if (isScheduledRun) {
             log('Processing scheduled run: event reminders + scheduled notifications');
             const { hour: easternHour } = getTimePartsInTimezone(new Date(), EST_TIMEZONE);
-            const shouldRunTimedCampaigns = easternHour === NOTIFICATION_SEND_HOUR_EST;
+            const shouldRunScheduledNotifications = easternHour === NOTIFICATION_SEND_HOUR_EST;
+            const shouldRunMorningCampaigns = isInMorningWindowET(new Date());
             let scheduledResult = { success: true, sent: 0, failed: 0 };
-            if (shouldRunTimedCampaigns) {
+            if (shouldRunScheduledNotifications) {
                 // 1. Send due scheduled notifications (status=Scheduled, scheduledAt <= now)
                 scheduledResult = await checkAndSendScheduledNotifications(databases, messaging, log);
                 log(`Scheduled notifications: sent=${scheduledResult.sent}, failed=${scheduledResult.failed}`);
             }
             else {
-                log(`Skipping scheduled notification processing. Current ET hour is ${easternHour}; scheduled campaigns only send at 1:00 PM ET.`);
+                log(`Skipping admin scheduled notifications. Current ET hour is ${easternHour}; those only send at 1:00 PM ET.`);
             }
             // 2. Check and send event reminders (24h / 1h)
             const remindersResult = await checkAndSendEventReminders(databases, messaging, log);
@@ -1266,18 +1489,33 @@ export default async function handler({ req, res, log, error }) {
             // 3. Auto-archive events that completed more than 7 days ago
             const archiveResult = await archiveEventsCompletedOver7DaysAgo(databases, log);
             log(`Auto-archive events: ${archiveResult.archived}`);
-            // 4. Trivia Tuesday (sends once per Tuesday, only during timed campaign window)
+            // 4. Trivia Tuesday (Tuesday morning ET, once per Eastern calendar day)
             let triviaTuesdayResult = { sent: 0 };
-            if (shouldRunTimedCampaigns) {
+            if (shouldRunMorningCampaigns) {
                 triviaTuesdayResult = await checkAndSendTriviaTuesday(databases, messaging, log);
                 log(`Trivia Tuesday: sent=${triviaTuesdayResult.sent}`);
             }
             else {
-                log('Trivia Tuesday: skipped outside 1:00 PM ET window');
+                log(`Trivia Tuesday: skipped outside morning window (${MORNING_START_HOUR_ET}:00–${MORNING_END_HOUR_ET}:00 ET)`);
             }
-            // 5. Sampling Today (morning of event day)
-            const samplingTodayResult = await checkAndSendSamplingToday(databases, messaging, log);
-            log(`Sampling Today: sent=${samplingTodayResult.sent}`);
+            // 5. Sampling Today (morning ET on the day of the event)
+            let samplingTodayResult = { sent: 0 };
+            if (shouldRunMorningCampaigns) {
+                samplingTodayResult = await checkAndSendSamplingToday(databases, messaging, log);
+                log(`Sampling Today: sent=${samplingTodayResult.sent}`);
+            }
+            else {
+                log(`Sampling Today: skipped outside morning window (${MORNING_START_HOUR_ET}:00–${MORNING_END_HOUR_ET}:00 ET)`);
+            }
+            // 5b. New sampling event near you (favorite brand, 50 mi, 7 days)
+            let nearbyFavoriteResult = { sent: 0 };
+            if (shouldRunMorningCampaigns) {
+                nearbyFavoriteResult = await checkAndSendNearbyFavoriteSampling(databases, messaging, log);
+                log(`Nearby favorite sampling: sent=${nearbyFavoriteResult.sent}`);
+            }
+            else {
+                log('Nearby favorite sampling: skipped outside morning ET window');
+            }
             // 6. Happy Birthday (once per year per user)
             const birthdayResult = await checkAndSendBirthdayNotifications(databases, messaging, log);
             log(`Birthday: sent=${birthdayResult.sent}`);
@@ -1305,6 +1543,9 @@ export default async function handler({ req, res, log, error }) {
                 },
                 samplingToday: {
                     sent: samplingTodayResult.sent,
+                },
+                nearbyFavoriteSampling: {
+                    sent: nearbyFavoriteResult.sent,
                 },
                 birthday: {
                     sent: birthdayResult.sent,
