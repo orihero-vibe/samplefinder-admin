@@ -117,10 +117,19 @@ export function appTimeToUTC(
     ) {
       return new Date(guess)
     }
-    const diffMs =
-      (hour - comp.hour) * 36e5 +
-      (minute - comp.minute) * 6e4 +
-      (d - comp.day) * 864e5
+    // Compare full local datetime parts in UTC space (year/month/day/hour/minute),
+    // not just day-of-month, so month/year boundaries are handled correctly.
+    const targetPartsAsUtc = Date.UTC(y, m - 1, d, hour, minute, 0, 0)
+    const currentPartsAsUtc = Date.UTC(
+      comp.year,
+      comp.month - 1,
+      comp.day,
+      comp.hour,
+      comp.minute,
+      0,
+      0
+    )
+    const diffMs = targetPartsAsUtc - currentPartsAsUtc
     guess += diffMs
   }
   return new Date(guess)
