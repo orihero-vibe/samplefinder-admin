@@ -219,6 +219,34 @@ async function appendNotificationToUserProfiles(databases, userProfileIds, notif
         await appendNotificationToUserProfile(databases, userId, entry, log);
     }
 }
+/**
+ * Send a single-user system notification immediately (push + in-app profile entry),
+ * bypassing the scheduled notification table flow.
+ */
+async function sendImmediateSystemNotificationToUser(databases, messaging, profile, title, message, type, log, data) {
+    if (!profile.authID || typeof profile.authID !== 'string') {
+        throw new Error('Target user profile has no valid authID');
+    }
+    const payload = {
+        type,
+        ...(data ?? {}),
+    };
+    const pushResult = await sendPushNotificationToUsers(messaging, [profile.authID], title, message, log, payload);
+    const sentCount = pushResult.sentCount ?? 0;
+    if (sentCount === 0) {
+        throw new Error('Immediate push delivery failed for target user');
+    }
+    await appendNotificationToUserProfile(databases, profile.$id, {
+        id: ID.unique(),
+        type,
+        title,
+        message,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        data: payload,
+    }, log);
+    return { success: true, sentCount };
+}
 const PUSH_BATCH_SIZE = 50;
 const PUSH_CONCURRENCY = 3;
 /**
@@ -578,8 +606,11 @@ async function checkAndSendTriviaTuesday(databases, messaging, log) {
         .map((u) => u.authID)
         .filter((id) => id && typeof id === 'string');
     const result = await sendPushNotificationToUsers(messaging, authIds, 'TRIVIA TUESDAY', 'Earn points by knowing fun facts about your favorite brands!', log, { type: 'Engagement' });
-    await setSettingValue(databases, 'triviaTuesdayLastSent', todayStr);
-    log(`Trivia Tuesday: sent to ${result.sentCount ?? 0} users`);
+    const sentCount = result.sentCount ?? 0;
+    if (sentCount > 0) {
+        await setSettingValue(databases, 'triviaTuesdayLastSent', todayStr);
+    }
+    log(`Trivia Tuesday: sent to ${sentCount} users`);
     return { sent: result.sentCount ?? 0 };
 }
 /**
@@ -633,7 +664,11 @@ async function checkAndSendSamplingToday(databases, messaging, log) {
                 timeZone: 'UTC',
             });
             const storeName = event.name || 'your event';
-            await sendPushNotificationToUsers(messaging, [user.authID], 'SAMPLING TODAY', `Sampling at ${storeName} starts at ${timeStr}! Click to learn more!`, log, { eventId: event.$id, type: 'Event Reminder' });
+            const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'SAMPLING TODAY', `Sampling at ${storeName} starts at ${timeStr}! Click to learn more!`, log, { eventId: event.$id, type: 'Event Reminder' });
+            if ((pushResult.sentCount ?? 0) === 0) {
+                log(`Sampling Today: push delivery failed for user ${user.$id}, not marking as sent`);
+                continue;
+            }
             saved.samplingTodaySent = true;
             needsUpdate = true;
             totalSent++;
@@ -681,7 +716,11 @@ async function checkAndSendBirthdayNotifications(databases, messaging, log) {
         if (dob.getUTCMonth() !== currentMonth || dob.getUTCDate() !== currentDay)
             continue;
         log(`Birthday: sending to user ${user.$id}`);
-        await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY BIRTHDAY!', `We wish you a very happy birthday, from all of us here at SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY BIRTHDAY!', `We wish you a very happy birthday, from all of us here at SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        if ((pushResult.sentCount ?? 0) === 0) {
+            log(`Birthday: push delivery failed for user ${user.$id}, skipping yearly flag/points update`);
+            continue;
+        }
         const currentPoints = user.totalPoints ?? 0;
         try {
             await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
@@ -732,7 +771,11 @@ async function checkAndSendAnniversaryNotifications(databases, messaging, log) {
         if (yearsOnPlatform < 1)
             continue;
         log(`Anniversary: sending to user ${user.$id} (${yearsOnPlatform} year(s))`);
-        await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY SAMPLING ANNIVERSARY!', `Congratulations on reaching a full new year of sampling with SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY SAMPLING ANNIVERSARY!', `Congratulations on reaching a full new year of sampling with SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        if ((pushResult.sentCount ?? 0) === 0) {
+            log(`Anniversary: push delivery failed for user ${user.$id}, skipping yearly flag/points update`);
+            continue;
+        }
         const currentPoints = user.totalPoints ?? 0;
         try {
             await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
@@ -802,7 +845,11 @@ async function checkAndSendInactivityNotifications(databases, messaging, users, 
                     continue;
             }
             log(`Inactivity: sending to user ${profile.$id} (last access: ${authUser.accessedAt})`);
-            await sendPushNotificationToUsers(messaging, [profile.authID], "YOU'VE BEEN MISSING SAMPLES!", 'Enjoy experiencing new brands, earning points and winning prizes!', log, { type: 'Engagement' });
+            const pushResult = await sendPushNotificationToUsers(messaging, [profile.authID], "YOU'VE BEEN MISSING SAMPLES!", 'Enjoy experiencing new brands, earning points and winning prizes!', log, { type: 'Engagement' });
+            if ((pushResult.sentCount ?? 0) === 0) {
+                log(`Inactivity: push delivery failed for user ${profile.$id}, not updating inactivity marker`);
+                continue;
+            }
             try {
                 await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, profile.$id, { lastInactivityNotifAt: now.toISOString() });
             }
@@ -823,8 +870,7 @@ async function checkAndSendInactivityNotifications(databases, messaging, users, 
  * Called via POST /send-badge-notification.
  */
 async function sendBadgeNotification(databases, messaging, userId, badgeType, log) {
-    void messaging;
-    log(`Badge notification: scheduling ${badgeType} badge notification for auth user ${userId}`);
+    log(`Badge notification: sending ${badgeType} badge notification for auth user ${userId}`);
     const title = badgeType === 'ambassador'
         ? 'BRAND AMBASSADOR BADGE EARNED!'
         : 'INFLUENCER BADGE EARNED!';
@@ -836,20 +882,7 @@ async function sendBadgeNotification(databases, messaging, userId, badgeType, lo
         throw new Error('Badge notification target profile not found');
     }
     const profile = profileResult.documents[0];
-    const scheduledAt = getNextOnePmEasternUTC();
-    await databases.createDocument(DATABASE_ID, NOTIFICATIONS_TABLE_ID, ID.unique(), {
-        title,
-        message: body,
-        type: 'Engagement',
-        targetAudience: 'Targeted',
-        category: 'AppPush',
-        status: 'Scheduled',
-        scheduledAt,
-        recipients: 0,
-        selectedUserIds: [profile.$id],
-    });
-    log(`Badge notification: scheduled for ${scheduledAt} UTC`);
-    return { success: true, sentCount: 0 };
+    return await sendImmediateSystemNotificationToUser(databases, messaging, profile, title, body, 'Engagement', log, { badgeType });
 }
 /**
  * TIER CHANGED NOTIFICATION
@@ -857,8 +890,7 @@ async function sendBadgeNotification(databases, messaging, userId, badgeType, lo
  * Called via POST /send-tier-notification.
  */
 async function sendTierNotification(databases, messaging, userId, newTierName, oldTierName, log) {
-    void messaging;
-    log(`Tier notification: scheduling tierChanged notification for auth user ${userId}`);
+    log(`Tier notification: sending tierChanged notification for auth user ${userId}`);
     const title = `NEW TIER: ${newTierName}!`;
     const body = `Congratulations, you've reached the ${newTierName} tier! Keep earning points to level up!`;
     const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
@@ -866,20 +898,29 @@ async function sendTierNotification(databases, messaging, userId, newTierName, o
         throw new Error('Tier notification target profile not found');
     }
     const profile = profileResult.documents[0];
-    const scheduledAt = getNextOnePmEasternUTC();
-    await databases.createDocument(DATABASE_ID, NOTIFICATIONS_TABLE_ID, ID.unique(), {
-        title,
-        message: body,
-        type: 'Engagement',
-        targetAudience: 'Targeted',
-        category: 'AppPush',
-        status: 'Scheduled',
-        scheduledAt,
-        recipients: 0,
-        selectedUserIds: [profile.$id],
+    return await sendImmediateSystemNotificationToUser(databases, messaging, profile, title, body, 'Engagement', log, {
+        oldTierName: oldTierName ?? '',
+        newTierName,
     });
-    log(`Tier notification: scheduled for ${scheduledAt} UTC`);
-    return { success: true, sentCount: 0 };
+}
+/**
+ * REFERRAL POINTS EARNED NOTIFICATION
+ * Sends a push notification when a user earns referral points.
+ * Called via POST /send-referral-points-notification.
+ */
+async function sendReferralPointsNotification(databases, messaging, userId, points, log) {
+    log(`Referral notification: sending referral points notification for auth user ${userId}`);
+    const normalizedPoints = typeof points === 'number' && points > 0 ? Math.floor(points) : undefined;
+    const title = 'REFERRAL POINTS EARNED';
+    const body = normalizedPoints
+        ? `You earned ${normalizedPoints} referral points. Keep sharing SampleFinder!`
+        : 'You earned referral points. Keep sharing SampleFinder!';
+    const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
+    if (profileResult.documents.length === 0) {
+        throw new Error('Referral notification target profile not found');
+    }
+    const profile = profileResult.documents[0];
+    return await sendImmediateSystemNotificationToUser(databases, messaging, profile, title, body, 'Engagement', log, normalizedPoints ? { points: String(normalizedPoints) } : undefined);
 }
 /**
  * Archive events that completed more than 7 days ago (endTime < now - 7 days).
@@ -1056,6 +1097,40 @@ export default async function handler({ req, res, log, error }) {
             const result = await sendTierNotification(databases, messaging, requestBody.userId, requestBody.newTierName, requestBody.oldTierName, log);
             return res.json(result);
         }
+        // Handle referral points notification endpoint (triggered by referral award flows)
+        if (req.path === '/send-referral-points-notification' && req.method === 'POST') {
+            log('Processing send-referral-points-notification request');
+            let requestBody;
+            try {
+                let body;
+                if (typeof req.body === 'string') {
+                    body = JSON.parse(req.body);
+                }
+                else if (req.body && typeof req.body === 'object') {
+                    body = req.body;
+                }
+                else {
+                    throw new Error('Request body is required');
+                }
+                if (!body.userId || typeof body.userId !== 'string') {
+                    throw new Error('userId is required and must be a string');
+                }
+                if (body.points !== undefined && (typeof body.points !== 'number' || body.points <= 0)) {
+                    throw new Error('points must be a positive number when provided');
+                }
+                requestBody = {
+                    userId: body.userId,
+                    points: body.points,
+                };
+            }
+            catch (validationError) {
+                const errorMessage = validationError instanceof Error ? validationError.message : String(validationError);
+                error(`Validation error: ${errorMessage}`);
+                return res.json({ success: false, error: errorMessage }, 400);
+            }
+            const result = await sendReferralPointsNotification(databases, messaging, requestBody.userId, requestBody.points, log);
+            return res.json(result);
+        }
         if (req.path === '/send-user-push' && req.method === 'POST') {
             log('Processing send-user-push request');
             let requestBody;
@@ -1175,26 +1250,31 @@ export default async function handler({ req, res, log, error }) {
         if (isScheduledRun) {
             log('Processing scheduled run: event reminders + scheduled notifications');
             const { hour: easternHour } = getTimePartsInTimezone(new Date(), EST_TIMEZONE);
-            if (easternHour !== NOTIFICATION_SEND_HOUR_EST) {
-                log(`Skipping scheduled notification processing. Current ET hour is ${easternHour}; notifications only send at 1:00 PM ET.`);
-                return res.json({
-                    success: true,
-                    skipped: true,
-                    reason: 'Outside 1:00 PM ET notification send window',
-                });
+            const shouldRunTimedCampaigns = easternHour === NOTIFICATION_SEND_HOUR_EST;
+            let scheduledResult = { success: true, sent: 0, failed: 0 };
+            if (shouldRunTimedCampaigns) {
+                // 1. Send due scheduled notifications (status=Scheduled, scheduledAt <= now)
+                scheduledResult = await checkAndSendScheduledNotifications(databases, messaging, log);
+                log(`Scheduled notifications: sent=${scheduledResult.sent}, failed=${scheduledResult.failed}`);
             }
-            // 1. Send due scheduled notifications (status=Scheduled, scheduledAt <= now)
-            const scheduledResult = await checkAndSendScheduledNotifications(databases, messaging, log);
-            log(`Scheduled notifications: sent=${scheduledResult.sent}, failed=${scheduledResult.failed}`);
+            else {
+                log(`Skipping scheduled notification processing. Current ET hour is ${easternHour}; scheduled campaigns only send at 1:00 PM ET.`);
+            }
             // 2. Check and send event reminders (24h / 1h)
             const remindersResult = await checkAndSendEventReminders(databases, messaging, log);
             log(`Event reminders: 24h=${remindersResult.reminders24h}, 1h=${remindersResult.reminders1h}`);
             // 3. Auto-archive events that completed more than 7 days ago
             const archiveResult = await archiveEventsCompletedOver7DaysAgo(databases, log);
             log(`Auto-archive events: ${archiveResult.archived}`);
-            // 4. Trivia Tuesday (sends once per Tuesday)
-            const triviaTuesdayResult = await checkAndSendTriviaTuesday(databases, messaging, log);
-            log(`Trivia Tuesday: sent=${triviaTuesdayResult.sent}`);
+            // 4. Trivia Tuesday (sends once per Tuesday, only during timed campaign window)
+            let triviaTuesdayResult = { sent: 0 };
+            if (shouldRunTimedCampaigns) {
+                triviaTuesdayResult = await checkAndSendTriviaTuesday(databases, messaging, log);
+                log(`Trivia Tuesday: sent=${triviaTuesdayResult.sent}`);
+            }
+            else {
+                log('Trivia Tuesday: skipped outside 1:00 PM ET window');
+            }
             // 5. Sampling Today (morning of event day)
             const samplingTodayResult = await checkAndSendSamplingToday(databases, messaging, log);
             log(`Sampling Today: sent=${samplingTodayResult.sent}`);
