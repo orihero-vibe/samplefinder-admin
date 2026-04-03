@@ -957,6 +957,58 @@ export const appUsersService = {
       throw error
     }
   },
+
+  /**
+   * List every user profile (all pages). Use for admin UIs that must show the full user set
+   * (e.g. notification audience picker). Plain `list()` only returns Appwrite’s default first page.
+   */
+  listAll: async (): Promise<AppUser[]> => {
+    try {
+      const PAGE_SIZE = 500
+      const allDocuments: UserProfile[] = []
+      let offset = 0
+      let total = 0
+      for (;;) {
+        const profiles = await userProfilesService.list([
+          Query.orderDesc('$createdAt'),
+          Query.limit(PAGE_SIZE),
+          Query.offset(offset),
+        ])
+        total = profiles.total
+        allDocuments.push(...profiles.documents)
+        if (profiles.documents.length < PAGE_SIZE || allDocuments.length >= total) break
+        offset += PAGE_SIZE
+      }
+
+      const authIDs = allDocuments
+        .map((profile) => (profile as { authID?: string }).authID)
+        .filter((id): id is string => !!id)
+
+      let emailMap: Record<string, string> = {}
+      let lastLoginMap: Record<string, string> = {}
+      try {
+        const result = await fetchUserEmailsInBatches(authIDs)
+        emailMap = result.emailMap
+        lastLoginMap = result.lastLoginMap
+      } catch (emailError) {
+        console.warn('Failed to fetch user emails:', emailError)
+      }
+
+      return allDocuments.map((profile) => {
+        const authID = (profile as { authID?: string }).authID
+        return {
+          ...profile,
+          firstName: (profile as { firstname?: string }).firstname,
+          lastName: (profile as { lastname?: string }).lastname,
+          email: authID ? emailMap[authID] : undefined,
+          lastLoginDate: authID ? lastLoginMap[authID] : undefined,
+        }
+      }) as AppUser[]
+    } catch (error) {
+      console.error('Error listing all users:', error)
+      throw error
+    }
+  },
   
   // List users with pagination info
   listWithPagination: async (queries?: string[]): Promise<{ users: AppUser[]; total: number }> => {

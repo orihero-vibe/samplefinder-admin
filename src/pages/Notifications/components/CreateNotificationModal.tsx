@@ -110,7 +110,7 @@ const CreateNotificationModal = ({
     const fetchUsers = async () => {
       setLoadingUsers(true)
       try {
-        const usersList = await appUsersService.list()
+        const usersList = await appUsersService.listAll()
         setUsers(usersList)
       } catch (error) {
         console.error('Error fetching users:', error)
