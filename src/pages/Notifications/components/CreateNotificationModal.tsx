@@ -69,7 +69,7 @@ const APP_PUSH_TEMPLATES: NotificationTemplate[] = [
   { id: 'monthly_winner_promo_loot', label: 'Monthly Winner: Promo Loot Crate', title: 'MONTHLY WINNER: PROMO LOOT CRATE!', body: "Congratulations, you're the lucky winner of our promo loot crate! Our team will be in touch with prize details!" },
 ]
 
-// Validation constants (stricter limits for cross-platform push: iOS ~50 title/150 body, Android ~65/240)
+// Push notification limits (single max per field for admin UI and validation)
 const VALIDATION_RULES = {
   title: {
     minLength: 3,
@@ -510,7 +510,7 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters (iOS ~50, Android ~65 for title)
+                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters
                 </p>
               </div>
 
@@ -538,7 +538,7 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters (iOS ~150, Android ~240 for body)
+                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters
                 </p>
               </div>
 
