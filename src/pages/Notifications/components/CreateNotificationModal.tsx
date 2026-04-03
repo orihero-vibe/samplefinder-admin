@@ -5,7 +5,7 @@ import { trimFormStrings } from '../../../lib/formUtils'
 import { appUsersService, locationsService } from '../../../lib/services'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
-import { appTimeToUTC } from '../../../lib/dateUtils'
+import { appTimeToUTC, DEFAULT_APP_TIMEZONE } from '../../../lib/dateUtils'
 
 interface CreateNotificationModalProps {
   isOpen: boolean
@@ -69,7 +69,7 @@ const APP_PUSH_TEMPLATES: NotificationTemplate[] = [
   { id: 'monthly_winner_promo_loot', label: 'Monthly Winner: Promo Loot Crate', title: 'MONTHLY WINNER: PROMO LOOT CRATE!', body: "Congratulations, you're the lucky winner of our promo loot crate! Our team will be in touch with prize details!" },
 ]
 
-// Validation constants (stricter limits for cross-platform push: iOS ~50 title/150 body, Android ~65/240)
+// Push notification limits (single max per field for admin UI and validation)
 const VALIDATION_RULES = {
   title: {
     minLength: 3,
@@ -110,7 +110,7 @@ const CreateNotificationModal = ({
     const fetchUsers = async () => {
       setLoadingUsers(true)
       try {
-        const usersList = await appUsersService.list()
+        const usersList = await appUsersService.listAll()
         setUsers(usersList)
       } catch (error) {
         console.error('Error fetching users:', error)
@@ -269,10 +269,9 @@ const CreateNotificationModal = ({
         errors.push(error)
         newValidationErrors.scheduledAt = getErrorMessage(error)
       } else {
-        // Validate that scheduled time is in the future (in app timezone when provided)
-        const scheduledDate = appTimezone
-          ? appTimeToUTC(data.scheduledAt, '13:00', appTimezone)
-          : new Date(`${data.scheduledAt}T13:00`)
+        // Same interpretation as notificationsService.create (1:00 PM in app timezone)
+        const sourceTz = appTimezone || DEFAULT_APP_TIMEZONE
+        const scheduledDate = appTimeToUTC(data.scheduledAt, '13:00', sourceTz)
         if (scheduledDate <= new Date()) {
           const error: StructuredError = { 
             code: 'PAST_DATE', 
@@ -510,7 +509,7 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters (iOS ~50, Android ~65 for title)
+                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters
                 </p>
               </div>
 
@@ -538,7 +537,7 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters (iOS ~150, Android ~240 for body)
+                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters
                 </p>
               </div>
 
@@ -844,15 +843,17 @@ const CreateNotificationModal = ({
                       onBlur={() => handleBlur('scheduledAt')}
                       min={new Date().toISOString().split('T')[0]}
                       className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
-                        validationErrors.scheduledAt
+                        validationErrors.scheduledAt || validationErrors.scheduledTime
                           ? 'border-red-500 focus:ring-red-500'
                           : 'border-gray-300 focus:ring-[#1D0A74]'
                       }`}
                     />
-                    {validationErrors.scheduledAt && (
+                    {(validationErrors.scheduledAt || validationErrors.scheduledTime) && (
                       <div className="flex items-center gap-1 mt-1 text-red-500 text-sm">
                         <Icon icon="mdi:alert-circle" className="w-4 h-4" />
-                        <span>{validationErrors.scheduledAt}</span>
+                        <span>
+                          {validationErrors.scheduledAt || validationErrors.scheduledTime}
+                        </span>
                       </div>
                     )}
                   </div>

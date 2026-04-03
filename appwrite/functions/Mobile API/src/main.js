@@ -214,6 +214,14 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
 // ============================================================================
 // TRIVIA FUNCTIONS
 // ============================================================================
+/** Trivia modal is only valid Tuesday 00:00–23:59 America/New_York (see Trivia Tuesday push). */
+function isTriviaTuesdayEastern(now = new Date()) {
+    const weekday = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        weekday: 'long',
+    }).format(now);
+    return weekday === 'Tuesday';
+}
 /**
  * Get active trivia questions for a user
  * Returns trivia questions that are currently active and not yet answered by the user
@@ -222,6 +230,10 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
 const GET_ACTIVE_TRIVIA_LIMIT = 100;
 const GET_ACTIVE_TRIVIA_RESPONSES_LIMIT = 500;
 async function getActiveTrivia(databases, userId, log) {
+    if (!isTriviaTuesdayEastern()) {
+        log('Trivia: not Tuesday (America/New_York), returning no active trivia');
+        return [];
+    }
     const now = new Date().toISOString();
     // Fetch active trivia and user's responses in parallel to minimize execution time
     const [activeTriviaResponse, userResponsesResult, userProfile] = await Promise.all([
@@ -311,6 +323,12 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
             message: 'This trivia question is not currently active',
         };
     }
+    if (!isTriviaTuesdayEastern()) {
+        throw {
+            code: 400,
+            message: 'Trivia is only available on Tuesday (Eastern Time)',
+        };
+    }
     // 3. Validate the user exists
     try {
         await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
@@ -377,6 +395,12 @@ async function dismissTrivia(databases, userId, triviaId, log) {
     }
     catch {
         throw { code: 404, message: 'User not found' };
+    }
+    if (!isTriviaTuesdayEastern()) {
+        throw {
+            code: 400,
+            message: 'Trivia is only available on Tuesday (Eastern Time)',
+        };
     }
     let trivia;
     try {
