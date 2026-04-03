@@ -460,6 +460,15 @@ async function getEventsByLocation(
 // TRIVIA FUNCTIONS
 // ============================================================================
 
+/** Trivia modal is only valid Tuesday 00:00–23:59 America/New_York (see Trivia Tuesday push). */
+function isTriviaTuesdayEastern(now: Date = new Date()): boolean {
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'long',
+  }).format(now);
+  return weekday === 'Tuesday';
+}
+
 /**
  * Get active trivia questions for a user
  * Returns trivia questions that are currently active and not yet answered by the user
@@ -473,6 +482,11 @@ async function getActiveTrivia(
   userId: string,
   log: (message: string) => void
 ): Promise<ActiveTriviaResponse[]> {
+  if (!isTriviaTuesdayEastern()) {
+    log('Trivia: not Tuesday (America/New_York), returning no active trivia');
+    return [];
+  }
+
   const now = new Date().toISOString();
 
   // Fetch active trivia and user's responses in parallel to minimize execution time
@@ -596,6 +610,13 @@ async function submitTriviaAnswer(
     };
   }
 
+  if (!isTriviaTuesdayEastern()) {
+    throw {
+      code: 400,
+      message: 'Trivia is only available on Tuesday (Eastern Time)',
+    };
+  }
+
   // 3. Validate the user exists
   try {
     await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
@@ -697,6 +718,12 @@ async function dismissTrivia(
     await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
   } catch {
     throw { code: 404, message: 'User not found' };
+  }
+  if (!isTriviaTuesdayEastern()) {
+    throw {
+      code: 400,
+      message: 'Trivia is only available on Tuesday (Eastern Time)',
+    };
   }
   let trivia: TriviaDocument;
   try {
