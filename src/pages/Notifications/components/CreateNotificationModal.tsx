@@ -43,7 +43,7 @@ interface StructuredError {
 const defaultFormData: NotificationFormData = {
   title: '',
   message: '',
-  type: 'Event Reminder',
+  type: 'Notification',
   targetAudience: 'All',
   category: 'AppPush',
   schedule: 'Send Immediately',

@@ -19,7 +19,7 @@ interface Notification {
   title: string
   target: string
   timing: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
   recipients: number
   date: string
   status: 'Scheduled' | 'Sent' | 'Draft'

@@ -1448,7 +1448,7 @@ export type NotificationAudience =
 export interface NotificationDocument extends Models.Document {
   title: string
   message: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
   targetAudience: NotificationAudience
   category?: 'AppPush' | 'SystemPush'
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -1467,7 +1467,7 @@ export interface NotificationDocument extends Models.Document {
 export interface NotificationFormData {
   title: string
   message: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
   targetAudience: NotificationAudience
   category?: 'AppPush'
   schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring'
@@ -1478,7 +1478,7 @@ export interface NotificationFormData {
   newUsersTimeRange?: number // Days back for NewUsers audience
 }
 
-const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = ['Event Reminder', 'Promotional', 'Engagement']
+const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = ['Notification', 'Event Reminder', 'Promotional', 'Engagement']
 const VALID_TARGET_AUDIENCES: Array<NotificationAudience> = [
   'All',
   'NewUsers',
@@ -1501,7 +1501,7 @@ export function normalizeNotificationFormData(doc: { type?: string; targetAudien
   const type: NotificationFormData['type'] =
     doc.type && VALID_NOTIFICATION_TYPES.includes(doc.type as NotificationFormData['type'])
       ? (doc.type as NotificationFormData['type'])
-      : 'Event Reminder'
+      : 'Notification'
 
   const targetAudience: NotificationAudience =
     doc.targetAudience && VALID_TARGET_AUDIENCES.includes(doc.targetAudience as NotificationAudience)

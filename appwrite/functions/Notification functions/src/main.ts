@@ -23,7 +23,7 @@ interface NotificationData {
   $id: string;
   title: string;
   message: string;
-  type: 'Event Reminder' | 'Promotional' | 'Engagement';
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement';
   targetAudience:
     | 'All'
     | 'NewUsers'

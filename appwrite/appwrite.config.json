@@ -871,7 +871,7 @@
                     "type": "string",
                     "required": true,
                     "array": false,
-                    "elements": ["Event Reminder", "Promotional", "Engagement"],
+                    "elements": ["Notification", "Event Reminder", "Promotional", "Engagement"],
                     "format": "enum",
                     "default": null
                 },
