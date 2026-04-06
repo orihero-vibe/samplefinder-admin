@@ -1523,7 +1523,7 @@ const NOTIFICATION_SEND_TIME_EST = '13:00'
 export const notificationsService = {
   create: async (
     data: NotificationFormData,
-    appTimezone?: string
+    _appTimezone?: string
   ): Promise<NotificationDocument> => {
     const { type, targetAudience } = normalizeNotificationPayload(data)
     const dbData: Record<string, unknown> = {
@@ -1552,7 +1552,8 @@ export const notificationsService = {
     }
 
     if (data.schedule === 'Schedule for Later' && data.scheduledAt) {
-      const sourceTimezone = appTimezone || DEFAULT_APP_TIMEZONE
+      // Admin scheduled notifications are fixed to 1:00 PM Eastern.
+      const sourceTimezone = DEFAULT_APP_TIMEZONE
       const utcDate = appTimeToUTC(
         data.scheduledAt,
         NOTIFICATION_SEND_TIME_EST,
@@ -1583,7 +1584,7 @@ export const notificationsService = {
   update: async (
     id: string,
     data: Partial<NotificationFormData>,
-    appTimezone?: string
+    _appTimezone?: string
   ): Promise<NotificationDocument> => {
     const { type, targetAudience } = normalizeNotificationPayload(data)
     // Only include actual database fields
@@ -1611,7 +1612,8 @@ export const notificationsService = {
 
     // Handle scheduling updates (all sends are pinned to 1:00 PM EST)
     if (data.schedule === 'Schedule for Later' && data.scheduledAt) {
-      const sourceTimezone = appTimezone || DEFAULT_APP_TIMEZONE
+      // Admin scheduled notifications are fixed to 1:00 PM Eastern.
+      const sourceTimezone = DEFAULT_APP_TIMEZONE
       const utcDate = appTimeToUTC(
         data.scheduledAt,
         NOTIFICATION_SEND_TIME_EST,
