@@ -5,7 +5,7 @@ import { trimFormStrings } from '../../../lib/formUtils'
 import { appUsersService, locationsService } from '../../../lib/services'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
-import { appTimeToUTC, DEFAULT_APP_TIMEZONE } from '../../../lib/dateUtils'
+import { appTimeToUTC, DEFAULT_APP_TIMEZONE, getTodayDateStringInTimezone } from '../../../lib/dateUtils'
 
 interface CreateNotificationModalProps {
   isOpen: boolean
@@ -43,7 +43,7 @@ interface StructuredError {
 const defaultFormData: NotificationFormData = {
   title: '',
   message: '',
-  type: 'Event Reminder',
+  type: 'Notification',
   targetAudience: 'All',
   category: 'AppPush',
   schedule: 'Send Immediately',
@@ -87,7 +87,6 @@ const CreateNotificationModal = ({
   onSave,
   initialData,
   isEditMode = false,
-  appTimezone,
 }: CreateNotificationModalProps) => {
   const [formData, setFormData] = useState<NotificationFormData>(defaultFormData)
   const initialDataRef = useRef<NotificationFormData>(defaultFormData)
@@ -104,6 +103,9 @@ const CreateNotificationModal = ({
   const [isLoadingZipCodes, setIsLoadingZipCodes] = useState(false)
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
+  // Scheduled notifications are pinned to 1:00 PM Eastern regardless of app timezone.
+  const scheduleTimezone = DEFAULT_APP_TIMEZONE
+  const minScheduledDate = getTodayDateStringInTimezone(scheduleTimezone)
 
   // Fetch users when modal opens
   useEffect(() => {
@@ -270,8 +272,7 @@ const CreateNotificationModal = ({
         newValidationErrors.scheduledAt = getErrorMessage(error)
       } else {
         // Same interpretation as notificationsService.create (1:00 PM in app timezone)
-        const sourceTz = appTimezone || DEFAULT_APP_TIMEZONE
-        const scheduledDate = appTimeToUTC(data.scheduledAt, '13:00', sourceTz)
+        const scheduledDate = appTimeToUTC(data.scheduledAt, '13:00', scheduleTimezone)
         if (scheduledDate <= new Date()) {
           const error: StructuredError = { 
             code: 'PAST_DATE', 
@@ -415,6 +416,11 @@ const CreateNotificationModal = ({
     }))
   }
 
+  const getUserDisplayName = (user: AppUser): string =>
+    user.firstName && user.lastName
+      ? `${user.firstName} ${user.lastName}`
+      : user.username || user.email || 'Unknown User'
+
   const filteredUsers = users.filter((user) => {
     if (!userSearchQuery) return true
     const searchLower = userSearchQuery.toLowerCase()
@@ -424,7 +430,7 @@ const CreateNotificationModal = ({
       user.email?.toLowerCase().includes(searchLower) ||
       user.username?.toLowerCase().includes(searchLower)
     )
-  })
+  }).sort((a, b) => getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, { sensitivity: 'base' }))
 
   return (
     <>
@@ -705,9 +711,7 @@ const CreateNotificationModal = ({
                         {formData.selectedUserIds.map((userId) => {
                           const user = users.find((u) => u.$id === userId)
                           if (!user) return null
-                          const displayName = user.firstName && user.lastName 
-                            ? `${user.firstName} ${user.lastName}` 
-                            : user.username || user.email || 'Unknown User'
+                          const displayName = getUserDisplayName(user)
                           return (
                             <div
                               key={userId}
@@ -759,9 +763,7 @@ const CreateNotificationModal = ({
                             <>
                               {filteredUsers.map((user) => {
                                 const isSelected = formData.selectedUserIds?.includes(user.$id)
-                                const displayName = user.firstName && user.lastName 
-                                  ? `${user.firstName} ${user.lastName}` 
-                                  : user.username || 'Unknown User'
+                                const displayName = getUserDisplayName(user)
                                 return (
                                   <div
                                     key={user.$id}
@@ -841,7 +843,7 @@ const CreateNotificationModal = ({
                       value={formData.scheduledAt}
                       onChange={(e) => handleInputChange('scheduledAt', e.target.value)}
                       onBlur={() => handleBlur('scheduledAt')}
-                      min={new Date().toISOString().split('T')[0]}
+                      min={minScheduledDate}
                       className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
                         validationErrors.scheduledAt || validationErrors.scheduledTime
                           ? 'border-red-500 focus:ring-red-500'

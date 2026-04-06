@@ -113,7 +113,7 @@ const Dashboard = () => {
   })
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all') // 'all', 'active', 'hidden', 'archived'
-  const [sortBy, setSortBy] = useState<string>('date-desc') // 'date-asc', 'date-desc', 'name-asc', 'name-desc', 'brand-asc', 'brand-desc'
+  const [sortBy, setSortBy] = useState<string>('date-asc') // 'date-asc', 'date-desc', 'name-asc', 'name-desc', 'brand-asc', 'brand-desc'
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
     type: ConfirmationType
