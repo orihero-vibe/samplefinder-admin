@@ -415,6 +415,11 @@ const CreateNotificationModal = ({
     }))
   }
 
+  const getUserDisplayName = (user: AppUser): string =>
+    user.firstName && user.lastName
+      ? `${user.firstName} ${user.lastName}`
+      : user.username || user.email || 'Unknown User'
+
   const filteredUsers = users.filter((user) => {
     if (!userSearchQuery) return true
     const searchLower = userSearchQuery.toLowerCase()
@@ -424,7 +429,7 @@ const CreateNotificationModal = ({
       user.email?.toLowerCase().includes(searchLower) ||
       user.username?.toLowerCase().includes(searchLower)
     )
-  })
+  }).sort((a, b) => getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, { sensitivity: 'base' }))
 
   return (
     <>
@@ -705,9 +710,7 @@ const CreateNotificationModal = ({
                         {formData.selectedUserIds.map((userId) => {
                           const user = users.find((u) => u.$id === userId)
                           if (!user) return null
-                          const displayName = user.firstName && user.lastName 
-                            ? `${user.firstName} ${user.lastName}` 
-                            : user.username || user.email || 'Unknown User'
+                          const displayName = getUserDisplayName(user)
                           return (
                             <div
                               key={userId}
@@ -759,9 +762,7 @@ const CreateNotificationModal = ({
                             <>
                               {filteredUsers.map((user) => {
                                 const isSelected = formData.selectedUserIds?.includes(user.$id)
-                                const displayName = user.firstName && user.lastName 
-                                  ? `${user.firstName} ${user.lastName}` 
-                                  : user.username || 'Unknown User'
+                                const displayName = getUserDisplayName(user)
                                 return (
                                   <div
                                     key={user.$id}
