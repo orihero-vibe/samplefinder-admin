@@ -584,7 +584,24 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} data-user-form className="p-6">
+          <form onSubmit={handleSubmit} data-user-form autoComplete="off" className="p-6">
+          {/* Hidden decoy fields reduce browser autofill on real inputs inside the modal */}
+          <input
+            type="text"
+            name="username"
+            autoComplete="username"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="hidden"
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="hidden"
+          />
           {/* Form Fields */}
           <div className="space-y-4 mb-6">
             {/* Email */}
@@ -595,6 +612,8 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
             <div className="relative">
               <input
                 type="email"
+                name="admin-create-user-email"
+                autoComplete="off"
                 placeholder="Enter Email"
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
@@ -656,6 +675,8 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="admin-create-user-password"
+                  autoComplete="new-password"
                   placeholder="Enter Password (min 8 chars with letter, number, uppercase, special char)"
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
