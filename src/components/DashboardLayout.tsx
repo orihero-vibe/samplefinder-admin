@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import Notification from './Notification'
+import AppLogo from './AppLogo'
 import { useAuthStore } from '../stores/authStore'
 import { useNotificationStore } from '../stores/notificationStore'
 
@@ -75,11 +76,13 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-full">
         {/* Logo */}
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center gap-2">
-            <Icon icon="mdi:map-marker" className="w-8 h-8 text-[#1D0A74]" />
-            <span className="text-xl font-semibold text-[#1D0A74]">SampleFinder</span>
-          </div>
+        <div className="p-6 pb-4 border-b border-gray-200">
+          <AppLogo
+            variant="both"
+            className="max-w-full"
+            iconClassName="h-8 w-auto"
+            textClassName="h-6 w-auto max-w-full mt-1"
+          />
         </div>
 
         {/* Navigation */}

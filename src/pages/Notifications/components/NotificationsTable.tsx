@@ -4,9 +4,9 @@ import { Pagination } from '../../../components'
 interface Notification {
   id: string
   title: string
-  target: 'Targeted' | 'All' | 'Specific Segment'
+  target: string
   timing: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
   recipients: number
   date: string
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -39,6 +39,8 @@ const NotificationsTable = ({
 }: NotificationsTableProps) => {
   const getTypeColor = (type: string) => {
     switch (type) {
+      case 'Notification':
+        return 'bg-red-100 text-red-800'
       case 'Event Reminder':
         return 'bg-red-100 text-red-800'
       case 'Promotional':
@@ -60,6 +62,35 @@ const NotificationsTable = ({
         return 'bg-gray-100 text-gray-800'
       default:
         return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getTargetLabel = (target: string) => {
+    switch (target) {
+      case 'All':
+        return 'All Users'
+      case 'NewUsers':
+        return 'New Users'
+      case 'BrandAmbassadors':
+        return 'Certified Brand Ambassadors (BA)'
+      case 'Influencers':
+        return 'Certified Influencers'
+      case 'Tier1':
+        return 'Tier 1 Users - NewbieSamplers'
+      case 'Tier2':
+        return 'Tier 2 Users - SampleFans'
+      case 'Tier3':
+        return 'Tier 3 Users - SuperSamplers'
+      case 'Tier4':
+        return 'Tier 4 Users - VIS'
+      case 'Tier5':
+        return 'Tier 5 Users - SampleMasters'
+      case 'ZipCode':
+        return 'Specific Zip Code Area'
+      case 'Targeted':
+        return 'Specific Users'
+      default:
+        return target
     }
   }
 
@@ -128,12 +159,22 @@ const NotificationsTable = ({
               </tr>
             ) : (
             notifications.map((notification) => (
-              <tr key={notification.id} className="hover:bg-gray-50">
+              <tr
+                key={notification.id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={(e) => {
+                  const target = e.target as HTMLElement
+                  if (target.closest('button')) {
+                    return
+                  }
+                  onEditClick(notification)
+                }}
+              >
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {notification.title}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {notification.target}
+                  {getTargetLabel(notification.target)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {notification.timing}
@@ -163,7 +204,10 @@ const NotificationsTable = ({
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="flex items-center gap-3">
+                  <div
+                    className="flex items-center gap-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       onClick={() => onEditClick(notification)}
                       className="hover:text-blue-600 transition-colors"

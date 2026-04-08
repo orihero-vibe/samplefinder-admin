@@ -33,7 +33,7 @@ interface UserData {
 interface EditUserModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (userData: UserData) => void
+  onSave: (userData: UserData) => Promise<void>
   onAddToBlacklist?: () => void
   onDelete?: () => void
   initialData?: UserData
@@ -90,8 +90,20 @@ const EditUserModal = ({
   })
   const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wasOpenRef = useRef(false)
+  const previousUserIdRef = useRef<string | undefined>(undefined)
   const initialDataRef = useRef(formData)
   const [passwordError, setPasswordError] = useState('')
+  const [phoneError, setPhoneError] = useState('')
+
+  const resetValidationState = () => {
+    setPasswordError('')
+    setPhoneError('')
+    setUsernameValidation({
+      isChecking: false,
+      isAvailable: null,
+      message: ''
+    })
+  }
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
 
@@ -112,61 +124,78 @@ const EditUserModal = ({
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
-    if (isOpen && initialData) {
-      // Check if this is a new modal open (transition from closed to open)
-      const isNewOpen = !wasOpenRef.current
-      
-      const newFormData = {
-        image: initialData.image || null,
-        firstName: initialData.firstName || '',
-        lastName: initialData.lastName || '',
-        zipCode: initialData.zipCode || '',
-        phoneNumber: initialData.phoneNumber || '',
-        userPoints: initialData.userPoints || '',
-        baBadge: initialData.baBadge || '',
-        signUpDate: initialData.signUpDate || '',
-        password: initialData.password || '',
-        checkIns: initialData.checkIns || '',
-        tierLevel: initialData.tierLevel || '', // Keep tierLevel from initialData
-        username: initialData.username || '',
-        email: initialData.email || '',
-        checkInReviewPoints: initialData.checkInReviewPoints || '',
-        influencerBadge: initialData.influencerBadge || '',
-        lastLogin: initialData.lastLogin || '',
-        referralCode: initialData.referralCode || '',
-        reviews: initialData.reviews || '',
-        triviasWon: initialData.triviasWon || '',
-        isBlocked: initialData.isBlocked || false,
-        dob: initialData.dob ?? '',
-      }
-      
-      if (isNewOpen) {
-        setFormData(newFormData)
-        initialDataRef.current = newFormData
+    if (!isOpen || !initialData) {
+      wasOpenRef.current = isOpen
+      return
+    }
 
-        // Set image preview if initial data has image
-        if (initialData.image) {
-          if (typeof initialData.image === 'string') {
-            setImagePreview(initialData.image)
-          } else if (initialData.image instanceof File) {
-            const reader = new FileReader()
-            reader.onloadend = () => {
-              setImagePreview(reader.result as string)
-            }
-            reader.readAsDataURL(initialData.image)
+    const isNewOpen = !wasOpenRef.current
+    const userChanged = previousUserIdRef.current !== userId
+    const shouldReset = isNewOpen || userChanged
+
+    const newFormData = {
+      image: initialData.image || null,
+      firstName: initialData.firstName || '',
+      lastName: initialData.lastName || '',
+      zipCode: initialData.zipCode || '',
+      phoneNumber: initialData.phoneNumber || '',
+      userPoints: initialData.userPoints || '',
+      baBadge: initialData.baBadge || '',
+      signUpDate: initialData.signUpDate || '',
+      password: initialData.password || '',
+      checkIns: initialData.checkIns || '',
+      tierLevel: initialData.tierLevel || '', // Keep tierLevel from initialData
+      username: initialData.username || '',
+      email: initialData.email || '',
+      checkInReviewPoints: initialData.checkInReviewPoints || '',
+      influencerBadge: initialData.influencerBadge || '',
+      lastLogin: initialData.lastLogin || '',
+      referralCode: initialData.referralCode || '',
+      reviews: initialData.reviews || '',
+      triviasWon: initialData.triviasWon || '',
+      isBlocked: initialData.isBlocked || false,
+      dob: initialData.dob ?? '',
+    }
+
+    if (shouldReset) {
+      setFormData(newFormData)
+      initialDataRef.current = newFormData
+      resetValidationState()
+
+      // Reset file input so switching between users doesn't keep a stale selected file.
+      const input = document.getElementById('user-image-upload') as HTMLInputElement | null
+      if (input) input.value = ''
+
+      // Set image preview if initial data has image.
+      const img = initialData.image || null
+      if (img) {
+        if (typeof img === 'string') {
+          setImagePreview(img)
+        } else if (img instanceof File) {
+          const reader = new FileReader()
+          reader.onloadend = () => {
+            setImagePreview(reader.result as string)
           }
+          reader.readAsDataURL(img)
+        } else {
+          setImagePreview(null)
         }
       } else {
-        // Modal is already open, but initialData changed (e.g., different user selected)
-        // Update form data, especially tierLevel
-        setFormData(newFormData)
-        initialDataRef.current = newFormData
+        setImagePreview(null)
       }
+    } else {
+      // Modal is open for the same user; preserve form state (including unsaved edits).
+      // We only refresh fields that are safe to update without resetting the whole form.
+      setFormData((prev) => ({
+        ...prev,
+        tierLevel: newFormData.tierLevel,
+      }))
     }
-    
-    // Track modal open/close state
+
+    // Track modal open/close and user identity
     wasOpenRef.current = isOpen
-  }, [isOpen, initialData])
+    previousUserIdRef.current = userId
+  }, [isOpen, initialData, userId])
   
   // Separate effect to update only the isBlocked field without resetting form
   useEffect(() => {
@@ -310,13 +339,28 @@ const EditUserModal = ({
     if (field === 'phoneNumber') {
       const formatted = formatPhoneNumber(value)
       setFormData((prev) => ({ ...prev, [field]: formatted }))
+      if (phoneError) {
+        setPhoneError('')
+      }
       return
     }
 
-    // First/Last name: alphabets only, auto-capitalize
+    // First/Last name: alphabetic words with spaces, auto-capitalize each word
     if (field === 'firstName' || field === 'lastName') {
-      const filtered = value.replace(/[^a-zA-Z]/g, '')
-      const capitalized = filtered.charAt(0).toUpperCase() + filtered.slice(1).toLowerCase()
+      const lettersAndSpaces = value.replace(/[^a-zA-Z\s]/g, '')
+      const hasTrailingSpace = /\s$/.test(lettersAndSpaces)
+      const normalizedBase = lettersAndSpaces
+        .replace(/\s+/g, ' ')
+        .trimStart()
+      const words = normalizedBase
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+      const capitalizedWords = words.map(
+        (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      )
+      const capitalized =
+        capitalizedWords.join(' ') + (hasTrailingSpace && capitalizedWords.length > 0 ? ' ' : '')
       setFormData((prev) => ({ ...prev, [field]: capitalized }))
       return
     }
@@ -399,6 +443,7 @@ const EditUserModal = ({
       await onSave(trimmed)
       setShowUnsavedChangesModal(false)
       setPasswordError('')
+      setPhoneError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -407,6 +452,19 @@ const EditUserModal = ({
       onClose()
     } catch (error) {
       console.error('Error saving user:', error)
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : 'Failed to update user. Please try again.'
+      const normalized = message.toLowerCase()
+      const isPhoneDuplicate =
+        normalized.includes('phone number already exists') ||
+        (normalized.includes('phone') && normalized.includes('already exists'))
+      if (isPhoneDuplicate) {
+        setPhoneError(message)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -416,24 +474,14 @@ const EditUserModal = ({
     if (hasUnsavedChanges && !isSubmitting) {
       setShowUnsavedChangesModal(true)
     } else {
-      setPasswordError('')
-      setUsernameValidation({
-        isChecking: false,
-        isAvailable: null,
-        message: ''
-      })
+      resetValidationState()
       onClose()
     }
   }
 
   const handleDiscardChanges = () => {
     setShowUnsavedChangesModal(false)
-    setPasswordError('')
-    setUsernameValidation({
-      isChecking: false,
-      isAvailable: null,
-      message: ''
-    })
+    resetValidationState()
     onClose()
   }
 
@@ -441,16 +489,13 @@ const EditUserModal = ({
     <>
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-          onClick={isSubmitting ? undefined : handleClose}
-        />
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
         {/* Modal */}
         <div className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto m-4">
@@ -476,7 +521,7 @@ const EditUserModal = ({
           {/* Blocked Status Banner */}
           {formData.isBlocked && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
-              <Icon icon="mdi:alert-circle" className="w-6 h-6 text-red-600 flex-shrink-0" />
+              <Icon icon="mdi:alert-circle" className="w-6 h-6 text-red-600 shrink-0" />
               <div>
                 <h3 className="text-sm font-semibold text-red-900">User is Currently Blocked</h3>
                 <p className="text-xs text-red-700 mt-1">
@@ -572,8 +617,13 @@ const EditUserModal = ({
                   value={formData.phoneNumber}
                   onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
                   required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                    phoneError ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 />
+                {phoneError && (
+                  <p className="mt-1 text-xs text-red-500">{phoneError}</p>
+                )}
               </div>
 
               {/* User Points */}
@@ -636,12 +686,13 @@ const EditUserModal = ({
               {/* Date of Birth */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date of Birth
+                  Date of Birth <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
                   value={formData.dob ?? ''}
                   onChange={(e) => handleInputChange('dob', e.target.value)}
+                  required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
                 />
               </div>
@@ -873,16 +924,13 @@ const EditUserModal = ({
               {/* Referral Code */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Referral Code <span className="text-red-500">*</span>
+                  Referral Code
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter Referral Code"
-                  value={formData.referralCode}
-                  onChange={(e) => handleInputChange('referralCode', e.target.value)}
-                  required
-                  disabled
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent bg-gray-100 cursor-not-allowed"
+                  readOnly
+                  value={formData.referralCode || ''}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
               </div>
 

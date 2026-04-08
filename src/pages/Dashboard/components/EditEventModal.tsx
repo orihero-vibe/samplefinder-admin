@@ -8,6 +8,12 @@ import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
 import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
 import { useNotificationStore } from '../../../stores/notificationStore'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
+import {
+  DEFAULT_APP_TIMEZONE,
+  getTodayDateStringInTimezone,
+  isDateStringBeforeTodayInTimezone,
+} from '../../../lib/dateUtils'
+import { TIMEZONE_OPTIONS } from '../../../stores/timezoneStore'
 
 interface EventData {
   eventName?: string
@@ -24,12 +30,12 @@ interface EventData {
   discountImage?: File | string | null
   checkInCode?: string
   brandName?: string
-  brandDescription?: string
   checkInPoints?: string
   reviewPoints?: string
   eventInfo?: string
   latitude?: string
   longitude?: string
+  timezone?: string
 }
 
 interface Category extends Models.Document {
@@ -77,7 +83,7 @@ const EditEventModal = ({
   isHidden = false,
 }: EditEventModalProps) => {
   const { addNotification } = useNotificationStore()
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<EventData>({
     eventName: '',
     eventDate: '',
     startTime: '',
@@ -97,6 +103,7 @@ const EditEventModal = ({
     eventInfo: '',
     latitude: '',
     longitude: '',
+    timezone: DEFAULT_APP_TIMEZONE,
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -109,7 +116,11 @@ const EditEventModal = ({
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
   const initialDataRef = useRef(formData)
   
-  const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
+  const hasUnsavedChanges = useUnsavedChanges(
+    formData as Record<string, unknown>,
+    initialDataRef.current as Record<string, unknown>,
+    isOpen
+  )
 
   useEffect(() => {
     if (initialData && isOpen) {
@@ -198,6 +209,7 @@ const EditEventModal = ({
               eventInfo: initialData.eventInfo || '',
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
+              timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
             
             setFormData(formDataToSet)
@@ -226,6 +238,7 @@ const EditEventModal = ({
               eventInfo: initialData.eventInfo || '',
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
+              timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
             
             setFormData(formDataToSet)
@@ -254,6 +267,7 @@ const EditEventModal = ({
             eventInfo: initialData.eventInfo || '',
             latitude: initialData.latitude || '',
             longitude: initialData.longitude || '',
+            timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
           }
           
           setFormData(formDataToSet)
@@ -263,67 +277,50 @@ const EditEventModal = ({
       }
       
       fetchDefaultsIfNeeded()
-      
-      // Set available products immediately when initialData has a brand
-      if (initialData.brandName) {
-        const selectedBrand = brands.find((brand) => brand.name === initialData.brandName)
-        if (selectedBrand && selectedBrand.productType) {
-          setAvailableProducts(selectedBrand.productType)
-        }
-      }
     } else {
       // Reset location display value when modal closes or no initial data
       setLocationDisplayValue('')
+      setAvailableProducts([])
     }
   }, [initialData, isOpen, eventId, brands])
 
-  // Track previous brand name to detect actual changes
+  // Track previous brand in form so we only clear the product picker when the user removes a brand,
+  // not while formData is still empty before hydration (avoids wiping options on first open).
   const prevBrandNameRef = useRef<string>('')
 
-  // Update available products when brand changes
+  // Update available products when brand or brands list changes; never clear selected products here
+  // (brand changes from the UI clear products in handleInputChange).
   useEffect(() => {
-    // Only clear products when brand actually changed (not on initial load with initialData)
-    const brandChanged = prevBrandNameRef.current !== '' && prevBrandNameRef.current !== formData.brandName
-
     if (formData.brandName) {
       const selectedBrand = brands.find((brand) => brand.name === formData.brandName)
-      if (selectedBrand) {
-        // Set available products
-        if (selectedBrand.productType) {
-          setAvailableProducts(selectedBrand.productType)
-        } else {
-          setAvailableProducts([])
-        }
-        if (brandChanged) {
-          setFormData((prev) => ({ ...prev, products: [] }))
-        }
-      } else {
-        setAvailableProducts([])
-        if (brandChanged) {
-          setFormData((prev) => ({ ...prev, products: [] }))
-        }
-      }
+      const fromBrand = selectedBrand?.productType ?? []
+      const fromSelection = formData.products ?? []
+      const merged = Array.from(new Set([...fromBrand, ...fromSelection]))
+      setAvailableProducts(merged)
       prevBrandNameRef.current = formData.brandName
-    } else {
+    } else if (prevBrandNameRef.current !== '') {
       setAvailableProducts([])
-      // Only clear if brand was removed (not on initial load)
-      if (prevBrandNameRef.current !== '') {
-        setFormData((prev) => ({ ...prev, products: [] }))
-      }
       prevBrandNameRef.current = ''
     }
-  }, [formData.brandName, brands])
+  }, [formData.brandName, formData.products, brands])
 
   if (!isOpen) return null
 
   const handleInputChange = (field: string, value: string) => {
+    if (field === 'brandName') {
+      setFormData((prev) => {
+        if (prev.brandName === value) return prev
+        return { ...prev, brandName: value, products: [] }
+      })
+      return
+    }
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
   const handleRemoveProduct = (type: string) => {
     setFormData((prev) => ({
       ...prev,
-      products: prev.products.filter((t) => t !== type),
+      products: (prev.products ?? []).filter((t) => t !== type),
     }))
   }
 
@@ -387,14 +384,8 @@ const EditEventModal = ({
     if (input) input.value = ''
   }
 
-  // Get today's date in YYYY-MM-DD format for date input min attribute
-  const getTodayDateString = () => {
-    const today = new Date()
-    const year = today.getFullYear()
-    const month = String(today.getMonth() + 1).padStart(2, '0')
-    const day = String(today.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
+  // Get today's date in YYYY-MM-DD for the selected event timezone.
+  const getTodayDateString = () => getTodayDateStringInTimezone(formData.timezone || DEFAULT_APP_TIMEZONE)
 
   const handleClose = () => {
     if (hasUnsavedChanges && !isSubmitting) {
@@ -428,14 +419,10 @@ const EditEventModal = ({
       return
     }
 
-    // Validate that event date is not in the past
+    // Validate that event date is not in the past (in the selected event timezone)
     if (trimmed.eventDate) {
-      const eventDate = new Date(trimmed.eventDate)
-      const today = new Date()
-      today.setHours(0, 0, 0, 0) // Reset time to start of day for comparison
-      eventDate.setHours(0, 0, 0, 0)
-
-      if (eventDate < today) {
+      const tz = trimmed.timezone || DEFAULT_APP_TIMEZONE
+      if (isDateStringBeforeTodayInTimezone(trimmed.eventDate, tz)) {
         addNotification({
           type: 'error',
           title: 'Invalid Event Date',
@@ -516,16 +503,13 @@ const EditEventModal = ({
       
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-          onClick={isSubmitting ? undefined : handleClose}
-        />
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
         {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto m-4">
@@ -690,15 +674,16 @@ const EditEventModal = ({
               </label>
             </div>
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4 mb-6'>
-            {/* End Time */}
+            {/* Event Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Time <span className="text-red-500">*</span>
+                Event Name <span className="text-red-500">*</span>
               </label>
               <input
-                type="time"
-                value={formData.endTime}
-                onChange={(e) => handleInputChange('endTime', e.target.value)}
+                type="text"
+                placeholder="Enter Event Name"
+                value={formData.eventName}
+                onChange={(e) => handleInputChange('eventName', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
@@ -719,16 +704,48 @@ const EditEventModal = ({
               />
             </div>
 
-            {/* Event Name */}
+            {/* Timezone */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Event Name <span className="text-red-500">*</span>
+                Timezone <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.timezone}
+                onChange={(e) => handleInputChange('timezone', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              >
+                {TIMEZONE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Start Time */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Start Time <span className="text-red-500">*</span>
               </label>
               <input
-                type="text"
-                placeholder="Enter Event Name"
-                value={formData.eventName}
-                onChange={(e) => handleInputChange('eventName', e.target.value)}
+                type="time"
+                value={formData.startTime}
+                onChange={(e) => handleInputChange('startTime', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
+            </div>
+
+            {/* End Time */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                End Time <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="time"
+                value={formData.endTime}
+                onChange={(e) => handleInputChange('endTime', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />
@@ -743,10 +760,10 @@ const EditEventModal = ({
                 value=""
                 onChange={(e) => {
                   const selectedProduct = e.target.value
-                  if (selectedProduct && !formData.products.includes(selectedProduct)) {
+                  if (selectedProduct && !(formData.products ?? []).includes(selectedProduct)) {
                     setFormData((prev) => ({
                       ...prev,
-                      products: [...prev.products, selectedProduct],
+                      products: [...(prev.products ?? []), selectedProduct],
                     }))
                   }
                 }}
@@ -764,16 +781,16 @@ const EditEventModal = ({
                   <option 
                     key={index} 
                     value={product}
-                    disabled={formData.products.includes(product)}
+                    disabled={(formData.products ?? []).includes(product)}
                   >
                     {product}
                   </option>
                 ))}
               </select>
               {/* Selected Products */}
-              {formData.products.length > 0 && (
+              {(formData.products ?? []).length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {formData.products.map((product, index) => (
+                  {(formData.products ?? []).map((product, index) => (
                     <span
                       key={index}
                       className="inline-flex items-center gap-1 px-3 py-1 bg-[#1D0A74]/10 text-[#1D0A74] rounded-full text-sm"
@@ -802,20 +819,6 @@ const EditEventModal = ({
                 placeholder="Enter point"
                 value={formData.reviewPoints}
                 onChange={(e) => handleInputChange('reviewPoints', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-              />
-            </div>
-
-            {/* Start Time */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Time <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="time"
-                value={formData.startTime}
-                onChange={(e) => handleInputChange('startTime', e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
               />

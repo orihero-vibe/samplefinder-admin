@@ -118,16 +118,13 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
     <>
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-          onClick={isSubmitting ? undefined : handleClose}
-        />
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
       {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto m-4">
@@ -208,8 +205,7 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
                 !formData.name ||
                 !formData.address ||
                 !formData.city ||
-                !formData.state ||
-                !formData.zipCode
+                !formData.state
               }
               className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
-import type { NotificationFormData, AppUser } from '../../../lib/services'
+import type { NotificationFormData, AppUser, NotificationAudience } from '../../../lib/services'
 import { trimFormStrings } from '../../../lib/formUtils'
-import { appUsersService } from '../../../lib/services'
+import { appUsersService, locationsService } from '../../../lib/services'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
+import { appTimeToUTC, DEFAULT_APP_TIMEZONE, getTodayDateStringInTimezone } from '../../../lib/dateUtils'
 
 interface CreateNotificationModalProps {
   isOpen: boolean
@@ -12,6 +13,8 @@ interface CreateNotificationModalProps {
   onSave: (notificationData: NotificationFormData) => void
   initialData?: NotificationFormData | null
   isEditMode?: boolean
+  /** IANA timezone for scheduled date/time validation and display */
+  appTimezone?: string
 }
 
 interface ValidationErrors {
@@ -19,14 +22,16 @@ interface ValidationErrors {
   message?: string
   scheduledAt?: string
   scheduledTime?: string
+  selectedUserIds?: string
 }
 
-type ValidationErrorCode = 
+type ValidationErrorCode =
   | 'REQUIRED_FIELD'
   | 'MIN_LENGTH'
   | 'MAX_LENGTH'
   | 'INVALID_DATE'
   | 'PAST_DATE'
+  | 'USERS_REQUIRED'
 
 interface StructuredError {
   code: ValidationErrorCode
@@ -38,24 +43,33 @@ interface StructuredError {
 const defaultFormData: NotificationFormData = {
   title: '',
   message: '',
-  type: 'Event Reminder',
+  type: 'Notification',
   targetAudience: 'All',
+  category: 'AppPush',
   schedule: 'Send Immediately',
   scheduledAt: '',
-  scheduledTime: '',
+  scheduledTime: '13:00',
   selectedUserIds: [],
+  selectedZipCodes: [],
+  newUsersTimeRange: undefined,
 }
 
-// App Push templates for manual send only. Automatic notifications (Welcome on signup, Trivia Tuesday,
-// Sampling Today from savedEventIds, New Sampling Event Near You from favorite brands) are sent by the system.
-const APP_PUSH_TEMPLATES: Array<{ id: string; label: string; title: string; body: string }> = [
+interface NotificationTemplate {
+  id: string
+  label: string
+  title: string
+  body: string
+  autoAudience?: NotificationAudience
+}
+
+const APP_PUSH_TEMPLATES: NotificationTemplate[] = [
   { id: '', label: 'No template', title: '', body: '' },
   { id: 'monthly_winner_first', label: 'Monthly Winner: First Place', title: 'MONTHLY WINNER: FIRST PLACE!', body: 'Congratulations, you scored the most points of all SampleFinder users this month! Our team will be in touch with prize details!' },
   { id: 'monthly_winner_second', label: 'Monthly Winner: Second Place', title: 'MONTHLY WINNER: SECOND PLACE!', body: 'Congratulations, you scored the most points of all SampleFinder check-ins and reviews this month! Our team will be in touch with prize details!' },
   { id: 'monthly_winner_promo_loot', label: 'Monthly Winner: Promo Loot Crate', title: 'MONTHLY WINNER: PROMO LOOT CRATE!', body: "Congratulations, you're the lucky winner of our promo loot crate! Our team will be in touch with prize details!" },
 ]
 
-// Validation constants (stricter limits for cross-platform push: iOS ~50 title/150 body, Android ~65/240)
+// Push notification limits (single max per field for admin UI and validation)
 const VALIDATION_RULES = {
   title: {
     minLength: 3,
@@ -80,21 +94,25 @@ const CreateNotificationModal = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
-  const [segment, setSegment] = useState<string>('All segments')
   const [selectedAppTemplateId, setSelectedAppTemplateId] = useState<string>('')
   const [users, setUsers] = useState<AppUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [userSearchQuery, setUserSearchQuery] = useState('')
   const [showUserDropdown, setShowUserDropdown] = useState(false)
+  const [availableZipCodes, setAvailableZipCodes] = useState<string[]>([])
+  const [isLoadingZipCodes, setIsLoadingZipCodes] = useState(false)
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
+  // Scheduled notifications are pinned to 1:00 PM Eastern regardless of app timezone.
+  const scheduleTimezone = DEFAULT_APP_TIMEZONE
+  const minScheduledDate = getTodayDateStringInTimezone(scheduleTimezone)
 
   // Fetch users when modal opens
   useEffect(() => {
     const fetchUsers = async () => {
       setLoadingUsers(true)
       try {
-        const usersList = await appUsersService.list()
+        const usersList = await appUsersService.listAll()
         setUsers(usersList)
       } catch (error) {
         console.error('Error fetching users:', error)
@@ -105,6 +123,32 @@ const CreateNotificationModal = ({
 
     if (isOpen) {
       fetchUsers()
+    }
+  }, [isOpen])
+
+  // Fetch distinct zip codes when modal opens (for ZipCode audience)
+  useEffect(() => {
+    const fetchZipCodes = async () => {
+      setIsLoadingZipCodes(true)
+      try {
+        const locations = await locationsService.list()
+        const zips = Array.from(
+          new Set(
+            (locations.documents || [])
+              .map((loc) => (loc as { zipCode?: string }).zipCode)
+              .filter((z): z is string => !!z)
+          )
+        ).sort()
+        setAvailableZipCodes(zips)
+      } catch (error) {
+        console.error('Error fetching zip codes:', error)
+      } finally {
+        setIsLoadingZipCodes(false)
+      }
+    }
+
+    if (isOpen) {
+      void fetchZipCodes()
     }
   }, [isOpen])
 
@@ -135,7 +179,6 @@ const CreateNotificationModal = ({
       }
       setValidationErrors({})
       setTouchedFields(new Set())
-      setSegment('All segments')
       setSelectedAppTemplateId('')
       setUserSearchQuery('')
       setShowUserDropdown(false)
@@ -150,8 +193,9 @@ const CreateNotificationModal = ({
       REQUIRED_FIELD: (field) => `${field} is required`,
       MIN_LENGTH: (field, rules) => `${field} must be at least ${rules.minLength} characters`,
       MAX_LENGTH: (field, rules) => `${field} must not exceed ${rules.maxLength} characters`,
-      INVALID_DATE: () => 'Please select both date and time',
+      INVALID_DATE: () => 'Please select a date',
       PAST_DATE: () => 'Scheduled date and time must be in the future',
+      USERS_REQUIRED: () => 'Please select at least one user',
     }
     return errorMessages[error.code](error.field, VALIDATION_RULES[error.fieldName as keyof typeof VALIDATION_RULES])
   }
@@ -189,9 +233,7 @@ const CreateNotificationModal = ({
       if (field === 'scheduledAt' && !value) {
         return { code: 'REQUIRED_FIELD', field: 'Scheduled Date', fieldName: 'scheduledAt', message: '' }
       }
-      if (field === 'scheduledTime' && !value) {
-        return { code: 'REQUIRED_FIELD', field: 'Scheduled Time', fieldName: 'scheduledTime', message: '' }
-      }
+      if (field === 'scheduledTime') return null
     }
 
     return null
@@ -219,7 +261,7 @@ const CreateNotificationModal = ({
 
     // Validate scheduled date/time if scheduling for later
     if (data.schedule === 'Schedule for Later') {
-      if (!data.scheduledAt || !data.scheduledTime) {
+      if (!data.scheduledAt) {
         const error: StructuredError = { 
           code: 'INVALID_DATE', 
           field: 'Scheduled Date/Time',
@@ -229,8 +271,8 @@ const CreateNotificationModal = ({
         errors.push(error)
         newValidationErrors.scheduledAt = getErrorMessage(error)
       } else {
-        // Validate that scheduled time is in the future
-        const scheduledDate = new Date(`${data.scheduledAt}T${data.scheduledTime}`)
+        // Same interpretation as notificationsService.create (1:00 PM in app timezone)
+        const scheduledDate = appTimeToUTC(data.scheduledAt, '13:00', scheduleTimezone)
         if (scheduledDate <= new Date()) {
           const error: StructuredError = { 
             code: 'PAST_DATE', 
@@ -242,6 +284,18 @@ const CreateNotificationModal = ({
           newValidationErrors.scheduledTime = getErrorMessage(error)
         }
       }
+    }
+
+    // Validate selected users when targeting specific users
+    if (data.targetAudience === 'Targeted' && (!data.selectedUserIds || data.selectedUserIds.length === 0)) {
+      const error: StructuredError = {
+        code: 'USERS_REQUIRED',
+        field: 'Selected Users',
+        fieldName: 'selectedUserIds',
+        message: ''
+      }
+      errors.push(error)
+      newValidationErrors.selectedUserIds = getErrorMessage(error)
     }
 
     setValidationErrors(newValidationErrors)
@@ -267,6 +321,14 @@ const CreateNotificationModal = ({
           scheduledTime: undefined,
         }))
       }
+
+      // Clear selected users error when audience changes away from targeted
+      if (field === 'targetAudience') {
+        setValidationErrors((prev) => ({
+          ...prev,
+          selectedUserIds: undefined,
+        }))
+      }
     }
   }
 
@@ -285,21 +347,24 @@ const CreateNotificationModal = ({
     e.preventDefault()
     
     const trimmed = trimFormStrings(formData)
+    const normalized = trimmed.schedule === 'Schedule for Later'
+      ? { ...trimmed, scheduledTime: '13:00' }
+      : trimmed
 
     // Mark all fields as touched to show validation errors
-    setTouchedFields(new Set(['title', 'message', 'scheduledAt', 'scheduledTime']))
+    setTouchedFields(new Set(['title', 'message', 'scheduledAt', 'scheduledTime', 'selectedUserIds']))
     
     // Validate form using trimmed data
-    const { isValid, errors } = validateForm(trimmed)
+    const { isValid, errors } = validateForm(normalized)
     
     if (!isValid) {
       console.error('Validation failed:', errors)
       return
     }
-    
+
     setIsSubmitting(true)
     try {
-      await onSave(trimmed)
+      await onSave(normalized)
       setShowUnsavedChangesModal(false)
       setFormData(defaultFormData)
       setValidationErrors({})
@@ -336,6 +401,12 @@ const CreateNotificationModal = ({
         return { ...prev, selectedUserIds: [...selectedUserIds, userId] }
       }
     })
+
+    // Clear user selection error once at least one user is selected
+    setValidationErrors((prev) => ({
+      ...prev,
+      selectedUserIds: undefined,
+    }))
   }
 
   const handleRemoveUser = (userId: string) => {
@@ -344,6 +415,11 @@ const CreateNotificationModal = ({
       selectedUserIds: (prev.selectedUserIds || []).filter((id) => id !== userId),
     }))
   }
+
+  const getUserDisplayName = (user: AppUser): string =>
+    user.firstName && user.lastName
+      ? `${user.firstName} ${user.lastName}`
+      : user.username || user.email || 'Unknown User'
 
   const filteredUsers = users.filter((user) => {
     if (!userSearchQuery) return true
@@ -354,22 +430,19 @@ const CreateNotificationModal = ({
       user.email?.toLowerCase().includes(searchLower) ||
       user.username?.toLowerCase().includes(searchLower)
     )
-  })
+  }).sort((a, b) => getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, { sensitivity: 'base' }))
 
   return (
     <>
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-          onClick={isSubmitting ? undefined : handleClose}
-        />
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
         {/* Modal */}
         <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
@@ -442,7 +515,7 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters (iOS ~50, Android ~65 for title)
+                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters
                 </p>
               </div>
 
@@ -470,33 +543,11 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters (iOS ~150, Android ~240 for body)
+                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters
                 </p>
               </div>
 
-              {/* Notification Type */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Notification Type
-                </label>
-                <div className="relative">
-                  <select
-                    value={formData.type}
-                    onChange={(e) => handleInputChange('type', e.target.value as 'Event Reminder' | 'Promotional' | 'Engagement')}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
-                  >
-                    <option value="Event Reminder">Event Reminder</option>
-                    <option value="Promotional">Promotional</option>
-                    <option value="Engagement">Engagement</option>
-                  </select>
-                  <Icon
-                    icon="mdi:chevron-down"
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
-                  />
-                </div>
-              </div>
-
-              {/* App Push template picker */}
+              {/* Template picker */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Template (optional)
@@ -542,156 +593,215 @@ const CreateNotificationModal = ({
             </div>
             <div className="ml-11 space-y-4">
               {/* Target Audience */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Target Audience
-                </label>
-                <div className="relative">
-                  <select
-                    value={formData.targetAudience}
-                    onChange={(e) => handleInputChange('targetAudience', e.target.value as 'All' | 'Targeted' | 'Specific Segment')}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
-                  >
-                    <option value="All">All Users</option>
-                    <option value="Targeted">Targeted Users</option>
-                    <option value="Specific Segment">Specific Segment</option>
-                  </select>
-                  <Icon
-                    icon="mdi:chevron-down"
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
-                  />
-                </div>
-              </div>
-              {/* Segment selector when Targeted or Specific Segment (placeholder until segment list/source is defined) */}
-              {(formData.targetAudience === 'Targeted' || formData.targetAudience === 'Specific Segment') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Segment
+                    Target Audience
                   </label>
                   <div className="relative">
                     <select
-                      value={segment}
-                      onChange={(e) => setSegment(e.target.value)}
+                      value={formData.targetAudience}
+                      onChange={(e) => {
+                        const audience = e.target.value as NotificationAudience
+                        setFormData((prev) => ({
+                          ...prev,
+                          targetAudience: audience,
+                          selectedUserIds: [],
+                          selectedZipCodes: [],
+                          newUsersTimeRange: undefined,
+                        }))
+                      }}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
                     >
-                      <option value="All segments">All segments</option>
+                      <optgroup label="App Push Notifications">
+                        <option value="All">All Users</option>
+                        <option value="NewUsers">New Users</option>
+                        <option value="BrandAmbassadors">Certified Brand Ambassadors (BA)</option>
+                        <option value="Influencers">Certified Influencers</option>
+                        <option value="Tier1">Tier 1 Users - NewbieSamplers</option>
+                        <option value="Tier2">Tier 2 Users - SampleFans</option>
+                        <option value="Tier3">Tier 3 Users - SuperSamplers</option>
+                        <option value="Tier4">Tier 4 Users - VIS</option>
+                        <option value="Tier5">Tier 5 Users - SampleMasters</option>
+                        <option value="ZipCode">
+                          All Users within specific zip code area (multi-select)
+                        </option>
+                        <option value="Targeted">Specific Users</option>
+                      </optgroup>
                     </select>
                     <Icon
                       icon="mdi:chevron-down"
                       className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Filtering by segment will be applied when segment data is configured. Currently all users are included.
-                  </p>
                 </div>
-              )}
 
-              {/* User Selection for Targeted audience */}
-              {formData.targetAudience === 'Targeted' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Users
-                  </label>
-                  
-                  {/* Selected users display */}
-                  {formData.selectedUserIds && formData.selectedUserIds.length > 0 && (
-                    <div className="mb-3 flex flex-wrap gap-2">
-                      {formData.selectedUserIds.map((userId) => {
-                        const user = users.find((u) => u.$id === userId)
-                        if (!user) return null
-                        const displayName = user.firstName && user.lastName 
-                          ? `${user.firstName} ${user.lastName}` 
-                          : user.username || user.email || 'Unknown User'
-                        return (
-                          <div
-                            key={userId}
-                            className="inline-flex items-center gap-2 px-3 py-1 bg-[#1D0A74] text-white rounded-full text-sm"
-                          >
-                            <span>{displayName}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveUser(userId)}
-                              className="hover:bg-white/20 rounded-full p-0.5"
-                            >
-                              <Icon icon="mdi:close" className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                {/* New Users time range */}
+                {formData.targetAudience === 'NewUsers' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      New Users Time Range (days)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={formData.newUsersTimeRange ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                          ? Math.max(1, Math.min(365, Number(e.target.value)))
+                          : undefined
+                        setFormData((prev) => ({ ...prev, newUsersTimeRange: val }))
+                      }}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                      placeholder="e.g. 30"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Send to users who signed up within the last N days.
+                    </p>
+                  </div>
+                )}
 
-                  {/* User search and selection dropdown */}
-                  <div className="relative user-dropdown-container">
+                {/* Zip code multi-select */}
+                {formData.targetAudience === 'ZipCode' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Zip Codes
+                    </label>
                     <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search users by name, email or username..."
-                        value={userSearchQuery}
-                        onChange={(e) => setUserSearchQuery(e.target.value)}
-                        onFocus={() => setShowUserDropdown(true)}
-                        className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-                      />
-                      <Icon
-                        icon="mdi:magnify"
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
-                      />
-                    </div>
-
-                    {/* Dropdown list */}
-                    {showUserDropdown && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                        {loadingUsers ? (
-                          <div className="px-4 py-3 text-center text-gray-500">
-                            <Icon icon="mdi:loading" className="w-5 h-5 animate-spin mx-auto" />
-                          </div>
-                        ) : filteredUsers.length === 0 ? (
-                          <div className="px-4 py-3 text-center text-gray-500">
-                            No users found
-                          </div>
-                        ) : (
-                          <>
-                            {filteredUsers.map((user) => {
-                              const isSelected = formData.selectedUserIds?.includes(user.$id)
-                              const displayName = user.firstName && user.lastName 
-                                ? `${user.firstName} ${user.lastName}` 
-                                : user.username || 'Unknown User'
-                              return (
-                                <div
-                                  key={user.$id}
-                                  onClick={() => handleUserSelect(user.$id)}
-                                  className={`px-4 py-2 cursor-pointer hover:bg-gray-100 flex items-center justify-between ${
-                                    isSelected ? 'bg-blue-50' : ''
-                                  }`}
-                                >
-                                  <div>
-                                    <div className="font-medium text-gray-900">{displayName}</div>
-                                    {user.email && (
-                                      <div className="text-xs text-gray-500">{user.email}</div>
-                                    )}
-                                  </div>
-                                  {isSelected && (
-                                    <Icon icon="mdi:check" className="w-5 h-5 text-[#1D0A74]" />
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </>
+                      <select
+                        multiple
+                        value={formData.selectedZipCodes || []}
+                        onChange={(e) => {
+                          const options = Array.from(e.target.selectedOptions).map((o) => o.value)
+                          handleInputChange('selectedZipCodes', options.join(','))
+                          setFormData((prev) => ({
+                            ...prev,
+                            selectedZipCodes: options,
+                          }))
+                        }}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent min-h-[120px]"
+                      >
+                        {isLoadingZipCodes && (
+                          <option disabled>Loading zip codes...</option>
                         )}
+                        {!isLoadingZipCodes &&
+                          availableZipCodes.map((zip) => (
+                            <option key={zip} value={zip}>
+                              {zip}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Hold Ctrl (Windows) or Command (Mac) to select multiple zip codes.
+                    </p>
+                  </div>
+                )}
+
+                {/* User Selection for Targeted audience */}
+                {formData.targetAudience === 'Targeted' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Users
+                    </label>
+                    
+                    {/* Selected users display */}
+                    {formData.selectedUserIds && formData.selectedUserIds.length > 0 && (
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {formData.selectedUserIds.map((userId) => {
+                          const user = users.find((u) => u.$id === userId)
+                          if (!user) return null
+                          const displayName = getUserDisplayName(user)
+                          return (
+                            <div
+                              key={userId}
+                              className="inline-flex items-center gap-2 px-3 py-1 bg-[#1D0A74] text-white rounded-full text-sm"
+                            >
+                              <span>{displayName}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveUser(userId)}
+                                className="hover:bg-white/20 rounded-full p-0.5"
+                              >
+                                <Icon icon="mdi:close" className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
-                  </div>
 
-                  <p className="text-xs text-gray-500 mt-1">
-                    Selected {formData.selectedUserIds?.length || 0} user(s)
-                  </p>
-                </div>
-              )}
+                    {/* User search and selection dropdown */}
+                    <div className="relative user-dropdown-container">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search users by name, email or username..."
+                          value={userSearchQuery}
+                          onChange={(e) => setUserSearchQuery(e.target.value)}
+                          onFocus={() => setShowUserDropdown(true)}
+                          className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                        />
+                        <Icon
+                          icon="mdi:magnify"
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
+                        />
+                      </div>
+
+                      {/* Dropdown list */}
+                      {showUserDropdown && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {loadingUsers ? (
+                            <div className="px-4 py-3 text-center text-gray-500">
+                              <Icon icon="mdi:loading" className="w-5 h-5 animate-spin mx-auto" />
+                            </div>
+                          ) : filteredUsers.length === 0 ? (
+                            <div className="px-4 py-3 text-center text-gray-500">
+                              No users found
+                            </div>
+                          ) : (
+                            <>
+                              {filteredUsers.map((user) => {
+                                const isSelected = formData.selectedUserIds?.includes(user.$id)
+                                const displayName = getUserDisplayName(user)
+                                return (
+                                  <div
+                                    key={user.$id}
+                                    onClick={() => handleUserSelect(user.$id)}
+                                    className={`px-4 py-2 cursor-pointer hover:bg-gray-100 flex items-center justify-between ${
+                                      isSelected ? 'bg-blue-50' : ''
+                                    }`}
+                                  >
+                                    <div>
+                                      <div className="font-medium text-gray-900">{displayName}</div>
+                                      {user.email && (
+                                        <div className="text-xs text-gray-500">{user.email}</div>
+                                      )}
+                                    </div>
+                                    {isSelected && (
+                                      <Icon icon="mdi:check" className="w-5 h-5 text-[#1D0A74]" />
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      Selected {formData.selectedUserIds?.length || 0} user(s)
+                    </p>
+                    {validationErrors.selectedUserIds && (
+                      <p className="mt-1 text-sm text-red-600">{validationErrors.selectedUserIds}</p>
+                    )}
+                  </div>
+                )}
             </div>
           </div>
 
-          {/* Section 3: Schedule */}
+          {/* Schedule Section */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-8 h-8 rounded-full bg-[#1D0A74] text-white flex items-center justify-center font-semibold text-sm">
@@ -733,41 +843,24 @@ const CreateNotificationModal = ({
                       value={formData.scheduledAt}
                       onChange={(e) => handleInputChange('scheduledAt', e.target.value)}
                       onBlur={() => handleBlur('scheduledAt')}
-                      min={new Date().toISOString().split('T')[0]}
+                      min={minScheduledDate}
                       className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
-                        validationErrors.scheduledAt
+                        validationErrors.scheduledAt || validationErrors.scheduledTime
                           ? 'border-red-500 focus:ring-red-500'
                           : 'border-gray-300 focus:ring-[#1D0A74]'
                       }`}
                     />
-                    {validationErrors.scheduledAt && (
+                    {(validationErrors.scheduledAt || validationErrors.scheduledTime) && (
                       <div className="flex items-center gap-1 mt-1 text-red-500 text-sm">
                         <Icon icon="mdi:alert-circle" className="w-4 h-4" />
-                        <span>{validationErrors.scheduledAt}</span>
+                        <span>
+                          {validationErrors.scheduledAt || validationErrors.scheduledTime}
+                        </span>
                       </div>
                     )}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Scheduled Time <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="time"
-                      value={formData.scheduledTime}
-                      onChange={(e) => handleInputChange('scheduledTime', e.target.value)}
-                      onBlur={() => handleBlur('scheduledTime')}
-                      className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
-                        validationErrors.scheduledTime
-                          ? 'border-red-500 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-[#1D0A74]'
-                      }`}
-                    />
-                    {validationErrors.scheduledTime && (
-                      <div className="flex items-center gap-1 mt-1 text-red-500 text-sm">
-                        <Icon icon="mdi:alert-circle" className="w-4 h-4" />
-                        <span>{validationErrors.scheduledTime}</span>
-                      </div>
-                    )}
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                    Scheduled notifications are sent at <span className="font-semibold">1:00 PM EST</span>.
                   </div>
                 </>
               )}

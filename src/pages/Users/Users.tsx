@@ -14,7 +14,7 @@ import {
   EditUserModal,
   StatsCards,
 } from './components'
-import { appUsersService, notificationsService, triviaResponsesService, type AppUser, type UserFormData, statisticsService, type UsersStats } from '../../lib/services'
+import { appUsersService, triviaResponsesService, notificationsService, type AppUser, type UserFormData, statisticsService, type UsersStats, tiersService, type TierDocument } from '../../lib/services'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
@@ -22,7 +22,8 @@ const Users = () => {
   const { addNotification } = useNotificationStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [tierFilter, setTierFilter] = useState('All Tiers')
-  const [sortBy, setSortBy] = useState('Sort by: Date')
+  const [sortBy, setSortBy] = useState<'createdAt' | 'name' | 'points' | 'events' | 'reviews' | 'email' | 'tierLevel' | 'dob'>('createdAt')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false)
@@ -44,6 +45,8 @@ const Users = () => {
   const [totalUsers, setTotalUsers] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
+  const [tierOrderMap, setTierOrderMap] = useState<Record<string, number>>({})
+  const [filterTierList, setFilterTierList] = useState<TierDocument[]>([])
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchIdRef = useRef(0)
 
@@ -76,48 +79,34 @@ const Users = () => {
         ]))
       }
       
-      // Apply tier filter based on totalPoints ranges
+      // Apply tier filter by canonical tierLevel field
       if (tierFilter !== 'All Tiers') {
-        switch (tierFilter) {
-          case 'NewbieSampler':
-            queries.push(Query.lessThan('totalPoints', 1000))
-            break
-          case 'SampleFan':
-            queries.push(Query.greaterThanEqual('totalPoints', 1000))
-            queries.push(Query.lessThan('totalPoints', 5000))
-            break
-          case 'SuperSampler':
-            queries.push(Query.greaterThanEqual('totalPoints', 5000))
-            queries.push(Query.lessThan('totalPoints', 25000))
-            break
-          case 'VIS':
-            queries.push(Query.greaterThanEqual('totalPoints', 25000))
-            queries.push(Query.lessThan('totalPoints', 100000))
-            break
-          case 'SampleMaster':
-            queries.push(Query.greaterThanEqual('totalPoints', 100000))
-            break
+        queries.push(Query.equal('tierLevel', [tierFilter]))
+      }
+      
+      // Email sort requires client-side (email may come from Auth); fetch more then sort
+      const isEmailSort = sortBy === 'email'
+      const isTierSort = sortBy === 'tierLevel'
+      if (!isEmailSort && !isTierSort) {
+        const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
+        if (sortBy === 'points') {
+          queries.push(orderMethod('totalPoints'))
+        } else if (sortBy === 'name') {
+          queries.push(orderMethod('firstname'))
+        } else if (sortBy === 'events') {
+          queries.push(orderMethod('totalEvents'))
+        } else if (sortBy === 'reviews') {
+          queries.push(orderMethod('totalReviews'))
+        } else if (sortBy === 'dob') {
+          queries.push(orderMethod('dob'))
+        } else {
+          queries.push(orderMethod('$createdAt'))
         }
       }
       
-      // Apply sorting based on sortBy value
-      if (sortBy === 'Sort by: Points') {
-        queries.push(Query.orderDesc('totalPoints'))
-      } else if (sortBy === 'Sort by: Name') {
-        queries.push(Query.orderAsc('firstname'))
-      } else if (sortBy === 'Sort by: Events') {
-        queries.push(Query.orderDesc('totalEvents'))
-      } else if (sortBy === 'Sort by: Reviews') {
-        queries.push(Query.orderDesc('totalReviews'))
-      } else {
-        // Default: Sort by: Date
-        queries.push(Query.orderDesc('$createdAt'))
-      }
-      
-      // For any search (text, email, or phone), fetch more results (up to 500) and filter client-side
-      // so only records that actually match are shown (improves accuracy; server contains() can be inconsistent)
       const hasSearch = trimmedSearch.length > 0
-      if (isEmailSearch || isPhoneSearch || hasSearch) {
+      const needLargeFetch = isEmailSearch || isPhoneSearch || hasSearch || isEmailSort || isTierSort
+      if (needLargeFetch) {
         queries.push(Query.limit(500))
         queries.push(Query.offset(0))
       } else {
@@ -163,6 +152,45 @@ const Users = () => {
         const startIndex = (page - 1) * pageSize
         const endIndex = startIndex + pageSize
         filteredUsers = filteredUsers.slice(startIndex, endIndex)
+      }
+
+      // Email sort: client-side (email from Auth); sort then paginate
+      if (isEmailSort) {
+        const sorted = [...filteredUsers].sort((a, b) => {
+          const ea = (a.email ?? '').toLowerCase()
+          const eb = (b.email ?? '').toLowerCase()
+          const cmp = ea.localeCompare(eb)
+          return sortOrder === 'asc' ? cmp : -cmp
+        })
+        filteredTotal = sorted.length
+        const startIndex = (page - 1) * pageSize
+        filteredUsers = sorted.slice(startIndex, startIndex + pageSize)
+      }
+
+      // Tier sort: client-side by tier order rank (not lexicographic), then paginate
+      if (isTierSort) {
+        const getTierOrder = (tierLevel?: string) => {
+          const tier = String(tierLevel ?? '').trim()
+          if (!tier) return null
+          return tierOrderMap[tier] ?? null
+        }
+
+        const sorted = [...filteredUsers].sort((a, b) => {
+          const orderA = getTierOrder(a.tierLevel)
+          const orderB = getTierOrder(b.tierLevel)
+
+          // Keep unknown/empty tiers at the end regardless of direction
+          if (orderA == null && orderB != null) return 1
+          if (orderA != null && orderB == null) return -1
+          if (orderA == null && orderB == null) return 0
+
+          const cmp = (orderA as number) - (orderB as number)
+          return sortOrder === 'asc' ? cmp : -cmp
+        })
+
+        filteredTotal = sorted.length
+        const startIndex = (page - 1) * pageSize
+        filteredUsers = sorted.slice(startIndex, startIndex + pageSize)
       }
 
       // Extract pagination metadata
@@ -224,10 +252,39 @@ const Users = () => {
     }
   }
 
+  // Fetch tier metadata for rank-based tier sorting
+  const fetchTierOrder = async () => {
+    try {
+      const tiers = await tiersService.list()
+      setFilterTierList(tiers)
+      const nextTierOrderMap = tiers.reduce<Record<string, number>>((acc, tier, index) => {
+        const tierName = String(tier.name ?? '').trim()
+        if (tierName) {
+          acc[tierName] = Number.isFinite(tier.order) ? Number(tier.order) : index
+        }
+        return acc
+      }, {})
+      setTierOrderMap(nextTierOrderMap)
+    } catch (err) {
+      console.error('Error fetching tier order:', err)
+      // Keep existing map; sorting will gracefully fall back for unknown tiers.
+    }
+  }
+
+  // If tier names in Appwrite change, clear a filter value that no longer exists (avoids empty lists).
+  useEffect(() => {
+    if (tierFilter === 'All Tiers' || filterTierList.length === 0) return
+    const valid = filterTierList.some((t) => String(t.name ?? '').trim() === tierFilter)
+    if (!valid) {
+      setTierFilter('All Tiers')
+    }
+  }, [filterTierList, tierFilter])
+
   // Initial load
   useEffect(() => {
     fetchUsers(1)
     fetchStatistics()
+    fetchTierOrder()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -303,13 +360,22 @@ const Users = () => {
       fetchUsers(1)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tierFilter, sortBy])
+  }, [tierFilter, sortBy, sortOrder])
+
+  // When tier ranks finish loading, refresh tier sort results once.
+  useEffect(() => {
+    if (!isInitialLoad && sortBy === 'tierLevel') {
+      fetchUsers(1)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tierOrderMap])
 
   // Handle search change; reset tier and sort to default when keyword is removed
   const handleSearchChange = (value: string) => {
     if (value.trim() === '') {
       setTierFilter('All Tiers')
-      setSortBy('Sort by: Date')
+      setSortBy('createdAt')
+      setSortOrder('desc')
     }
     setSearchQuery(value)
     setCurrentPage(1) // Reset to page 1 when search changes
@@ -382,6 +448,10 @@ const Users = () => {
       }
       setIsDeleteModalOpen(false)
       setUserToDelete(null)
+      setIsEditUserModalOpen(false)
+      setSelectedUser(null)
+      setUserForEdit(null)
+      setEditModalTriviasWon(null)
       addNotification({
         type: 'success',
         title: 'User deleted successfully',
@@ -505,8 +575,11 @@ const Users = () => {
           onSearchChange={handleSearchChange}
           tierFilter={tierFilter}
           onTierFilterChange={setTierFilter}
+          tiers={filterTierList}
           sortBy={sortBy}
-          onSortByChange={setSortBy}
+          onSortByChange={(value) => setSortBy(value as typeof sortBy)}
+          sortOrder={sortOrder}
+          onSortOrderChange={setSortOrder}
         />
         <UsersTable
           users={users}
@@ -621,37 +694,72 @@ const Users = () => {
               updateData.avatarURL = avatarURL
             }
             
+            // Detect badge changes before updating
+            const wasAmbassador = selectedUser.isAmbassador ?? (selectedUser as { baBadge?: boolean }).baBadge ?? false
+            const wasInfluencer = selectedUser.isInfluencer ?? (selectedUser as { influencerBadge?: boolean }).influencerBadge ?? false
+            const nowAmbassador = updateData.isAmbassador as boolean
+            const nowInfluencer = updateData.isInfluencer as boolean
+
+            // Detect tier change before updating (tierLevel is the canonical tier source for the app)
+            const previousTier =
+              (selectedUser.tierLevel != null && String(selectedUser.tierLevel).trim().length > 0)
+                ? String(selectedUser.tierLevel)
+                : null
+            const updatedTierRaw = userData.tierLevel != null ? String(userData.tierLevel).trim() : ''
+            const newTier = updatedTierRaw.length > 0 ? updatedTierRaw : null
+
             // Update user profile in database
             await appUsersService.update(selectedUser.$id, updateData)
 
-            // Send badge push notifications when admin assigns BA or Influencer badge
-            const prevBA = (selectedUser.isAmbassador ?? selectedUser.baBadge) ? 'Yes' : 'No'
-            const prevInf = (selectedUser.isInfluencer ?? selectedUser.influencerBadge) ? 'Yes' : 'No'
-            if (userData.baBadge === 'Yes' && prevBA !== 'Yes') {
-              try {
-                await notificationsService.sendSystemPush(selectedUser.$id, 'brand_ambassador_badge')
-              } catch (e) {
-                console.error('Failed to send BA badge push:', e)
+            // Send badge notifications if badges were just granted (await and surface errors)
+            const badgePromises: Promise<void>[] = []
+            if (nowAmbassador && !wasAmbassador && selectedUser.authID) {
+              badgePromises.push(
+                notificationsService.sendBadgeNotification(selectedUser.authID, 'ambassador')
+              )
+            }
+            if (nowInfluencer && !wasInfluencer && selectedUser.authID) {
+              badgePromises.push(
+                notificationsService.sendBadgeNotification(selectedUser.authID, 'influencer')
+              )
+            }
+            if (badgePromises.length > 0) {
+              const results = await Promise.allSettled(badgePromises)
+              const failed = results.filter((r) => r.status === 'rejected')
+              if (failed.length > 0) {
+                const message =
+                  failed.length === 1
+                    ? (failed[0] as PromiseRejectedResult).reason?.message ?? 'Badge notification could not be sent.'
+                    : 'One or more badge notifications could not be sent.'
                 addNotification({
                   type: 'warning',
-                  title: 'Badge push not sent',
-                  message: 'User saved, but Brand Ambassador notification could not be sent.',
+                  title: 'Badge notification failed',
+                  message,
                 })
               }
             }
-            if (userData.influencerBadge === 'Yes' && prevInf !== 'Yes') {
+
+            // Send tier notification if tier actually changed and we have the auth user ID
+            if (selectedUser.authID && previousTier !== newTier && newTier) {
               try {
-                await notificationsService.sendSystemPush(selectedUser.$id, 'influencer_badge')
-              } catch (e) {
-                console.error('Failed to send Influencer badge push:', e)
+                await notificationsService.sendTierNotification(
+                  selectedUser.authID,
+                  previousTier,
+                  newTier
+                )
+              } catch (tierError) {
+                console.error('Error sending tier notification:', tierError)
                 addNotification({
                   type: 'warning',
-                  title: 'Badge push not sent',
-                  message: 'User saved, but Influencer notification could not be sent.',
+                  title: 'Tier notification failed',
+                  message:
+                    tierError instanceof Error
+                      ? tierError.message
+                      : 'Tier notification could not be sent.',
                 })
               }
             }
-            
+
             // Refresh the users list
             await fetchUsers(currentPage)
             
@@ -667,11 +775,26 @@ const Users = () => {
             })
           } catch (err) {
             console.error('Error updating user:', err)
+            const extractedMessage =
+              err instanceof Error
+                ? err.message
+                : typeof err === 'string'
+                  ? err
+                  : typeof (err as { message?: unknown })?.message === 'string'
+                    ? (err as { message?: string }).message
+                    : null
+
+            const normalized = extractedMessage?.toLowerCase() ?? ''
+            const isPhoneDuplicate =
+              normalized.includes('phone number already exists') ||
+              (normalized.includes('phone') && normalized.includes('already exists'))
+
             addNotification({
               type: 'error',
               title: 'Error',
-              message: 'Failed to update user. Please try again.',
+              message: isPhoneDuplicate && extractedMessage ? extractedMessage : 'Failed to update user. Please try again.',
             })
+            throw new Error(extractedMessage ?? 'Failed to update user. Please try again.')
           }
         }}
         onAddToBlacklist={() => {

@@ -140,7 +140,7 @@
             "$id": "695d55bb002bc6b75430",
             "name": "Notification functions",
             "runtime": "node-22",
-            "specification": "s-0.5vcpu-512mb",
+            "specification": "s-1vcpu-512mb",
             "execute": [
                 "any"
             ],
@@ -164,7 +164,7 @@
                 "subscribers.read"
             ],
             "schedule": "*/15 * * * *",
-            "timeout": 15,
+            "timeout": 300,
             "enabled": true,
             "logging": true,
             "entrypoint": "src/main.js",
@@ -401,6 +401,77 @@
                     "min": 0,
                     "max": 1000000000,
                     "default": 0
+                },
+                {
+                    "key": "birthdayNotifYear",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 1970,
+                    "max": 2100,
+                    "default": null
+                },
+                {
+                    "key": "anniversaryNotifYear",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 1970,
+                    "max": 2100,
+                    "default": null
+                },
+                {
+                    "key": "lastInactivityNotifAt",
+                    "type": "datetime",
+                    "required": false,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "nearbyFavoriteNotifiedEventIds",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 10000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "zipGeoLat",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": -90,
+                    "max": 90,
+                    "default": null
+                },
+                {
+                    "key": "zipGeoLng",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": -180,
+                    "max": 180,
+                    "default": null
+                },
+                {
+                    "key": "homeLatitude",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": -90,
+                    "max": 90,
+                    "default": null
+                },
+                {
+                    "key": "homeLongitude",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": -180,
+                    "max": 180,
+                    "default": null
                 }
             ],
             "indexes": []
@@ -708,13 +779,27 @@
                     "required": false,
                     "array": false,
                     "default": null
+                },
+                {
+                    "key": "timezone",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 191,
+                    "default": null,
+                    "encrypt": false
                 }
             ],
             "indexes": []
         },
         {
             "$id": "notifications",
-            "$permissions": [],
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")",
+                "update(\"users\")",
+                "delete(\"users\")"
+            ],
             "databaseId": "69217af50038b9005a61",
             "name": "Notifications",
             "enabled": true,
@@ -786,7 +871,7 @@
                     "type": "string",
                     "required": true,
                     "array": false,
-                    "elements": ["Event Reminder", "Promotional", "Engagement"],
+                    "elements": ["Notification", "Event Reminder", "Promotional", "Engagement"],
                     "format": "enum",
                     "default": null
                 },
@@ -795,9 +880,57 @@
                     "type": "string",
                     "required": true,
                     "array": false,
-                    "elements": ["All", "Targeted", "Specific Segment"],
+                    "elements": [
+                        "All",
+                        "NewUsers",
+                        "BrandAmbassadors",
+                        "Influencers",
+                        "Tier1",
+                        "Tier2",
+                        "Tier3",
+                        "Tier4",
+                        "Tier5",
+                        "ZipCode",
+                        "Targeted"
+                    ],
                     "format": "enum",
                     "default": null
+                },
+                {
+                    "key": "selectedUserIds",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "selectedZipCodes",
+                    "type": "string",
+                    "required": false,
+                    "array": true,
+                    "size": 1000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "newUsersTimeRange",
+                    "type": "integer",
+                    "required": false,
+                    "array": false,
+                    "min": 1,
+                    "max": 365,
+                    "default": null
+                },
+                {
+                    "key": "category",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "elements": ["AppPush", "SystemPush"],
+                    "format": "enum",
+                    "default": "AppPush"
                 },
                 {
                     "key": "status",
@@ -992,7 +1125,7 @@
                     "key": "liked",
                     "type": "string",
                     "required": false,
-                    "array": false,
+                    "array": true,
                     "elements": [
                         "staff",
                         "swag",

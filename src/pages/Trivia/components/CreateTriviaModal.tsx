@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import { clientsService } from '../../../lib/services'
 import type { ClientDocument } from '../../../lib/services'
-import { formatDateWithTimezone } from '../../../lib/dateUtils'
+import { appTimeToUTC, utcToAppTimeFormInputs } from '../../../lib/dateUtils'
+import { useTimezoneStore } from '../../../stores/timezoneStore'
 import { trimFormStrings } from '../../../lib/formUtils'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
@@ -22,18 +23,18 @@ interface CreateTriviaModalProps {
 }
 
 const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) => {
+  const { appTimezone } = useTimezoneStore()
   const initialFormData = {
     client: '', // Client ID
     question: '',
     answers: ['', '', '', ''], // Array of answer strings
     correctOptionIndex: 1, // Index of correct answer (default to second option, index 1)
-    startDate: '', // Start date/time
-    endDate: '', // End date/time
     points: 10, // Default points
   }
   
   const [formData, setFormData] = useState(initialFormData)
   const initialDataRef = useRef(initialFormData)
+  const isSubmittingRef = useRef(false)
   const [brands, setBrands] = useState<ClientDocument[]>([])
   const [isLoadingBrands, setIsLoadingBrands] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -102,9 +103,47 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     onClose()
   }
 
+  const sortedBrands = [...brands].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+  )
+
+  const getNextTuesdayWindowUTC = (timezone: string): { startDate: string; endDate: string } => {
+    const now = new Date()
+    const { dateStr } = utcToAppTimeFormInputs(now.toISOString(), timezone)
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+    }).format(now)
+    const weekdayMap: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    }
+    const currentWeekday = weekdayMap[weekday] ?? 0
+    const rawDaysUntilTuesday = (2 - currentWeekday + 7) % 7
+    const daysUntilTuesday = rawDaysUntilTuesday === 0 ? 7 : rawDaysUntilTuesday
+
+    const [y, m, d] = dateStr.split('-').map(Number)
+    const tuesdayDate = new Date(Date.UTC(y, m - 1, d + daysUntilTuesday, 0, 0, 0, 0))
+    const tuesdayDateStr = `${tuesdayDate.getUTCFullYear()}-${String(tuesdayDate.getUTCMonth() + 1).padStart(2, '0')}-${String(tuesdayDate.getUTCDate()).padStart(2, '0')}`
+
+    const startUtc = appTimeToUTC(tuesdayDateStr, '00:00', timezone)
+    const endUtc = appTimeToUTC(tuesdayDateStr, '23:59', timezone)
+
+    return {
+      startDate: startUtc.toISOString(),
+      endDate: endUtc.toISOString(),
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+    if (isSubmittingRef.current || isSubmitting) return
+
     const trimmed = trimFormStrings(formData)
 
     if (!trimmed.client) {
@@ -129,36 +168,24 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
       return
     }
 
-    // Validate dates
-    if (!trimmed.startDate || !trimmed.endDate) {
-      alert('Please provide both start date and end date')
-      return
-    }
-
-    const startDate = new Date(trimmed.startDate)
-    const endDate = new Date(trimmed.endDate)
-
-    if (endDate <= startDate) {
-      alert('End date must be after start date')
-      return
-    }
-
     // Validate points
     if (trimmed.points < 0 || trimmed.points > 1000) {
       alert('Points must be between 0 and 1000')
       return
     }
 
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
     try {
       setError(null)
-      // Convert dates to ISO 8601 format with timezone preservation
+      const tuesdayWindow = getNextTuesdayWindowUTC(appTimezone)
       const triviaData = {
         client: trimmed.client,
         question: trimmed.question,
         answers: trimmed.answers,
         correctOptionIndex: trimmed.correctOptionIndex,
-        startDate: formatDateWithTimezone(startDate),
-        endDate: formatDateWithTimezone(endDate),
+        startDate: tuesdayWindow.startDate,
+        endDate: tuesdayWindow.endDate,
         points: trimmed.points,
       }
       setIsSubmitting(true)
@@ -169,6 +196,7 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
       console.error('Error saving trivia:', err)
       setError('Failed to save trivia quiz. Please try again.')
     } finally {
+      isSubmittingRef.current = false
       setIsSubmitting(false)
     }
   }
@@ -177,16 +205,13 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     <>
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-          onClick={isSubmitting ? undefined : handleClose}
-        />
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
         {/* Modal */}
         <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
@@ -237,7 +262,7 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
                 <option value="">
                   {isLoadingBrands ? 'Loading clients...' : 'Choose Client'}
                 </option>
-                {brands.map((brand) => (
+                {sortedBrands.map((brand) => (
                   <option key={brand.$id} value={brand.$id}>
                     {brand.name}
                   </option>
@@ -303,51 +328,14 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
             </p>
           </div>
 
-          {/* Date/Time Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Date & Time <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="datetime-local"
-                  value={formData.startDate}
-                  onChange={(e) => handleInputChange('startDate', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-                />
-                <Icon
-                  icon="mdi:calendar"
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Date & Time <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="datetime-local"
-                  value={formData.endDate}
-                  onChange={(e) => handleInputChange('endDate', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-                />
-                <Icon
-                  icon="mdi:calendar"
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Points Section */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Points Awarded <span className="text-red-500">*</span>
             </label>
+            <p className="text-xs text-gray-500 mb-2">
+              Trivia availability is automatically set to Tuesday only (12:00 AM - 11:59 PM in user timezone).
+            </p>
             <input
               type="number"
               min="0"
@@ -368,13 +356,15 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
             <button
               type="button"
               onClick={handleClose}
-              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold"
+              disabled={isSubmitting}
+              className="flex-1 px-6 py-3 bg-[#1D0A74] text-white rounded-lg hover:bg-[#15065c] transition-colors font-semibold disabled:opacity-70 disabled:cursor-not-allowed"
             >
               Create Trivia
             </button>

@@ -33,6 +33,7 @@ interface Review {
   isHidden?: boolean
   reviewedAt?: string
   answers?: string
+  hasPurchased?: boolean
 }
 
 interface ReviewCardProps {
@@ -129,7 +130,7 @@ const ReviewCard = ({ review, onHide, onUnhide, onDelete }: ReviewCardProps) => 
       <div className="border-t border-gray-200 my-4"></div>
 
       {/* Event Details */}
-      <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-gray-600 mb-4">
         <div className="flex items-center gap-2">
           <Icon icon="mdi:calendar" className="w-4 h-4" />
           {review.event.id ? (
@@ -156,7 +157,7 @@ const ReviewCard = ({ review, onHide, onUnhide, onDelete }: ReviewCardProps) => 
             <span>{review.event.brand}</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-1 items-center gap-2">
           <Icon icon="mdi:map-marker" className="w-4 h-4" />
           <span>{review.event.location}</span>
         </div>
@@ -181,6 +182,12 @@ const ReviewCard = ({ review, onHide, onUnhide, onDelete }: ReviewCardProps) => 
           <span className="text-sm text-gray-700">{review.answers}</span>
         </div>
       )}
+
+      {/* Did you purchase the product? */}
+      <div className="mb-3">
+        <span className="text-sm font-medium text-gray-600">Did you purchase the product? </span>
+        <span className="text-sm text-gray-700">{review.hasPurchased ? 'Yes' : 'No'}</span>
+      </div>
 
       {/* Review Text */}
       <p className="text-gray-700 mb-4 leading-relaxed">{review.reviewText}</p>

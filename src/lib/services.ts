@@ -1,6 +1,6 @@
 import { databases, appwriteConfig, ID, Query, functions, ExecutionMethod } from './appwrite'
 import type { Models } from 'appwrite'
-import { formatDateWithTimezone } from './dateUtils'
+import { DEFAULT_APP_TIMEZONE, appTimeToUTC } from './dateUtils'
 
 // Collection IDs
 export const COLLECTION_IDS = {
@@ -527,6 +527,7 @@ export interface EventDocument extends Models.Document {
   locationId?: string // Location document ID (relationship) - used when event is linked to a Location
   client?: string // Client ID (relationship)
   categories?: string // Category ID (relationship)
+  timezone?: string // IANA timezone used when creating/editing the event
   [key: string]: unknown
 }
 
@@ -632,14 +633,14 @@ export const triviaResponsesService = {
   getByTriviaId: async (triviaId: string): Promise<TriviaResponseDocument[]> => {
     const result = await DatabaseService.list<TriviaResponseDocument>(
       appwriteConfig.collections.triviaResponses,
-      [Query.equal('trivia', [triviaId])]
+      [Query.equal('trivia', [triviaId]), Query.limit(5000)]
     )
     return result.documents
   },
   getByUserId: async (userId: string): Promise<TriviaResponseDocument[]> => {
     const result = await DatabaseService.list<TriviaResponseDocument>(
       appwriteConfig.collections.triviaResponses,
-      [Query.equal('user', [userId])]
+      [Query.equal('user', [userId]), Query.limit(5000)]
     )
     return result.documents
   },
@@ -868,6 +869,54 @@ export const appUsersService = {
     }
   },
 
+  // Check if an Auth user already exists for a given email via Mobile API
+  checkEmailAvailability: async (email: string): Promise<{ exists: boolean }> => {
+    if (!appwriteConfig.functions.mobileApiFunctionId) {
+      throw new Error('Mobile API function is not configured. Cannot check email availability.')
+    }
+
+    const trimmedEmail = email.trim().toLowerCase()
+    if (!trimmedEmail) {
+      return { exists: false }
+    }
+
+    try {
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.mobileApiFunctionId,
+        xpath: '/get-user-by-email',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ email: trimmedEmail }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      // If function did not complete properly, assume not exists but log
+      if (execution.status !== 'completed') {
+        console.warn('get-user-by-email execution did not complete:', execution.status)
+        return { exists: false }
+      }
+
+      const status = execution.responseStatusCode ?? 0
+
+      // 200-range: user found => exists
+      if (status >= 200 && status < 300) {
+        return { exists: true }
+      }
+
+      // 404: user not found => does not exist
+      if (status === 404) {
+        return { exists: false }
+      }
+
+      // Other status codes: log and treat as non-existent to avoid blocking form
+      console.warn('Unexpected status from get-user-by-email:', status, execution.responseBody)
+      return { exists: false }
+    } catch (error) {
+      console.error('Error checking email availability:', error)
+      // On error, do not block user creation; treat as not existing
+      return { exists: false }
+    }
+  },
+
   // List all users with their profiles
   list: async (queries?: string[]): Promise<AppUser[]> => {
     try {
@@ -905,6 +954,58 @@ export const appUsersService = {
       }) as AppUser[]
     } catch (error) {
       console.error('Error listing users:', error)
+      throw error
+    }
+  },
+
+  /**
+   * List every user profile (all pages). Use for admin UIs that must show the full user set
+   * (e.g. notification audience picker). Plain `list()` only returns Appwrite’s default first page.
+   */
+  listAll: async (): Promise<AppUser[]> => {
+    try {
+      const PAGE_SIZE = 500
+      const allDocuments: UserProfile[] = []
+      let offset = 0
+      let total = 0
+      for (;;) {
+        const profiles = await userProfilesService.list([
+          Query.orderDesc('$createdAt'),
+          Query.limit(PAGE_SIZE),
+          Query.offset(offset),
+        ])
+        total = profiles.total
+        allDocuments.push(...profiles.documents)
+        if (profiles.documents.length < PAGE_SIZE || allDocuments.length >= total) break
+        offset += PAGE_SIZE
+      }
+
+      const authIDs = allDocuments
+        .map((profile) => (profile as { authID?: string }).authID)
+        .filter((id): id is string => !!id)
+
+      let emailMap: Record<string, string> = {}
+      let lastLoginMap: Record<string, string> = {}
+      try {
+        const result = await fetchUserEmailsInBatches(authIDs)
+        emailMap = result.emailMap
+        lastLoginMap = result.lastLoginMap
+      } catch (emailError) {
+        console.warn('Failed to fetch user emails:', emailError)
+      }
+
+      return allDocuments.map((profile) => {
+        const authID = (profile as { authID?: string }).authID
+        return {
+          ...profile,
+          firstName: (profile as { firstname?: string }).firstname,
+          lastName: (profile as { lastname?: string }).lastname,
+          email: authID ? emailMap[authID] : undefined,
+          lastLoginDate: authID ? lastLoginMap[authID] : undefined,
+        }
+      }) as AppUser[]
+    } catch (error) {
+      console.error('Error listing all users:', error)
       throw error
     }
   },
@@ -989,18 +1090,48 @@ export const appUsersService = {
   // Update user profile
   update: async (id: string, data: Record<string, unknown>): Promise<AppUser> => {
     try {
+      const currentUser = await userProfilesService.getById(id)
+
       // Validate username uniqueness if username is being updated
       if (data.username && typeof data.username === 'string' && data.username.trim()) {
-        const existingUsers = await userProfilesService.list([
-          Query.equal('username', data.username.trim())
-        ])
-        
-        // Check if username exists for a different user (exclude current user)
-        const duplicateUser = existingUsers.documents.find(user => user.$id !== id)
-        if (duplicateUser) {
-          throw new Error('Username already exists. Please choose a different username.')
+      const existingUsers = await userProfilesService.list([
+        Query.equal('username', data.username.trim())
+      ])
+      
+      // Check if username exists for a different user (exclude current user)
+      const duplicateUser = existingUsers.documents.find(user => user.$id !== id)
+      if (duplicateUser) {
+        throw new Error('Username already exists. Please choose a different username.')
+      }
+    }
+
+    // Validate phone number uniqueness if phoneNumber is being updated
+    if (data.phoneNumber && typeof data.phoneNumber === 'string' && data.phoneNumber.trim()) {
+      const normalizePhone = (value: string) => value.replace(/\D/g, '')
+      const incomingPhoneRaw = data.phoneNumber.trim()
+      const incomingPhoneNormalized = normalizePhone(incomingPhoneRaw)
+      const currentPhoneNormalized = normalizePhone(String(currentUser.phoneNumber ?? ''))
+
+      // Skip duplicate checks when the effective phone number is unchanged.
+      if (incomingPhoneNormalized !== currentPhoneNormalized) {
+        const candidateValues = Array.from(
+          new Set([incomingPhoneRaw, incomingPhoneNormalized].filter(Boolean))
+        )
+
+        let duplicatePhoneUser: UserProfile | undefined
+        for (const candidate of candidateValues) {
+          const existingByPhone = await userProfilesService.list([
+            Query.equal('phoneNumber', [candidate])
+          ])
+          duplicatePhoneUser = existingByPhone.documents.find(user => user.$id !== id)
+          if (duplicatePhoneUser) break
+        }
+
+        if (duplicatePhoneUser) {
+          throw new Error('Phone number already exists. Please use a different phone number.')
         }
       }
+    }
       
       // Update user_profiles
       const updatedProfile = await userProfilesService.update(id, data)
@@ -1017,17 +1148,38 @@ export const appUsersService = {
     }
   },
 
-  // Delete user (Auth + user_profiles)
+  // Delete user (Auth + user_profiles) via Mobile API server-side function
   delete: async (id: string): Promise<void> => {
     try {
-      // Step 1: Delete user_profiles
-      await userProfilesService.delete(id)
-      
-      // Step 2: Delete Auth user
-      // Note: This requires server-side access (Users.delete)
-      // For now, we'll only delete the profile
-      // You may need to implement a Cloud Function to delete Auth user
-      console.warn('Auth user deletion requires server-side execution')
+      if (!appwriteConfig.functions.mobileApiFunctionId) {
+        throw new Error('Mobile API function is not configured. Cannot delete Auth user.')
+      }
+
+      // Get the user profile to retrieve the authID
+      const userProfile = await userProfilesService.getById(id)
+      if (!userProfile.authID) {
+        throw new Error('User profile does not have an authID')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.mobileApiFunctionId,
+        xpath: '/delete-account',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({ userId: userProfile.authID }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (execution.status !== 'completed' || !execution.responseBody) {
+        const msg = execution.responseBody ?? 'Delete user request did not complete'
+        throw new Error(msg)
+      }
+
+      const response = JSON.parse(execution.responseBody)
+      const status = execution.responseStatusCode ?? 0
+
+      if (status < 200 || status >= 300 || !response.success) {
+        throw new Error(response.error ?? 'Failed to delete user')
+      }
     } catch (error) {
       console.error('Error deleting user:', error)
       throw error
@@ -1279,11 +1431,26 @@ export const statisticsService = {
 }
 
 // Notification Document interface
+export type NotificationAudience =
+  | 'All'
+  | 'NewUsers'
+  | 'BrandAmbassadors'
+  | 'Influencers'
+  | 'Tier1'
+  | 'Tier2'
+  | 'Tier3'
+  | 'Tier4'
+  | 'Tier5'
+  | 'ZipCode'
+  | 'Targeted'
+
+// Notification Document interface (category kept for existing DB records; admin only creates AppPush)
 export interface NotificationDocument extends Models.Document {
   title: string
   message: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
-  targetAudience: 'All' | 'Targeted' | 'Specific Segment'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
+  targetAudience: NotificationAudience
+  category?: 'AppPush' | 'SystemPush'
   status: 'Scheduled' | 'Sent' | 'Draft'
   scheduledAt?: string // ISO date string for scheduled notifications
   sentAt?: string // ISO date string when notification was sent
@@ -1291,61 +1458,108 @@ export interface NotificationDocument extends Models.Document {
   openRate?: number // Percentage of users who opened
   clickRate?: number // Percentage of users who clicked
   selectedUserIds?: string[] // Array of user IDs for targeted notifications
+  selectedZipCodes?: string[] // Array of zip codes for ZipCode audience
+  newUsersTimeRange?: number // Days back for NewUsers audience
   [key: string]: unknown
 }
 
-// Notification Form Data interface
+// Notification Form Data interface (admin only creates App Push notifications)
 export interface NotificationFormData {
   title: string
   message: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
-  targetAudience: 'All' | 'Targeted' | 'Specific Segment'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
+  targetAudience: NotificationAudience
+  category?: 'AppPush'
   schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring'
   scheduledAt?: string // ISO date string
   scheduledTime?: string // Time string (HH:mm)
   selectedUserIds?: string[] // Array of user IDs for targeted notifications
+  selectedZipCodes?: string[] // Array of zip codes for ZipCode audience
+  newUsersTimeRange?: number // Days back for NewUsers audience
 }
 
-const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = ['Event Reminder', 'Promotional', 'Engagement']
-const VALID_TARGET_AUDIENCES: Array<NotificationFormData['targetAudience']> = ['All', 'Targeted', 'Specific Segment']
+const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = ['Notification', 'Event Reminder', 'Promotional', 'Engagement']
+const VALID_TARGET_AUDIENCES: Array<NotificationAudience> = [
+  'All',
+  'NewUsers',
+  'BrandAmbassadors',
+  'Influencers',
+  'Tier1',
+  'Tier2',
+  'Tier3',
+  'Tier4',
+  'Tier5',
+  'ZipCode',
+  'Targeted',
+]
 
 /** Normalize type and targetAudience to valid enum values for form display and API payloads. */
-export function normalizeNotificationFormData(doc: { type?: string; targetAudience?: string }): { type: NotificationFormData['type']; targetAudience: NotificationFormData['targetAudience'] } {
-  const type: NotificationFormData['type'] = (doc.type && VALID_NOTIFICATION_TYPES.includes(doc.type as NotificationFormData['type'])) ? (doc.type as NotificationFormData['type']) : 'Event Reminder'
-  const targetAudience: NotificationFormData['targetAudience'] = (doc.targetAudience && VALID_TARGET_AUDIENCES.includes(doc.targetAudience as NotificationFormData['targetAudience'])) ? (doc.targetAudience as NotificationFormData['targetAudience']) : 'All'
+export function normalizeNotificationFormData(doc: { type?: string; targetAudience?: string }): {
+  type: NotificationFormData['type']
+  targetAudience: NotificationAudience
+} {
+  const type: NotificationFormData['type'] =
+    doc.type && VALID_NOTIFICATION_TYPES.includes(doc.type as NotificationFormData['type'])
+      ? (doc.type as NotificationFormData['type'])
+      : 'Notification'
+
+  const targetAudience: NotificationAudience =
+    doc.targetAudience && VALID_TARGET_AUDIENCES.includes(doc.targetAudience as NotificationAudience)
+      ? (doc.targetAudience as NotificationAudience)
+      : 'All'
+
   return { type, targetAudience }
 }
 
-function normalizeNotificationPayload(data: Partial<NotificationFormData>): { type: NotificationFormData['type']; targetAudience: NotificationFormData['targetAudience'] } {
+function normalizeNotificationPayload(
+  data: Partial<NotificationFormData>
+): { type: NotificationFormData['type']; targetAudience: NotificationAudience } {
   return normalizeNotificationFormData(data)
 }
 
+const NOTIFICATION_SEND_TIME_EST = '13:00'
+
 // Notifications service
 export const notificationsService = {
-  create: async (data: NotificationFormData): Promise<NotificationDocument> => {
+  create: async (
+    data: NotificationFormData,
+    _appTimezone?: string
+  ): Promise<NotificationDocument> => {
     const { type, targetAudience } = normalizeNotificationPayload(data)
     const dbData: Record<string, unknown> = {
       title: data.title,
       message: data.message,
       type,
       targetAudience,
-      // Always start with 'Draft' status - function will update to 'Sent' after sending
+      category: data.category || 'AppPush',
+      // Send Immediately stays immediate; Schedule for Later uses fixed 1:00 PM EST
       status: data.schedule === 'Schedule for Later' ? 'Scheduled' : 'Draft',
       recipients: 0, // Will be updated when notification is sent
     }
 
-    // Add selected user IDs if targeting specific users
-    if (data.selectedUserIds && data.selectedUserIds.length > 0) {
+    // Add audience-specific fields only when matching targetAudience
+    if (targetAudience === 'Targeted' && data.selectedUserIds && data.selectedUserIds.length > 0) {
       dbData.selectedUserIds = data.selectedUserIds
     }
+    if (targetAudience === 'ZipCode' && data.selectedZipCodes && data.selectedZipCodes.length > 0) {
+      dbData.selectedZipCodes = data.selectedZipCodes
+    }
+    if (targetAudience === 'NewUsers' && data.newUsersTimeRange != null) {
+      const days = Number(data.newUsersTimeRange)
+      if (!isNaN(days) && days > 0) {
+        dbData.newUsersTimeRange = days
+      }
+    }
 
-    // Handle scheduling
-    if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
-      // Combine date and time
-      const [hours, minutes] = data.scheduledTime.split(':')
-      const scheduledDate = new Date(data.scheduledAt)
-      scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-      dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
+    if (data.schedule === 'Schedule for Later' && data.scheduledAt) {
+      // Admin scheduled notifications are fixed to 1:00 PM Eastern.
+      const sourceTimezone = DEFAULT_APP_TIMEZONE
+      const utcDate = appTimeToUTC(
+        data.scheduledAt,
+        NOTIFICATION_SEND_TIME_EST,
+        sourceTimezone
+      )
+      dbData.scheduledAt = utcDate.toISOString()
     }
 
     const notification = await DatabaseService.create<NotificationDocument>(
@@ -1353,16 +1567,9 @@ export const notificationsService = {
       dbData
     )
 
-    // If sending immediately, trigger the send function
-    // The function will update status to 'Sent' and set sentAt after sending
+    // If sending immediately, trigger send now.
     if (data.schedule === 'Send Immediately') {
-      try {
-        await notificationsService.sendNotification(notification.$id)
-      } catch (error) {
-        console.error('Error sending notification:', error)
-        // Status is already Draft, so just re-throw the error
-        throw error
-      }
+      await notificationsService.sendNotification(notification.$id)
     }
 
     return notification
@@ -1374,7 +1581,11 @@ export const notificationsService = {
   list: (queries?: string[]) =>
     DatabaseService.list<NotificationDocument>(appwriteConfig.collections.notifications, queries),
 
-  update: async (id: string, data: Partial<NotificationFormData>): Promise<NotificationDocument> => {
+  update: async (
+    id: string,
+    data: Partial<NotificationFormData>,
+    _appTimezone?: string
+  ): Promise<NotificationDocument> => {
     const { type, targetAudience } = normalizeNotificationPayload(data)
     // Only include actual database fields
     const dbData: Record<string, unknown> = {
@@ -1382,22 +1593,35 @@ export const notificationsService = {
       message: data.message,
       type,
       targetAudience,
+      category: data.category || 'AppPush',
     }
     
-    // Add selected user IDs if targeting specific users
-    if (data.selectedUserIds && data.selectedUserIds.length > 0) {
+    // Add audience-specific fields only when matching targetAudience
+    if (targetAudience === 'Targeted' && data.selectedUserIds && data.selectedUserIds.length > 0) {
       dbData.selectedUserIds = data.selectedUserIds
     }
-    
-    // Handle scheduling updates
-    if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
-      const [hours, minutes] = data.scheduledTime.split(':')
-      const scheduledDate = new Date(data.scheduledAt)
-      scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-      dbData.scheduledAt = formatDateWithTimezone(scheduledDate)
+    if (targetAudience === 'ZipCode' && data.selectedZipCodes && data.selectedZipCodes.length > 0) {
+      dbData.selectedZipCodes = data.selectedZipCodes
+    }
+    if (targetAudience === 'NewUsers' && data.newUsersTimeRange != null) {
+      const days = Number(data.newUsersTimeRange)
+      if (!isNaN(days) && days > 0) {
+        dbData.newUsersTimeRange = days
+      }
+    }
+
+    // Handle scheduling updates (all sends are pinned to 1:00 PM EST)
+    if (data.schedule === 'Schedule for Later' && data.scheduledAt) {
+      // Admin scheduled notifications are fixed to 1:00 PM Eastern.
+      const sourceTimezone = DEFAULT_APP_TIMEZONE
+      const utcDate = appTimeToUTC(
+        data.scheduledAt,
+        NOTIFICATION_SEND_TIME_EST,
+        sourceTimezone
+      )
+      dbData.scheduledAt = utcDate.toISOString()
       dbData.status = 'Scheduled'
     } else if (data.schedule === 'Send Immediately') {
-      // Clear scheduledAt if switching to immediate
       dbData.scheduledAt = null
       dbData.status = 'Draft'
     }
@@ -1408,14 +1632,8 @@ export const notificationsService = {
       dbData
     )
 
-    // If publishing (Send Immediately), trigger the send function after updating the document
     if (data.schedule === 'Send Immediately') {
-      try {
-        await notificationsService.sendNotification(id)
-      } catch (error) {
-        console.error('Error sending notification:', error)
-        throw error
-      }
+      await notificationsService.sendNotification(id)
     }
 
     return updated
@@ -1500,8 +1718,10 @@ export const notificationsService = {
     }
   },
 
-  // Send system push notification to a specific user (templateId matches SYSTEM_TEMPLATES keys in Notification function)
-  sendSystemPush: async (userId: string, templateId: string): Promise<void> => {
+  sendBadgeNotification: async (
+    authId: string,
+    badgeType: 'ambassador' | 'influencer'
+  ): Promise<void> => {
     try {
       if (!appwriteConfig.functions.notificationFunctionId) {
         throw new Error('Notification function ID is not configured')
@@ -1509,61 +1729,115 @@ export const notificationsService = {
 
       const execution = await functions.createExecution({
         functionId: appwriteConfig.functions.notificationFunctionId,
-        xpath: '/send-system-push',
+        xpath: '/send-badge-notification',
         method: ExecutionMethod.POST,
-        body: JSON.stringify({ userId, templateId }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        body: JSON.stringify({ userId: authId, badgeType }),
+        headers: { 'Content-Type': 'application/json' },
       })
 
       if (execution.status === 'failed') {
-        let errorMessage = 'Function execution failed'
-        
-        if (execution.responseBody) {
-          try {
-            const errorResponse = JSON.parse(execution.responseBody)
-            if (errorResponse.error) {
-              errorMessage = errorResponse.error
-            }
-          } catch {
-            errorMessage = execution.responseBody
-          }
-        }
-        
-        if (execution.errors) {
-          errorMessage += ` (Execution errors: ${execution.errors})`
-        }
-        
+        const errorMessage = execution.responseBody
+          ? (() => { try { return JSON.parse(execution.responseBody).error } catch { return execution.responseBody } })()
+          : 'Function execution failed'
         throw new Error(errorMessage)
       }
 
       if (execution.responseStatusCode && execution.responseStatusCode >= 400) {
-        let errorMessage = `Function returned status ${execution.responseStatusCode}`
-        
-        if (execution.responseBody) {
-          try {
-            const errorResponse = JSON.parse(execution.responseBody)
-            if (errorResponse.error) {
-              errorMessage = errorResponse.error
-            }
-          } catch {
-            errorMessage = execution.responseBody
-          }
-        }
-        
+        const errorMessage = execution.responseBody
+          ? (() => { try { return JSON.parse(execution.responseBody).error } catch { return execution.responseBody } })()
+          : `Function returned status ${execution.responseStatusCode}`
         throw new Error(errorMessage)
       }
 
-      const response = execution.responseBody
-        ? JSON.parse(execution.responseBody)
-        : {}
-
-      if (!response.success) {
-        throw new Error(response.error || 'Failed to send system push notification')
+      const responseData = execution.responseBody
+        ? (() => {
+            try {
+              return JSON.parse(execution.responseBody) as { success?: boolean; error?: string }
+            } catch {
+              return null
+            }
+          })()
+        : null
+      if (!responseData?.success) {
+        throw new Error(
+          responseData?.error ?? 'Badge notification function returned unexpected response'
+        )
       }
     } catch (error) {
-      console.error('Error sending system push notification:', error)
+      console.error('Error sending badge notification:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Send a tier-changed notification to a single auth user.
+   * Mirrors the mobile app's `tierChanged` notification semantics.
+   */
+  sendTierNotification: async (
+    authId: string,
+    oldTierName: string | null,
+    newTierName: string
+  ): Promise<void> => {
+    try {
+      if (!appwriteConfig.functions.notificationFunctionId) {
+        throw new Error('Notification function ID is not configured')
+      }
+
+      const execution = await functions.createExecution({
+        functionId: appwriteConfig.functions.notificationFunctionId,
+        xpath: '/send-tier-notification',
+        method: ExecutionMethod.POST,
+        body: JSON.stringify({
+          userId: authId,
+          oldTierName: oldTierName ?? undefined,
+          newTierName,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (execution.status === 'failed') {
+        const errorMessage = execution.responseBody
+          ? (() => {
+              try {
+                return JSON.parse(execution.responseBody).error
+              } catch {
+                return execution.responseBody
+              }
+            })()
+          : 'Function execution failed'
+        throw new Error(errorMessage)
+      }
+
+      if (execution.responseStatusCode && execution.responseStatusCode >= 400) {
+        const errorMessage = execution.responseBody
+          ? (() => {
+              try {
+                return JSON.parse(execution.responseBody).error
+              } catch {
+                return execution.responseBody
+              }
+            })()
+          : `Function returned status ${execution.responseStatusCode}`
+        throw new Error(errorMessage)
+      }
+
+      const responseData = execution.responseBody
+        ? (() => {
+            try {
+              return JSON.parse(execution.responseBody) as { success?: boolean; error?: string }
+            } catch {
+              return null
+            }
+          })()
+        : null
+
+      if (!responseData?.success) {
+        throw new Error(
+          responseData?.error ?? 'Tier notification function returned unexpected response'
+        )
+      }
+    } catch (error) {
+      console.error('Error sending tier notification:', error)
       throw error
     }
   },
@@ -1652,6 +1926,14 @@ export const settingsService = {
     }
   },
   
+  // Create a new setting
+  create: (data: { key: string; value: string; description?: string }) =>
+    DatabaseService.create<SettingsDocument>(appwriteConfig.collections.settings, data),
+
+  // Update an existing setting
+  update: (id: string, data: Partial<Pick<SettingsDocument, 'value' | 'description'>>) =>
+    DatabaseService.update<SettingsDocument>(appwriteConfig.collections.settings, id, data),
+  
   // Get multiple settings by keys
   getByKeys: async (keys: string[]): Promise<Map<string, string>> => {
     const settingsMap = new Map<string, string>()
@@ -1691,6 +1973,30 @@ export const settingsService = {
       return isNaN(value) ? null : value
     }
     return null
+  },
+
+  /** Get app timezone (IANA). Defaults to America/New_York if not set. */
+  getAppTimezone: async (): Promise<string> => {
+    const setting = await settingsService.getByKey('appTimezone')
+    if (setting?.value) return setting.value
+    return DEFAULT_APP_TIMEZONE
+  },
+
+  /** Set app timezone (IANA). Upserts the appTimezone setting. */
+  setAppTimezone: async (ianaTimezone: string): Promise<void> => {
+    const existing = await settingsService.getByKey('appTimezone')
+    if (existing) {
+      await DatabaseService.update<SettingsDocument>(
+        appwriteConfig.collections.settings,
+        existing.$id,
+        { value: ianaTimezone }
+      )
+    } else {
+      await DatabaseService.create<SettingsDocument>(
+        appwriteConfig.collections.settings,
+        { key: 'appTimezone', value: ianaTimezone }
+      )
+    }
   },
 }
 

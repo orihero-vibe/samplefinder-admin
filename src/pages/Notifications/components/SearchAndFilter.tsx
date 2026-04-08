@@ -7,6 +7,8 @@ interface SearchAndFilterProps {
   onTypeFilterChange: (value: string) => void
   sortBy: string
   onSortByChange: (value: string) => void
+  sortOrder: 'asc' | 'desc'
+  onSortOrderChange: (order: 'asc' | 'desc') => void
 }
 
 const SearchAndFilter = ({
@@ -16,7 +18,22 @@ const SearchAndFilter = ({
   onTypeFilterChange,
   sortBy,
   onSortByChange,
+  sortOrder,
+  onSortOrderChange,
 }: SearchAndFilterProps) => {
+  const getSortDisplayText = () => {
+    const sortLabels: Record<string, string> = {
+      date: 'Date',
+      name: 'Name',
+      recipients: 'Recipients',
+      target: 'Target',
+      timing: 'Timing',
+      type: 'Type',
+      status: 'Status',
+    }
+    const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
+    return `Sort by: ${sortLabels[sortBy] || 'Date'} ${orderIcon}`
+  }
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
       <div className="flex items-center gap-2 mb-4">
@@ -43,6 +60,7 @@ const SearchAndFilter = ({
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
         >
           <option>All Types</option>
+          <option>Notification</option>
           <option>Event Reminder</option>
           <option>Promotional</option>
           <option>Engagement</option>
@@ -52,10 +70,25 @@ const SearchAndFilter = ({
           onChange={(e) => onSortByChange(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
         >
-          <option>Sort by: Date</option>
-          <option>Sort by: Name</option>
-          <option>Sort by: Recipients</option>
+          <option value="date">Sort by: Date</option>
+          <option value="name">Sort by: Name</option>
+          <option value="recipients">Sort by: Recipients</option>
+          <option value="target">Sort by: Target</option>
+          <option value="timing">Sort by: Timing</option>
+          <option value="type">Sort by: Type</option>
+          <option value="status">Sort by: Status</option>
         </select>
+        <button
+          onClick={() => onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc')}
+          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-gray-700"
+          title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
+        >
+          <Icon
+            icon={sortOrder === 'asc' ? 'mdi:arrow-up' : 'mdi:arrow-down'}
+            className="w-5 h-5"
+          />
+          {getSortDisplayText()}
+        </button>
       </div>
     </div>
   )

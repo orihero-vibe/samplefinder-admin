@@ -3,8 +3,9 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { DashboardLayout, DownloadModal } from '../../components'
 import type { DownloadFormat } from '../../components'
-import { exportService, getCurrentMonthRange, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
+import { exportService, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTimezoneStore } from '../../stores/timezoneStore'
 
 const REPORT_PAGE_SIZE = 50
 
@@ -22,12 +23,14 @@ const PreviewReports = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [reportData, setReportData] = useState<{ columns: { header: string; key: string; getValue?: (row: Record<string, string | number>) => string | number }[]; rows: Record<string, string | number>[] } | null>(null)
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
 
   // Ref so export always uses the current sort at click time (avoids stale closure when user changes sort then downloads)
   const sortByRef = useRef(sortBy)
   sortByRef.current = sortBy
 
-  // Date filter: URL params (from Reports) take precedence; else default to current month range
+  // Date filter: only apply when provided via URL params.
+  // If no start/end are present, we should not filter the preview report by date.
   const dateRange = useMemo(() => {
     const startStr = searchParams.get('start')
     const endStr = searchParams.get('end')
@@ -36,7 +39,7 @@ const PreviewReports = () => {
       const end = new Date(endStr)
       if (!isNaN(start.getTime()) && !isNaN(end.getTime())) return { start, end }
     }
-    return getCurrentMonthRange()
+    return { start: null, end: null }
   }, [searchParams])
 
   // Map reportId to ReportType
@@ -75,7 +78,7 @@ const PreviewReports = () => {
         setCurrentPage(1)
         const reportType = getReportType()
         const useDateRange = getEffectiveDateRange(dateRange)
-        const data = await exportService.generateReportData(reportType, useDateRange)
+        const data = await exportService.generateReportData(reportType, useDateRange, appTimezone)
         if (data?.columns?.length && data?.rows?.length) {
           const columnKeys = data.columns.map((c) => c.key)
           const reportDefault = reportId ? defaultSortKeyByReport[reportId] : undefined
@@ -128,14 +131,14 @@ const PreviewReports = () => {
       const useDateRange = getEffectiveDateRange(dateRange)
 
       if (format === 'csv') {
-        await exportService.exportReport(reportType, filename, useDateRange, currentSortBy)
+        await exportService.exportReport(reportType, filename, useDateRange, currentSortBy, appTimezone)
         addNotification({
           type: 'success',
           title: 'Export Successful',
           message: `Report has been exported to ${filename}`,
         })
       } else if (format === 'pdf') {
-        await exportService.exportReportToPDF(reportType, filename, useDateRange, currentSortBy)
+        await exportService.exportReportToPDF(reportType, filename, useDateRange, currentSortBy, appTimezone)
         addNotification({
           type: 'success',
           title: 'Export Successful',

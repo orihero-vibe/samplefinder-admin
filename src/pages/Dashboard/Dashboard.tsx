@@ -6,8 +6,15 @@ import type { ConfirmationType } from '../../components'
 import { eventsService, categoriesService, clientsService, locationsService, statisticsService, type DashboardStats, type ClientDocument } from '../../lib/services'
 import { storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { useNotificationStore } from '../../stores/notificationStore'
-import { formatDateWithTimezone } from '../../lib/dateUtils'
-import { getEventStatus, getEventStatusColor } from '../../lib/eventUtils'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import {
+  appTimeToUTC,
+  formatDateInAppTimezone,
+  formatTimeInAppTimezone,
+  resolveSupportedAppTimezone,
+  utcToAppTimeFormInputs,
+} from '../../lib/dateUtils'
+import { getEventStatus, getEventStatusColor, generateUniqueCheckInCode } from '../../lib/eventUtils'
 import type { EventDocument } from '../../lib/services'
 import { Query } from '../../lib/appwrite'
 import {
@@ -58,12 +65,13 @@ const Dashboard = () => {
     discountImage?: File | string | null
     checkInCode?: string
     brandName?: string
-    brandDescription?: string
     checkInPoints?: string
     reviewPoints?: string
     eventInfo?: string
     latitude?: string
     longitude?: string
+    locationName?: string
+    timezone?: string
   } | undefined>(undefined)
   const [editModalInitialData, setEditModalInitialData] = useState<{
     eventName?: string
@@ -80,12 +88,13 @@ const Dashboard = () => {
     discountImage?: File | string | null
     checkInCode?: string
     brandName?: string
-    brandDescription?: string
     checkInPoints?: string
     reviewPoints?: string
     eventInfo?: string
     latitude?: string
     longitude?: string
+    locationName?: string
+    timezone?: string
   } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
@@ -104,7 +113,7 @@ const Dashboard = () => {
   })
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all') // 'all', 'active', 'hidden', 'archived'
-  const [sortBy, setSortBy] = useState<string>('date-desc') // 'date-asc', 'date-desc', 'name-asc', 'name-desc', 'brand-asc', 'brand-desc'
+  const [sortBy, setSortBy] = useState<string>('date-asc') // 'date-asc', 'date-desc', 'name-asc', 'name-desc', 'brand-asc', 'brand-desc'
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
     type: ConfirmationType
@@ -117,6 +126,7 @@ const Dashboard = () => {
   })
   
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
   const [statistics, setStatistics] = useState<DashboardStats | null>(null)
 
   // Helper functions for formatting
@@ -130,49 +140,46 @@ const Dashboard = () => {
     return `${sign}${change}%`
   }
 
-  // Helper function to map database event document to EventsTable format
-  const mapEventDocumentToEvent = (doc: LocalEventDocument): Event => {
-    // Format date from ISO string or timestamp to MM/DD/YYYY
-    const formatDate = (dateStr?: string): string => {
-      if (!dateStr) return ''
-      const date = new Date(dateStr)
-      if (isNaN(date.getTime())) return dateStr
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      const year = date.getFullYear()
-      return `${month}/${day}/${year}`
+  // Convert known share links (e.g. Google Drive) into embeddable image URLs
+  // so previews work in admin and consumer clients.
+  const normalizeDiscountImageUrl = (value?: string | null): string => {
+    const trimmed = value?.trim()
+    if (!trimmed) return ''
+
+    console.log(value)
+
+    try {
+      const parsed = new URL(trimmed)
+      const hostname = parsed.hostname.toLowerCase()
+
+      if (hostname === 'drive.google.com' || hostname === 'docs.google.com') {
+        let fileId = ''
+
+        const pathMatch = parsed.pathname.match(/\/file\/d\/([^/]+)/)
+        if (pathMatch?.[1]) {
+          fileId = pathMatch[1]
+        } else {
+          fileId = parsed.searchParams.get('id') || ''
+        }
+
+        if (fileId) {
+          // `thumbnail` is generally more reliable for <img> rendering than `/file/.../view`.
+          return `https://drive.google.com/thumbnail?id=${fileId}&sz=w2000`
+        }
+      }
+    } catch {
+      // Keep original value when URL parsing fails.
     }
 
-    // Format time from ISO datetime string to 12-hour format
-    const formatTime = (timeStr?: string): string => {
-      if (!timeStr) return ''
-      
-      // Parse as Date object to handle ISO datetime strings correctly
-      const date = new Date(timeStr)
-      if (isNaN(date.getTime())) {
-        // If not a valid date, try to parse as HH:MM format
-        if (timeStr.includes(':')) {
-          const parts = timeStr.split(':')
-          if (parts.length >= 2) {
-            const hour = parseInt(parts[0], 10)
-            const minute = parseInt(parts[1], 10)
-            if (!isNaN(hour) && !isNaN(minute)) {
-              const ampm = hour >= 12 ? 'PM' : 'AM'
-              const hour12 = hour % 12 || 12
-              return `${hour12}:${String(minute).padStart(2, '0')} ${ampm}`
-            }
-          }
-        }
-        return timeStr
-      }
-      
-      // Format date object to 12-hour time
-      const hours = date.getHours()
-      const minutes = date.getMinutes()
-      const ampm = hours >= 12 ? 'PM' : 'AM'
-      const hour12 = hours % 12 || 12
-      return `${hour12}:${String(minutes).padStart(2, '0')} ${ampm}`
-    }
+    return trimmed
+  }
+
+  // Helper function to map database event document to EventsTable format (dates in app timezone)
+  const mapEventDocumentToEvent = (doc: LocalEventDocument): Event => {
+    const formatDate = (dateStr?: string): string =>
+      dateStr ? formatDateInAppTimezone(dateStr, appTimezone, 'short') : ''
+    const formatTime = (timeStr?: string): string =>
+      timeStr ? formatTimeInAppTimezone(timeStr, appTimezone) : ''
 
     // Derive status from isArchived, isHidden, and event date/time (Active = live, In Active = scheduled or completed)
     const status = getEventStatus(doc)
@@ -185,7 +192,7 @@ const Dashboard = () => {
     
     return {
       id: doc.$id,
-      date: formatDate(doc.date),
+      date: formatDate(doc.startTime || doc.date),
       venueName: doc.name || '',
       brand: '', // Will be populated from client relationship if needed
       startTime: formatTime(doc.startTime),
@@ -241,13 +248,15 @@ const Dashboard = () => {
       const [sortField, sortOrder] = sortBy.split('-')
       const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
       if (sortField === 'date') {
-        queries.push(orderMethod('date'))
+        // Use startTime for chronological ordering; sorting by date (midnight UTC) can
+        // produce inaccurate results across mixed event timezones.
+        queries.push(orderMethod('startTime'))
       } else if (sortField === 'name') {
         queries.push(orderMethod('name'))
       } else if (sortField === 'brand') {
         // For brand sorting, we'll sort by date first, then handle brand sorting client-side
         // since brand is a relationship field
-        queries.push(orderMethod('date'))
+        queries.push(orderMethod('startTime'))
       }
       
       // Determine if we're searching or filtering by derived status (Active / In Active)
@@ -267,6 +276,22 @@ const Dashboard = () => {
       // When searching: use list() then filter by search term (including brand name) after resolving clients
       // When not searching: use list() with server-side pagination
       const result = await eventsService.list(queries)
+
+      // Auto-transition expired hidden events to inactive by clearing hidden flag in DB.
+      const now = new Date()
+      const hiddenExpiredEvents = result.documents.filter((doc) => {
+        if (!doc.isHidden) return false
+        const eventEnd = doc.endTime ? new Date(doc.endTime) : null
+        return !!eventEnd && !isNaN(eventEnd.getTime()) && now > eventEnd
+      })
+      if (hiddenExpiredEvents.length > 0) {
+        await Promise.all(
+          hiddenExpiredEvents.map((doc) => eventsService.update(doc.$id, { isHidden: false }))
+        )
+        hiddenExpiredEvents.forEach((doc) => {
+          doc.isHidden = false
+        })
+      }
 
       // Collect client IDs from all fetched documents (needed for both search and non-search to resolve brand names)
       const clientIds = [...new Set(
@@ -414,25 +439,6 @@ const Dashboard = () => {
       }
     }
 
-    // Format date for date input (YYYY-MM-DD)
-    const formatDateForDateInput = (dateStr: string): string => {
-      const date = new Date(dateStr)
-      if (isNaN(date.getTime())) return ''
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-    }
-
-    // Format time for time input (HH:MM)
-    const formatTimeForTimeInput = (dateStr: string): string => {
-      const date = new Date(dateStr)
-      if (isNaN(date.getTime())) return ''
-      const hours = String(date.getHours()).padStart(2, '0')
-      const minutes = String(date.getMinutes()).padStart(2, '0')
-      return `${hours}:${minutes}`
-    }
-
     // Format discount for the input field (single discount field, string)
     const formatDiscountForInput = (discount?: string): string => {
       if (discount == null || String(discount).trim() === '') return ''
@@ -457,27 +463,65 @@ const Dashboard = () => {
       latitude = eventDoc.location[1]?.toString() || ''
     }
 
+    // Resolve locationId when event references a Location document (for display + duplicate)
+    let locationName = ''
+    let resolvedAddress = eventDoc.address || ''
+    let resolvedCity = eventDoc.city || ''
+    let resolvedState = eventDoc.state || ''
+    let resolvedZipCode = eventDoc.zipCode || ''
+    let resolvedLatitude = latitude
+    let resolvedLongitude = longitude
+    const locationId = (eventDoc as EventDocument & { locationId?: string }).locationId
+    if (locationId) {
+      try {
+        const location = await locationsService.getById(locationId)
+        if (location) {
+          locationName = location.name || ''
+          if (!eventDoc.address) resolvedAddress = location.address || ''
+          if (!eventDoc.city) resolvedCity = location.city || ''
+          if (!eventDoc.state) resolvedState = location.state || ''
+          if (!eventDoc.zipCode) resolvedZipCode = location.zipCode || ''
+          if (!resolvedLatitude && !resolvedLongitude && location.location && Array.isArray(location.location) && location.location.length >= 2) {
+            resolvedLongitude = location.location[0]?.toString() || ''
+            resolvedLatitude = location.location[1]?.toString() || ''
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching location for event:', err)
+      }
+    }
+
+    // Derive date and time strings for form inputs using the event's timezone
+    // to avoid device-local timezone shifts that can move events to previous/next day.
+    // Use startTime when available (matches EventsTable display logic), otherwise fall back to date.
+    const eventTimezone = eventDoc.timezone || appTimezone
+    const baseDateForInput = eventDoc.startTime || eventDoc.date
+    const { dateStr: eventDateForInput } = utcToAppTimeFormInputs(baseDateForInput, eventTimezone)
+    const { timeStr: startTimeForInput } = utcToAppTimeFormInputs(eventDoc.startTime, eventTimezone)
+    const { timeStr: endTimeForInput } = utcToAppTimeFormInputs(eventDoc.endTime, eventTimezone)
+
     return {
       eventName: eventDoc.name || '',
-      eventDate: formatDateForDateInput(eventDoc.date),
-      startTime: formatTimeForTimeInput(eventDoc.startTime),
-      endTime: formatTimeForTimeInput(eventDoc.endTime),
-      city: eventDoc.city || '',
-      address: eventDoc.address || '',
-      state: eventDoc.state || '',
-      zipCode: eventDoc.zipCode || '',
+      eventDate: eventDateForInput,
+      startTime: startTimeForInput,
+      endTime: endTimeForInput,
+      city: resolvedCity,
+      address: resolvedAddress,
+      state: resolvedState,
+      zipCode: resolvedZipCode,
+      locationName: locationName || undefined,
       category: categoryTitle,
       products: productsArray,
       discount: formatDiscountForInput(eventDoc.discount),
-      discountImage: eventDoc.discountImageURL || null,
+      discountImage: normalizeDiscountImageUrl(eventDoc.discountImageURL) || null,
       checkInCode: eventDoc.checkInCode || '',
       brandName: brandName,
-      brandDescription: eventDoc.brandDescription || '',
       checkInPoints: eventDoc.checkInPoints?.toString() || '',
       reviewPoints: eventDoc.reviewPoints?.toString() || '',
       eventInfo: eventDoc.eventInfo || '',
-      latitude: latitude,
-      longitude: longitude,
+      latitude: resolvedLatitude,
+      longitude: resolvedLongitude,
+      timezone: eventTimezone,
     }
   }
 
@@ -590,6 +634,8 @@ const Dashboard = () => {
         'longitude': 'Longitude',
         'lng': 'Longitude',
         'long': 'Longitude',
+        'timezone': 'Timezone',
+        'time zone': 'Timezone',
       }
       return headerMap[lower] || header
     }
@@ -649,8 +695,12 @@ const Dashboard = () => {
         row[normalizedHeader] = values[index]?.replace(/^"|"$/g, '') || ''
       })
 
-      // Only add row if it has required data
-      if (row['Event Name'] && row['Date']) {
+      // Only skip completely empty rows; rows with partial data
+      // will be validated later in handleCSVUpload
+      const isRowEmpty = Object.values(row).every(
+        value => value == null || String(value).trim() === ''
+      )
+      if (!isRowEmpty) {
         data.push(row)
       }
     }
@@ -666,8 +716,9 @@ const Dashboard = () => {
       
       // Parse CSV
       const csvData = parseCSV(csvText)
+      const totalRows = csvData.length
       
-      if (csvData.length === 0) {
+      if (totalRows === 0) {
         throw new Error('No valid event data found in CSV file')
       }
 
@@ -682,6 +733,7 @@ const Dashboard = () => {
         'Brand Name',
         'Location',
         'Products',
+        'Category',
       ] as const
 
       // Process each row
@@ -696,68 +748,95 @@ const Dashboard = () => {
             }
           }
 
-          // Parse date - handle multiple formats: DD-MM-YYYY, YYYY-MM-DD, MM/DD/YYYY
-          let eventDate: Date
-          const dateStr = row['Date'].trim()
+          // Parse date - handle multiple formats and normalize to YYYY-MM-DD
+          const rawDateStr = row['Date'].trim()
+          const rowTimezoneRaw = row['Timezone']?.trim() || ''
+          let rowTimezone = appTimezone
+          if (rowTimezoneRaw) {
+            const timezoneResolution = resolveSupportedAppTimezone(rowTimezoneRaw)
+            if (!timezoneResolution.ok) {
+              throw new Error(timezoneResolution.error)
+            }
+            rowTimezone = timezoneResolution.timezone
+          }
+
+          let eventDateStr: string
 
           // Try DD-MM-YYYY format (e.g., "20-01-2026")
-          if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
-            const [day, month, year] = dateStr.split('-').map(Number)
-            eventDate = new Date(year, month - 1, day)
+          if (/^\d{2}-\d{2}-\d{4}$/.test(rawDateStr)) {
+            const [day, month, year] = rawDateStr.split('-')
+            eventDateStr = `${year}-${month}-${day}`
           }
           // Try YYYY-MM-DD format (e.g., "2026-01-20")
-          else if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            eventDate = new Date(dateStr)
+          else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDateStr)) {
+            eventDateStr = rawDateStr
           }
           // Try MM/DD/YYYY format (e.g., "01/20/2026")
-          else if (dateStr.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-            eventDate = new Date(dateStr)
+          else if (/^\d{2}\/\d{2}\/\d{4}$/.test(rawDateStr)) {
+            const [month, day, year] = rawDateStr.split('/')
+            eventDateStr = `${year}-${month}-${day}`
           }
-          // Fallback to default Date parsing
+          // Fallback to default Date parsing, then format as YYYY-MM-DD
           else {
-            eventDate = new Date(dateStr)
+            const parsed = new Date(rawDateStr)
+            if (isNaN(parsed.getTime())) {
+              throw new Error(
+                `Invalid date format: ${row['Date']}. Expected formats: DD-MM-YYYY, YYYY-MM-DD, or MM/DD/YYYY`
+              )
+            }
+            const year = parsed.getFullYear()
+            const month = String(parsed.getMonth() + 1).padStart(2, '0')
+            const day = String(parsed.getDate()).padStart(2, '0')
+            eventDateStr = `${year}-${month}-${day}`
           }
 
-          if (isNaN(eventDate.getTime())) {
-            throw new Error(`Invalid date format: ${row['Date']}. Expected formats: DD-MM-YYYY, YYYY-MM-DD, or MM/DD/YYYY`)
-          }
-
-          // Validate event date is not in the past (same rule as Add Event form)
-          const today = new Date()
-          today.setHours(0, 0, 0, 0)
-          const eventDateOnly = new Date(eventDate)
-          eventDateOnly.setHours(0, 0, 0, 0)
-          if (eventDateOnly < today) {
+          // Validate event date is not in the past (same rule as Add Event form),
+          // using the row timezone (or app timezone fallback) to avoid off-by-one issues.
+          const nowIso = new Date().toISOString()
+          const { dateStr: todayDateStr } = utcToAppTimeFormInputs(nowIso, rowTimezone)
+          const todayUtc = appTimeToUTC(todayDateStr, '00:00', rowTimezone)
+          const eventDateUtc = appTimeToUTC(eventDateStr, '00:00', rowTimezone)
+          if (eventDateUtc.getTime() < todayUtc.getTime()) {
             throw new Error('Event date cannot be in the past. Please use today or a future date.')
           }
 
           // Use times from CSV or default values
-          const startTime = row['Start Time']?.trim() || '09:00' // Default start time
-          const endTime = row['End Time']?.trim() || '17:00' // Default end time
+          const startTimeRaw = row['Start Time']?.trim() || '00:00' // Default start time
+          const endTimeRaw = row['End Time']?.trim()
 
-          // Parse start time (supports HH:MM format)
+          // Parse time string (supports HH:MM and optional AM/PM) and normalize to HH:mm
           const parseTimeString = (timeStr: string): { hours: number; minutes: number } => {
+            const lower = timeStr.toLowerCase()
+            const isPm = lower.includes('pm')
+            const isAm = lower.includes('am')
             const cleanTime = timeStr.replace(/[APap][Mm]/, '').trim()
-            const [h, m] = cleanTime.split(':').map(Number)
-            let hours = h
-            // Handle AM/PM if present
-            if (timeStr.toLowerCase().includes('pm') && hours < 12) hours += 12
-            if (timeStr.toLowerCase().includes('am') && hours === 12) hours = 0
-            return { hours: hours || 0, minutes: m || 0 }
+            const [hRaw, mRaw] = cleanTime.split(':')
+            let hours = parseInt(hRaw ?? '0', 10)
+            let minutes = parseInt(mRaw ?? '0', 10)
+            if (Number.isNaN(hours)) hours = 0
+            if (Number.isNaN(minutes)) minutes = 0
+            if (isPm && hours < 12) hours += 12
+            if (isAm && hours === 12) hours = 0
+            return { hours, minutes }
           }
 
-          const { hours: startHours, minutes: startMinutes } = parseTimeString(startTime)
-          const startDateTime = new Date(eventDate)
-          startDateTime.setHours(startHours, startMinutes, 0, 0)
+          const { hours: startHours, minutes: startMinutes } = parseTimeString(startTimeRaw)
+          const startTimeStr = `${String(startHours).padStart(2, '0')}:${String(startMinutes).padStart(2, '0')}`
 
-          const { hours: endHours, minutes: endMinutes } = parseTimeString(endTime)
-          const endDateTime = new Date(eventDate)
-          endDateTime.setHours(endHours, endMinutes, 0, 0)
+          let endTimeStr: string
+          if (endTimeRaw) {
+            const { hours: endHours, minutes: endMinutes } = parseTimeString(endTimeRaw)
+            endTimeStr = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`
+          } else {
+            // Default: same day at 23:59
+            endTimeStr = '23:59'
+          }
 
-          // Validate start time is before end time (same rule as Add Event form)
-          const startTimeInMinutes = startHours * 60 + startMinutes
-          const endTimeInMinutes = endHours * 60 + endMinutes
-          if (startTimeInMinutes >= endTimeInMinutes) {
+          // Validate start time is before end time (same rule as Add Event form),
+          // comparing in the row timezone (or app timezone fallback).
+          const startUtc = appTimeToUTC(eventDateStr, startTimeStr, rowTimezone)
+          const endUtc = appTimeToUTC(eventDateStr, endTimeStr, rowTimezone)
+          if (startUtc.getTime() >= endUtc.getTime()) {
             throw new Error('Start time must be before end time. Please adjust the event times.')
           }
 
@@ -776,16 +855,13 @@ const Dashboard = () => {
             }
           }
 
-          // Find category by name if provided
-          let categoryId: string | null = null
-          if (row['Category']?.trim()) {
-            try {
-              const category = await categoriesService.findByTitle(row['Category'].trim())
-              categoryId = category?.$id || null
-            } catch (catErr) {
-              console.warn(`Category "${row['Category']}" not found, skipping category assignment`)
-            }
+          // Resolve category by name (required); reject invalid category
+          const categoryName = row['Category'].trim()
+          const category = await categoriesService.findByTitle(categoryName)
+          if (!category) {
+            throw new Error(`Category "${categoryName}" not found. Use an existing Category from the admin panel.`)
           }
+          const categoryId = category.$id
 
           // Resolve Location by name (required)
           const locationName = row['Location']?.trim() || ''
@@ -809,30 +885,29 @@ const Dashboard = () => {
             }
           }
 
-          const checkInCode = `CHK-${Date.now()}-${i}`
+          const checkInCode = await generateUniqueCheckInCode()
 
-          // Parse review points (use Points value as fallback)
-          const checkInPoints = parseFloat(row['Points']) || 0
-          const reviewPoints = row['Review Points']?.trim() 
-            ? parseFloat(row['Review Points']) || 0
-            : checkInPoints
+          // Check-in points (Points) and review points with defaults when empty
+          const checkInPoints = parseFloat(row['Points']) || 10
+          const reviewPoints = parseFloat(row['Review Points']) || 50
 
-          const eventInfo = row['Event Info']?.trim() || `Event at ${locationDoc.name}`
+          const eventInfo = row['Event Info']?.trim() || 'Event info'
 
           const discount = row['Discount']?.trim() || ''
-          const discountImageURL = row['Discount Image URL']?.trim() || ''
+          const discountImageURL = normalizeDiscountImageUrl(row['Discount Image URL'])
 
           // Prepare event payload: address/geo from Location document
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const eventPayload: any = {
             name: row['Event Name'],
-            date: formatDateWithTimezone(eventDate),
-            startTime: formatDateWithTimezone(startDateTime),
-            endTime: formatDateWithTimezone(endDateTime),
+            date: appTimeToUTC(eventDateStr, '00:00', rowTimezone).toISOString(),
+            startTime: startUtc.toISOString(),
+            endTime: endUtc.toISOString(),
             city: locationDoc.city || '',
             address: locationDoc.address || '',
             state: locationDoc.state || '',
             zipCode: locationDoc.zipCode || '',
+            timezone: rowTimezone,
             products: productsString,
             checkInCode,
             checkInPoints,
@@ -871,7 +946,11 @@ const Dashboard = () => {
         } catch (err) {
           errorCount++
           const errorMsg = extractErrorMessage(err)
-          const errorDetail = `Row ${i + 2} (${row['Event Name'] || 'Unknown'}): ${errorMsg}`
+          const rowTimezoneRaw = row['Timezone']?.trim() || ''
+          const timezoneContext = rowTimezoneRaw
+            ? ` [Timezone: ${rowTimezoneRaw}]`
+            : ` [Timezone: app default ${appTimezone}]`
+          const errorDetail = `Row ${i + 2} (${row['Event Name'] || 'Unknown'}): ${errorMsg}${timezoneContext}`
           errors.push(errorDetail)
           console.error(`CSV Upload Error - ${errorDetail}`, err)
         }
@@ -882,13 +961,13 @@ const Dashboard = () => {
         addNotification({
           type: 'success',
           title: 'CSV Upload Successful',
-          message: `Successfully created ${successCount} event${successCount > 1 ? 's' : ''} from CSV file.`,
+          message: `Successfully created ${successCount} of ${totalRows} event${totalRows > 1 ? 's' : ''} from CSV file.`,
         })
       } else if (successCount > 0 && errorCount > 0) {
         addNotification({
           type: 'warning',
           title: 'Partial CSV Upload',
-          message: `Created ${successCount} event${successCount > 1 ? 's' : ''}, but ${errorCount} failed:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n... and ${errors.length - 3} more` : ''}`,
+          message: `Created ${successCount} of ${totalRows} event${totalRows > 1 ? 's' : ''}, but ${errorCount} failed:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n... and ${errors.length - 3} more` : ''}`,
         })
         console.error('CSV Upload Errors (Full List):', errors)
       } else {
@@ -915,9 +994,11 @@ const Dashboard = () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleCreateEvent = async (eventData: any) => {
     try {
-      // 1. Upload discount image if provided
+      // 1. Use existing discount image URL if provided, otherwise upload new image file if present
       let discountImageURL: string | null = null
-      if (eventData.discountImage && eventData.discountImage instanceof File) {
+      if (typeof eventData.discountImage === 'string' && eventData.discountImage) {
+        discountImageURL = normalizeDiscountImageUrl(eventData.discountImage)
+      } else if (eventData.discountImage && eventData.discountImage instanceof File) {
         discountImageURL = await uploadFile(eventData.discountImage)
       }
 
@@ -938,28 +1019,14 @@ const Dashboard = () => {
         }
       }
 
-      // 4. Combine date and time for datetime fields
-      const eventDate = new Date(eventData.eventDate)
-      const startTimeStr = eventData.startTime // Format: "HH:MM"
-      const endTimeStr = eventData.endTime // Format: "HH:MM"
-
-      // Parse start time
-      const [startHours, startMinutes] = startTimeStr.split(':').map(Number)
-      const startDateTime = new Date(eventDate)
-      startDateTime.setHours(startHours, startMinutes, 0, 0)
-
-      // Parse end time
-      const [endHours, endMinutes] = endTimeStr.split(':').map(Number)
-      const endDateTime = new Date(eventDate)
-      endDateTime.setHours(endHours, endMinutes, 0, 0)
-
+      // 4. Convert event-timezone date/time to UTC for storage
       // 5. Prepare event data according to database schema
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const eventPayload: any = {
         name: eventData.eventName,
-        date: formatDateWithTimezone(eventDate),
-        startTime: formatDateWithTimezone(startDateTime),
-        endTime: formatDateWithTimezone(endDateTime),
+        date: appTimeToUTC(eventData.eventDate, '00:00', eventData.timezone).toISOString(),
+        startTime: appTimeToUTC(eventData.eventDate, eventData.startTime, eventData.timezone).toISOString(),
+        endTime: appTimeToUTC(eventData.eventDate, eventData.endTime, eventData.timezone).toISOString(),
         city: eventData.city,
         address: eventData.address,
         state: eventData.state,
@@ -971,9 +1038,9 @@ const Dashboard = () => {
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
-        brandDescription: eventData.brandDescription || '',
         isArchived: false,
         isHidden: false,
+        timezone: eventData.timezone,
       }
 
       // Add location as [longitude, latitude] array if both are provided
@@ -1045,7 +1112,7 @@ const Dashboard = () => {
 
       const eventId = selectedEventDoc.$id
 
-      // 1. Upload discount image if provided and it's a new file
+      // 1. Resolve discount image update state
       let discountImageURL: string | null = null
       if (eventData.discountImage) {
         if (eventData.discountImage instanceof File) {
@@ -1053,9 +1120,10 @@ const Dashboard = () => {
           discountImageURL = await uploadFile(eventData.discountImage)
         } else if (typeof eventData.discountImage === 'string') {
           // Existing image URL, keep it
-          discountImageURL = eventData.discountImage
+          discountImageURL = normalizeDiscountImageUrl(eventData.discountImage)
         }
       }
+      const shouldClearDiscountImage = eventData.discountImage === null
 
       // 2. Find category by title (if category is provided)
       let categoryId: string | null = null
@@ -1074,28 +1142,14 @@ const Dashboard = () => {
         }
       }
 
-      // 4. Combine date and time for datetime fields
-      const eventDate = new Date(eventData.eventDate)
-      const startTimeStr = eventData.startTime // Format: "HH:MM"
-      const endTimeStr = eventData.endTime // Format: "HH:MM"
-
-      // Parse start time
-      const [startHours, startMinutes] = startTimeStr.split(':').map(Number)
-      const startDateTime = new Date(eventDate)
-      startDateTime.setHours(startHours, startMinutes, 0, 0)
-
-      // Parse end time
-      const [endHours, endMinutes] = endTimeStr.split(':').map(Number)
-      const endDateTime = new Date(eventDate)
-      endDateTime.setHours(endHours, endMinutes, 0, 0)
-
+      // 4. Convert event-timezone date/time to UTC for storage
       // 5. Prepare event data according to database schema
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const eventPayload: any = {
         name: eventData.eventName,
-        date: formatDateWithTimezone(eventDate),
-        startTime: formatDateWithTimezone(startDateTime),
-        endTime: formatDateWithTimezone(endDateTime),
+        date: appTimeToUTC(eventData.eventDate, '00:00', eventData.timezone).toISOString(),
+        startTime: appTimeToUTC(eventData.eventDate, eventData.startTime, eventData.timezone).toISOString(),
+        endTime: appTimeToUTC(eventData.eventDate, eventData.endTime, eventData.timezone).toISOString(),
         city: eventData.city,
         address: eventData.address,
         state: eventData.state,
@@ -1107,7 +1161,7 @@ const Dashboard = () => {
         checkInPoints: parseFloat(eventData.checkInPoints) || 0,
         reviewPoints: parseFloat(eventData.reviewPoints) || 0,
         eventInfo: eventData.eventInfo,
-        brandDescription: eventData.brandDescription !== undefined ? eventData.brandDescription : (selectedEventDoc.brandDescription ?? ''),
+        timezone: eventData.timezone ?? selectedEventDoc.timezone,
       }
 
       // Add location as [longitude, latitude] array if both are provided
@@ -1141,7 +1195,9 @@ const Dashboard = () => {
         eventPayload.client = selectedEventDoc.client
       }
 
-      if (discountImageURL) {
+      if (shouldClearDiscountImage) {
+        eventPayload.discountImageURL = null
+      } else if (discountImageURL) {
         eventPayload.discountImageURL = discountImageURL
       }
 
@@ -1345,7 +1401,7 @@ const Dashboard = () => {
     setCurrentPage(1) // Reset to first page when filters change
     fetchEvents(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, statusFilter, sortBy, dateRange.start, dateRange.end])
+  }, [searchTerm, statusFilter, sortBy, dateRange.start, dateRange.end, appTimezone])
 
   // Fetch categories, brands, and statistics on component mount
   // OPTIMIZATION: Fetch all initial data in parallel
@@ -1384,6 +1440,7 @@ const Dashboard = () => {
           onSortByChange={(value: string) => {
             setSortBy(value)
           }}
+          appTimezone={appTimezone}
         />
         <EventsTable
           events={events}

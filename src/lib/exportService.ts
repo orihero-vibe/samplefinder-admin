@@ -1,6 +1,7 @@
 import { eventsService, clientsService, appUsersService, categoriesService, locationsService, reviewsService, triviaService, triviaResponsesService, isCorrectTriviaResponse } from './services'
 import type { EventDocument, ClientDocument, AppUser, TriviaDocument, TriviaResponseDocument, ReviewDocument } from './services'
 import { Query } from './appwrite'
+import { getAppTimezoneShortLabel } from './dateUtils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -57,25 +58,32 @@ const dashboardColumns: ReportColumn[] = [
   { header: 'Brand', key: 'brand' },
   { header: 'Start Time', key: 'startTime' },
   { header: 'End Time', key: 'endTime' },
-  { header: 'Products', key: 'products' },
+  { header: 'Product Type', key: 'products' },
   { header: 'Discount?', key: 'discount' },
+  { header: 'Time Zone', key: 'timeZone' },
 ]
 
-// Event List columns - ordered alphabetically; must match CSVUploadModal for re-import
+// Event List columns - order matches report spec
 const eventListColumns: ReportColumn[] = [
-  { header: 'Brand Name', key: 'brandName' },
-  { header: 'Category', key: 'category' },
-  { header: 'Date', key: 'date' },
-  { header: 'Discount', key: 'discount' },
-  { header: 'Discount Image URL', key: 'discountImageURL' },
-  { header: 'End Time', key: 'endTime' },
-  { header: 'Event Info', key: 'eventInfo' },
   { header: 'Event Name', key: 'name' },
-  { header: 'Location', key: 'location' },
-  { header: 'Points', key: 'checkInPoints' },
-  { header: 'Products', key: 'products' },
-  { header: 'Review Points', key: 'reviewPoints' },
+  { header: 'Brand Name', key: 'brandName' },
+  { header: 'Event Date', key: 'eventDate' },
   { header: 'Start Time', key: 'startTime' },
+  { header: 'End Time', key: 'endTime' },
+  { header: 'Address', key: 'address' },
+  { header: 'City', key: 'city' },
+  { header: 'State', key: 'state' },
+  { header: 'Zip', key: 'zip' },
+  { header: 'Location', key: 'location' },
+  { header: 'Product Type', key: 'productType' },
+  { header: 'Products', key: 'products' },
+  { header: 'Event Info', key: 'eventInfo' },
+  { header: 'Discount Text', key: 'discountText' },
+  { header: 'Discount Image File?', key: 'discountImageFile' },
+  { header: 'Check-In Code', key: 'checkInCode' },
+  { header: 'Check-in Points', key: 'checkInPoints' },
+  { header: 'Review Points', key: 'reviewPoints' },
+  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // Clients & Brands columns
@@ -85,6 +93,7 @@ const clientsBrandsColumns: ReportColumn[] = [
   { header: 'Signup Date', key: 'signupDate' },
   { header: 'Product Type', key: 'productType' },
   { header: '# of Favorites', key: 'favorites' },
+  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // App Users columns
@@ -105,6 +114,7 @@ const appUsersColumns: ReportColumn[] = [
   { header: 'Check-Ins', key: 'checkIns' },
   { header: 'Reviews', key: 'reviews' },
   { header: 'Trivias Won', key: 'triviasWon' },
+  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // Points Earned (All) columns
@@ -117,11 +127,19 @@ const pointsEarnedColumns: ReportColumn[] = [
   { header: 'Check-in/Review Pts', key: 'checkInReviewPoints' },
 ]
 
-// Helper function to format date for display (MM/DD/YYYY)
-const formatDate = (dateStr?: string): string => {
+// Helper function to format date for display (MM/DD/YYYY). Optional appTimezone (IANA) formats in that zone.
+const formatDate = (dateStr?: string, appTimezone?: string): string => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   if (isNaN(date.getTime())) return ''
+  if (appTimezone) {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: appTimezone,
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+    }).format(date)
+  }
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   const year = date.getFullYear()
@@ -147,25 +165,44 @@ const formatDateOnly = (dateStr?: string): string => {
     const yearStr = String(date.getFullYear())
     return `${monthStr}/${dayStr}/${yearStr}`
   }
-  return formatDate(dateStr)
+  return formatDate(dateStr, undefined)
 }
 
-// Helper function to format date for CSV upload (YYYY-MM-DD)
-const formatDateForUpload = (dateStr?: string): string => {
+// Helper function to format date for CSV upload (YYYY-MM-DD). Optional appTimezone (IANA) formats in that zone.
+const formatDateForUpload = (dateStr?: string, appTimezone?: string): string => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   if (isNaN(date.getTime())) return ''
+  if (appTimezone) {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: appTimezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    const parts = formatter.formatToParts(date)
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+    return `${get('year')}-${get('month')}-${get('day')}`
+  }
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
-// Helper function to format time for display (12-hour with AM/PM)
-const formatTime = (timeStr?: string): string => {
+// Helper function to format time for display (12-hour with AM/PM). Optional appTimezone (IANA) formats in that zone.
+const formatTime = (timeStr?: string, appTimezone?: string): string => {
   if (!timeStr) return ''
   const date = new Date(timeStr)
   if (isNaN(date.getTime())) return ''
+  if (appTimezone) {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: appTimezone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date)
+  }
   const hours = date.getHours()
   const minutes = date.getMinutes()
   const ampm = hours >= 12 ? 'PM' : 'AM'
@@ -173,11 +210,20 @@ const formatTime = (timeStr?: string): string => {
   return `${hour12}:${String(minutes).padStart(2, '0')} ${ampm}`
 }
 
-// Helper function to format time for CSV upload (24-hour HH:MM format)
-const formatTimeForUpload = (timeStr?: string): string => {
+// Helper function to format time for CSV upload (24-hour HH:MM format). Optional appTimezone (IANA) formats in that zone.
+const formatTimeForUpload = (timeStr?: string, appTimezone?: string): string => {
   if (!timeStr) return ''
   const date = new Date(timeStr)
   if (isNaN(date.getTime())) return ''
+  if (appTimezone) {
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: appTimezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    return formatter.format(date)
+  }
   const hours = String(date.getHours()).padStart(2, '0')
   const minutes = String(date.getMinutes()).padStart(2, '0')
   return `${hours}:${minutes}`
@@ -187,6 +233,18 @@ const formatTimeForUpload = (timeStr?: string): string => {
 const formatProducts = (products?: string[]): string => {
   if (!products || !Array.isArray(products)) return ''
   return products.join(', ')
+}
+
+/**
+ * Resolve event display timezone:
+ * prefer the timezone saved with the event, fallback to app timezone.
+ */
+const getEventDisplayTimezone = (
+  event: EventDocument,
+  appTimezone?: string
+): string | undefined => {
+  const eventTimezone = typeof event.timezone === 'string' ? event.timezone.trim() : ''
+  return eventTimezone || appTimezone
 }
 
 /**
@@ -220,10 +278,10 @@ const wrapTextForPdf = (text: string, maxCharsPerLine = 35): string => {
   return lines.join('\n')
 }
 
-// Column keys that hold display dates (MM/DD/YYYY) for sort order in exports
-const SORT_DATE_COLUMN_KEYS = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'signupDate'])
+// Column keys that hold display dates (MM/DD/YYYY or YYYY-MM-DD) for sort order in exports
+const SORT_DATE_COLUMN_KEYS = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'eventDate', 'signupDate'])
 // Numeric columns that sort descending in export so order matches Preview Reports UI
-const SORT_DESCENDING_NUMERIC_KEYS = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites'])
+const SORT_DESCENDING_NUMERIC_KEYS = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites', 'checkInPoints', 'reviewPoints'])
 
 const parseSortableDate = (value: string | number): number => {
   if (value === '' || value === undefined || value === null) return NaN
@@ -421,30 +479,32 @@ async function fetchTriviasWonCountByUser(): Promise<Map<string, number>> {
 // Export Service
 export const exportService = {
   /**
-   * Generate report data based on report type
+   * Generate report data based on report type.
+   * @param appTimezone - Optional IANA timezone (e.g. America/New_York) for formatting dates/times in exports.
    */
   async generateReportData(
     reportType: ReportType,
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     switch (reportType) {
       case 'dashboard-all':
       case 'dashboard-date-range':
-        return await this.generateDashboardReport(dateRange)
+        return await this.generateDashboardReport(dateRange, appTimezone)
       
       case 'event-list':
-        return await this.generateEventListReport(dateRange)
+        return await this.generateEventListReport(dateRange, appTimezone)
       
       case 'clients-brands':
-        return await this.generateClientsBrandsReport(dateRange)
+        return await this.generateClientsBrandsReport(dateRange, appTimezone)
       
       case 'app-users':
-        return await this.generateAppUsersReport(dateRange)
+        return await this.generateAppUsersReport(dateRange, appTimezone)
       
       case 'points-earned-all':
-        return await this.generatePointsEarnedReport(dateRange, false)
+        return await this.generatePointsEarnedReport(dateRange, false, appTimezone)
       case 'points-earned-date-range':
-        return await this.generatePointsEarnedReport(dateRange, true)
+        return await this.generatePointsEarnedReport(dateRange, true, appTimezone)
 
       default:
         throw new Error(`Unknown report type: ${reportType}`)
@@ -455,7 +515,8 @@ export const exportService = {
    * Generate Dashboard report
    */
   async generateDashboardReport(
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const baseQueries: string[] = [
       Query.equal('isArchived', false), // Only active events
@@ -487,6 +548,7 @@ export const exportService = {
     // Map events to report rows (Products column populated via normalizeEventProducts)
     const rows = await Promise.all(
       allDocuments.map(async (event: EventDocument & Record<string, unknown>) => {
+        const eventTimezone = getEventDisplayTimezone(event, appTimezone)
         let brandName = ''
         if (event.client) {
           try {
@@ -501,13 +563,14 @@ export const exportService = {
         const hasDiscount = (event.discount != null && String(event.discount).trim() !== '') ||
           (event.discountImageURL != null && String(event.discountImageURL).trim() !== '')
         return {
-          date: formatDate(event.date),
+          date: formatDate(event.startTime || event.date, eventTimezone),
           venueName: event.name || '',
           brand: brandName,
-          startTime: formatTime(event.startTime),
-          endTime: formatTime(event.endTime),
+          startTime: formatTime(event.startTime, eventTimezone),
+          endTime: formatTime(event.endTime, eventTimezone),
           products: formatProducts(productsArray),
           discount: hasDiscount ? 'YES' : 'NO',
+          timeZone: eventTimezone ? getAppTimezoneShortLabel(eventTimezone) : '',
         }
       })
     )
@@ -523,10 +586,10 @@ export const exportService = {
    * When dateRange is provided, filters events by event date (single day or range; future dates allowed).
    */
   async generateEventListReport(
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const queries: string[] = [
-      Query.equal('isArchived', false),
       Query.orderDesc('date'),
     ]
     if (dateRange?.start) {
@@ -538,11 +601,56 @@ export const exportService = {
       queries.push(Query.lessThanEqual('date', endDate.toISOString()))
     }
 
-    const eventsResult = await eventsService.list(queries)
+    // Fetch all events in pages so report includes full list, not Appwrite's default first page.
+    const allEvents: EventDocument[] = []
+    let offset = 0
+    let chunk: EventDocument[]
+    do {
+      const pageResult = await eventsService.list([
+        ...queries,
+        Query.limit(REPORT_LIST_PAGE_SIZE),
+        Query.offset(offset),
+      ])
+      chunk = (pageResult.documents ?? []) as EventDocument[]
+      allEvents.push(...chunk)
+      offset += REPORT_LIST_PAGE_SIZE
+    } while (chunk.length === REPORT_LIST_PAGE_SIZE)
+
+    // Build a lookup of saved Locations by normalized address fields.
+    // Many events do not persist locationId, so we recover location name via address/city/state/zip match.
+    const locationsByAddressKey = new Map<string, string>()
+    try {
+      const allLocations: Array<{ name?: string; address?: string; city?: string; state?: string; zipCode?: string }> = []
+      let offset = 0
+      let locationChunk: Array<{ name?: string; address?: string; city?: string; state?: string; zipCode?: string }> = []
+      do {
+        const result = await locationsService.list([
+          Query.limit(REPORT_LIST_PAGE_SIZE),
+          Query.offset(offset),
+        ])
+        locationChunk = (result.documents ?? []) as Array<{ name?: string; address?: string; city?: string; state?: string; zipCode?: string }>
+        allLocations.push(...locationChunk)
+        offset += REPORT_LIST_PAGE_SIZE
+      } while (locationChunk.length === REPORT_LIST_PAGE_SIZE)
+
+      const toPart = (value?: string): string => (value ?? '').trim().toLowerCase()
+      const toKey = (address?: string, city?: string, state?: string, zip?: string): string =>
+        `${toPart(address)}|${toPart(city)}|${toPart(state)}|${toPart(zip)}`
+
+      for (const location of allLocations) {
+        const key = toKey(location.address, location.city, location.state, location.zipCode)
+        if (!locationsByAddressKey.has(key) && location.name?.trim()) {
+          locationsByAddressKey.set(key, location.name.trim())
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching locations for event list report:', err)
+    }
     
     // Map events to report rows
     const rows = await Promise.all(
-      eventsResult.documents.map(async (event: EventDocument) => {
+      allEvents.map(async (event: EventDocument) => {
+        const eventTimezone = getEventDisplayTimezone(event, appTimezone)
         let brandName = ''
         if (event.client) {
           try {
@@ -553,33 +661,44 @@ export const exportService = {
           }
         }
 
-        // Resolve category ID to category title
-        let categoryTitle = ''
+        // Resolve category ID to category title (Product Type column)
+        let productType = ''
         if (event.categories) {
           try {
             const category = await categoriesService.getById(event.categories)
-            categoryTitle = category?.title || ''
+            productType = category?.title || ''
           } catch (err) {
             console.error('Error fetching category for event:', err)
           }
         }
 
-        // Resolve location ID to location name (for Location column)
+        // Resolve linked Location document values first, then fallback to event fields.
+        // Report mapping: Address=street address, Location=location name.
         let locationName = ''
+        let resolvedAddress = event.address || ''
+        let resolvedCity = event.city || ''
+        let resolvedState = event.state || ''
+        let resolvedZip = event.zipCode || ''
+        const toPart = (value?: string): string => (value ?? '').trim().toLowerCase()
+        const eventAddressKey = `${toPart(resolvedAddress)}|${toPart(resolvedCity)}|${toPart(resolvedState)}|${toPart(resolvedZip)}`
         const locationId = (event as EventDocument & { locationId?: string }).locationId
         if (locationId) {
           try {
             const location = await locationsService.getById(locationId)
             locationName = location?.name || ''
+            if (!resolvedAddress) resolvedAddress = location?.address || ''
+            if (!resolvedCity) resolvedCity = location?.city || ''
+            if (!resolvedState) resolvedState = location?.state || ''
+            if (!resolvedZip) resolvedZip = location?.zipCode || ''
           } catch (err) {
             console.error('Error fetching location for event:', err)
           }
         }
-        if (!locationName && (event.address || event.city)) {
-          locationName = [event.address, event.city].filter(Boolean).join(', ') || ''
+        if (!locationName) {
+          locationName = locationsByAddressKey.get(eventAddressKey) || ''
         }
 
-        // Normalize products: DB may store array or comma-separated string (same as Dashboard)
+        // Normalize products: DB may store array or comma-separated string
         const productsArray = Array.isArray(event.products)
           ? event.products
           : event.products
@@ -588,20 +707,28 @@ export const exportService = {
               : [event.products as unknown as string]
             : []
 
+        const hasDiscountImage = event.discountImageURL != null && String(event.discountImageURL).trim() !== ''
+
         return {
           name: event.name || '',
-          date: formatDateForUpload(event.date),
-          startTime: formatTimeForUpload(event.startTime),
-          endTime: formatTimeForUpload(event.endTime),
-          category: categoryTitle,
-          brandName: brandName,
+          brandName,
+          eventDate: formatDateForUpload(event.startTime || event.date, eventTimezone),
+          startTime: formatTimeForUpload(event.startTime, eventTimezone),
+          endTime: formatTimeForUpload(event.endTime, eventTimezone),
+          address: resolvedAddress,
+          city: resolvedCity,
+          state: resolvedState,
+          zip: resolvedZip,
+          productType,
           products: formatProducts(productsArray),
-          discount: event.discount?.toString() || '',
-          discountImageURL: event.discountImageURL || '',
+          eventInfo: event.eventInfo || '',
+          discountText: event.discount?.toString() || '',
+          discountImageFile: hasDiscountImage ? 'Yes' : 'No',
+          checkInCode: event.checkInCode || '',
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
-          eventInfo: event.eventInfo || '',
           location: locationName,
+          timeZone: eventTimezone ? getAppTimezoneShortLabel(eventTimezone) : '',
         }
       })
     )
@@ -618,7 +745,8 @@ export const exportService = {
    * # of Favorites = count of users who have any of the client's events in their favorites.
    */
   async generateClientsBrandsReport(
-    dateRange?: { start: Date | null; end: Date | null }
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const queries: string[] = [Query.orderDesc('$createdAt')]
     if (dateRange?.start) {
@@ -645,9 +773,10 @@ export const exportService = {
       return {
         name: client.name || '',
         logoFile: client.logoURL ? 'Yes' : 'No',
-        signupDate: formatDate(client.$createdAt),
+        signupDate: formatDate(client.$createdAt, appTimezone),
         productType: formatProducts(client.productType),
         favorites: String(totalFavorites),
+        timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
       }
     })
 
@@ -659,13 +788,14 @@ export const exportService = {
 
   /**
    * Generate App Users report.
-   * When dateRange is provided, filters users by sign-up date ($createdAt); single day or range; future dates allowed.
+   * "App Users (All)" shows all users regardless of date range; date range is ignored for this report.
    */
   async generateAppUsersReport(
-    dateRange?: { start: Date | null; end: Date | null }
+    _dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const [usersResult, checkInReviewPointsByUser, triviasWonByUser] = await Promise.all([
-      fetchAllAppUsers(dateRange),
+      fetchAllAppUsers(),
       fetchCheckInReviewPointsByUser(), // all-time check-in pts + review pts per user
       fetchTriviasWonCountByUser(),
     ])
@@ -709,8 +839,8 @@ export const exportService = {
         username: (userRecord.username as string) || '',
         email: user.email || '',
         dob: formatDateOnly(userRecord.dob as string | undefined),
-        signUpDate: formatDate(user.$createdAt),
-        lastLoginDate: formatDate(user.lastLoginDate),
+        signUpDate: formatDate(user.$createdAt, appTimezone),
+        lastLoginDate: formatDate(user.lastLoginDate, appTimezone),
         referralCode: (userRecord.referralCode as string) || '',
         userPoints: totalPoints.toString(),
         checkInReviewPoints: checkInReviewPoints.toString(),
@@ -720,6 +850,7 @@ export const exportService = {
         checkIns: totalEvents.toString(),
         reviews: totalReviews.toString(),
         triviasWon: triviasWon.toString(),
+        timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
       }
     })
 
@@ -737,7 +868,8 @@ export const exportService = {
    */
   async generatePointsEarnedReport(
     dateRange?: { start: Date | null; end: Date | null },
-    useDateRangeForPoints = false
+    useDateRangeForPoints = false,
+    appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const pointsDateRange = useDateRangeForPoints ? dateRange : undefined
     const [usersResult, checkInReviewPointsByUser] = await Promise.all([
@@ -772,7 +904,7 @@ export const exportService = {
         lastName: user.lastName || '',
         username: (userRecord.username as string) || '',
         email: user.email || '',
-        lastLoginDate: formatDate(user.lastLoginDate),
+        lastLoginDate: formatDate(user.lastLoginDate, appTimezone),
         tierLevel,
         userPoints: totalPoints.toString(),
         checkInReviewPoints: checkInReviewPoints.toString(),
@@ -800,7 +932,7 @@ export const exportService = {
   /**
    * Generate Event Reviews report for a single event (for Download on event-reviews/:eventId page).
    */
-  async generateEventReviewsReport(eventId: string): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+  async generateEventReviewsReport(eventId: string, appTimezone?: string): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const eventReviewColumns: ReportColumn[] = [
       { header: 'Reviewer Name', key: 'reviewerName' },
       { header: 'Email', key: 'email' },
@@ -808,6 +940,8 @@ export const exportService = {
       { header: 'Review', key: 'review' },
       { header: 'Reviewed At', key: 'reviewedAt' },
       { header: 'Answers', key: 'answers' },
+      { header: 'Purchased Product', key: 'purchasedProduct' },
+      { header: 'Time Zone', key: 'timeZone' },
     ]
     const rows: Record<string, string | number>[] = []
     let offset = 0
@@ -834,18 +968,22 @@ export const exportService = {
             // keep defaults
           }
         }
-        const liked = doc.liked as string | undefined
-        const answersDisplay = liked
-          ? String(liked)
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-              .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
-              .join(', ')
-          : ''
+        const liked = doc.liked
+        const likedItems: string[] = Array.isArray(liked)
+          ? (liked as string[]).map((s) => String(s).trim()).filter(Boolean)
+          : liked != null
+            ? String(liked)
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : []
+        const answersDisplay =
+          likedItems.length > 0
+            ? likedItems.map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(', ')
+            : ''
         const createdAt = doc.$createdAt
         const reviewedAt = createdAt
-          ? `${formatDate(createdAt)} ${formatTime(createdAt)}`
+          ? `${formatDate(createdAt, appTimezone)} ${formatTime(createdAt, appTimezone)}`
           : ''
         rows.push({
           reviewerName,
@@ -854,6 +992,8 @@ export const exportService = {
           review: doc.review ?? '',
           reviewedAt,
           answers: answersDisplay,
+          purchasedProduct: doc.hasPurchased ? 'Yes' : 'No',
+          timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
         })
       }
       offset += limit
@@ -872,9 +1012,10 @@ export const exportService = {
     eventId: string,
     eventName: string,
     filename: string,
-    format: 'csv' | 'pdf'
+    format: 'csv' | 'pdf',
+    appTimezone?: string
   ): Promise<void> {
-    const { columns, rows } = await this.generateEventReviewsReport(eventId)
+    const { columns, rows } = await this.generateEventReviewsReport(eventId, appTimezone)
     if (format === 'csv') {
       const csvContent = this.exportToCSV(columns, rows)
       this.downloadCSV(filename, csvContent)
@@ -964,10 +1105,11 @@ export const exportService = {
     reportType: ReportType,
     filename: string,
     dateRange?: { start: Date | null; end: Date | null },
-    sortKey?: string
+    sortKey?: string,
+    appTimezone?: string
   ): Promise<void> {
     try {
-      const { columns, rows } = await this.generateReportData(reportType, dateRange)
+      const { columns, rows } = await this.generateReportData(reportType, dateRange, appTimezone)
       const columnKeys = new Set(columns.map((c) => c.key))
       const effectiveSortKey = sortKey && columnKeys.has(sortKey) ? sortKey : columns[0]?.key
       const sortedRows = effectiveSortKey ? sortReportRows(rows, effectiveSortKey) : rows
@@ -988,10 +1130,11 @@ export const exportService = {
     reportType: ReportType,
     filename: string,
     dateRange?: { start: Date | null; end: Date | null },
-    sortKey?: string
+    sortKey?: string,
+    appTimezone?: string
   ): Promise<void> {
     try {
-      const { columns, rows } = await this.generateReportData(reportType, dateRange)
+      const { columns, rows } = await this.generateReportData(reportType, dateRange, appTimezone)
       const columnKeys = new Set(columns.map((c) => c.key))
       const effectiveSortKey = sortKey && columnKeys.has(sortKey) ? sortKey : columns[0]?.key
       const sortedRows = effectiveSortKey ? sortReportRows(rows, effectiveSortKey) : rows
@@ -1017,7 +1160,7 @@ export const exportService = {
       doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22)
       let startY = 28
       if (dateRange && (dateRange.start || dateRange.end)) {
-        const rangeText = `Date Range: ${dateRange.start ? formatDate(dateRange.start.toISOString()) : 'N/A'} - ${dateRange.end ? formatDate(dateRange.end.toISOString()) : 'N/A'}`
+        const rangeText = `Date Range: ${dateRange.start ? formatDate(dateRange.start.toISOString(), appTimezone) : 'N/A'} - ${dateRange.end ? formatDate(dateRange.end.toISOString(), appTimezone) : 'N/A'}`
         doc.text(rangeText, 14, 28)
         startY = 32
       }

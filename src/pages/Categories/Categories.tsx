@@ -10,6 +10,8 @@ import {
 } from './components'
 import { categoriesService, type CategoryDocument } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import { formatDateInAppTimezone } from '../../lib/dateUtils'
 import { Query } from '../../lib/appwrite'
 
 // UI Category interface (for display and table)
@@ -49,6 +51,7 @@ const extractErrorMessage = (error: unknown): string => {
 
 const Categories = () => {
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -64,7 +67,7 @@ const Categories = () => {
       id: doc.$id,
       title: doc.title || '',
       isAdult: doc.isAdult ?? false,
-      createdAt: doc.$createdAt ? new Date(doc.$createdAt).toLocaleDateString() : undefined,
+      createdAt: doc.$createdAt ? formatDateInAppTimezone(doc.$createdAt, appTimezone, 'short') : undefined,
     }
   }
 
@@ -73,18 +76,21 @@ const Categories = () => {
   const [pageSize] = useState(25)
   const [totalCategories, setTotalCategories] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
+  const [sortBy, setSortBy] = useState<'createdAt' | 'title'>('createdAt')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  // Fetch categories from Appwrite with pagination
+  // Fetch categories from Appwrite with pagination and sorting
   const fetchCategories = async (page: number = currentPage) => {
     try {
       setIsLoading(true)
       setError(null)
       
-      // Build pagination queries
+      // Build pagination and sorting queries
+      const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
       const paginationQueries = [
         Query.limit(pageSize),
         Query.offset((page - 1) * pageSize),
-        Query.orderDesc('$createdAt'), // Most recent categories first
+        sortBy === 'title' ? orderMethod('title') : orderMethod('$createdAt'),
       ]
       
       let result
@@ -135,12 +141,12 @@ const Categories = () => {
     }
   }
 
-  // Reset to page 1 when search changes
+  // Reset to page 1 when search or sort changes
   useEffect(() => {
     setCurrentPage(1)
     fetchCategories(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm])
+  }, [searchTerm, sortBy, sortOrder])
 
   // Calculate summary statistics
   // Note: For summary stats, we use the totalCategories state (total from DB)
@@ -312,6 +318,10 @@ const Categories = () => {
         <SearchAndFilter 
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
+          sortBy={sortBy}
+          onSortByChange={(value) => setSortBy(value as typeof sortBy)}
+          sortOrder={sortOrder}
+          onSortOrderChange={setSortOrder}
         />
         <CategoriesTable
           categories={categories}

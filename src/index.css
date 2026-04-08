@@ -4,12 +4,12 @@
   * {
     @apply box-border;
   }
-  
+
   body {
     @apply m-0 font-sans antialiased;
     font-family: 'Quicksand', sans-serif;
   }
-  
+
   #root {
     @apply w-full min-h-screen;
   }
@@ -18,10 +18,37 @@
 /* Custom grid pattern background */
 @layer utilities {
   .bg-grid-pattern {
-    background-image: 
+    background-image:
       linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
       linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
     background-size: 20px 20px;
+  }
+
+  .bg-primary-gradient {
+    background: linear-gradient(180deg, #091563 0%, #69003f 100%);
+  }
+
+  .bg-admin-login-gradient {
+    background-color: #0b018e;
+    background-image: radial-gradient(
+      177.3% 243.81% at 70.25% 72.66%,
+      #0b018e 0%,
+      #770031 50%,
+      #a3158f 58.8%
+    );
+  }
+}
+
+@supports (color: color(display-p3 1 1 1)) {
+  @layer utilities {
+    .bg-admin-login-gradient {
+      background-image: radial-gradient(
+        177.3% 243.81% at 70.25% 72.66%,
+        color(display-p3 0.035 0.004 0.533) 0%,
+        color(display-p3 0.424 0.012 0.192) 50%,
+        color(display-p3 0.584 0.149 0.545) 58.8%
+      );
+    }
   }
 }
 

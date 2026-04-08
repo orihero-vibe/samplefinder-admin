@@ -104,7 +104,17 @@ const LocationsTable = ({
               </tr>
             ) : (
               locations.map((location) => (
-                <tr key={location.id || location.name} className="hover:bg-gray-50">
+                <tr
+                  key={location.id || location.name}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement
+                    if (target.closest('button')) {
+                      return
+                    }
+                    onEditClick(location)
+                  }}
+                >
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                     {location.name}
                   </td>

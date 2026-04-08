@@ -24,28 +24,29 @@ interface EditClientModalProps {
 
 const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientModalProps) => {
   const { addNotification } = useNotificationStore()
-  const [formData, setFormData] = useState({
+  const getInitialFormData = () => ({
     logo: null as File | null,
-    clientName: '',
-    productTypes: [] as string[],
-    description: '',
+    clientName: initialData?.clientName || '',
+    productTypes: initialData?.productTypes || [],
+    description: initialData?.description || '',
   })
-  const initialDataRef = useRef(formData)
 
+  const [formData, setFormData] = useState(getInitialFormData)
   const [newProductType, setNewProductType] = useState('')
-  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(initialData?.logoUrl || null)
   const [showCropper, setShowCropper] = useState(false)
   const [tempImageForCrop, setTempImageForCrop] = useState<string | null>(null)
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
+  const initialDataRef = useRef(formData)
+
   const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
     if (isOpen && initialData) {
       const newData = {
-        logo: null,
+        logo: null as File | null,
         clientName: initialData.clientName || '',
         productTypes: initialData.productTypes || [],
         description: initialData.description || '',
@@ -137,6 +138,14 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
       })
       return
     }
+    if (trimmed.description && trimmed.description.length > 300) {
+      addNotification({
+        type: 'error',
+        title: 'Brand Description Too Long',
+        message: 'Please limit the brand description to 300 characters.',
+      })
+      return
+    }
     setIsSubmitting(true)
     try {
       await onSave({
@@ -188,19 +197,16 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
       
       <UnsavedChangesModal
         isOpen={showUnsavedChangesModal}
-        onClose={() => setShowUnsavedChangesModal(false)}
         onDiscard={handleDiscardChanges}
+        onCancel={() => setShowUnsavedChangesModal(false)}
       />
       
       <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={isSubmitting ? undefined : handleClose}
-      />
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+        {/* Modal */}
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div>
@@ -308,8 +314,17 @@ const EditClientModal = ({ isOpen, onClose, onSave, initialData }: EditClientMod
               value={formData.description}
               onChange={(e) => handleInputChange('description', e.target.value)}
               rows={4}
+              maxLength={300}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent resize-none"
             />
+            <div className="flex items-start justify-between gap-4 mt-1">
+              <p className="text-xs text-gray-500">
+                This description will be shown in the Favorites section.
+              </p>
+              <p className="text-xs text-gray-500 whitespace-nowrap">
+                {formData.description.length}/300
+              </p>
+            </div>
           </div>
 
           {/* Product Type Multi-select */}

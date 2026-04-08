@@ -94,7 +94,15 @@ const Locations = () => {
       const orderMethod = sortOrder === 'asc' ? Query.orderAsc : Query.orderDesc
       if (sortBy === 'name') {
         queries.push(orderMethod('name'))
-      } else if (sortBy === '$createdAt') {
+      } else if (sortBy === 'address') {
+        queries.push(orderMethod('address'))
+      } else if (sortBy === 'city') {
+        queries.push(orderMethod('city'))
+      } else if (sortBy === 'state') {
+        queries.push(orderMethod('state'))
+      } else if (sortBy === 'zipCode') {
+        queries.push(orderMethod('zipCode'))
+      } else {
         queries.push(orderMethod('$createdAt'))
       }
       

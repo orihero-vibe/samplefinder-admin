@@ -5,6 +5,8 @@ interface SearchAndFilterProps {
   onSearchChange: (query: string) => void
   sortBy: string
   onSortChange: (sort: string) => void
+  sortOrder: 'asc' | 'desc'
+  onSortOrderChange: (order: 'asc' | 'desc') => void
 }
 
 const SearchAndFilter = ({
@@ -12,7 +14,23 @@ const SearchAndFilter = ({
   onSearchChange,
   sortBy,
   onSortChange,
+  sortOrder,
+  onSortOrderChange,
 }: SearchAndFilterProps) => {
+  const getSortDisplayText = () => {
+    const sortLabels: Record<string, string> = {
+      date: 'Date',
+      name: 'Name',
+      status: 'Status',
+      responses: 'Responses',
+      view: 'View',
+      skip: 'Skip',
+      incorrect: 'Incorrect',
+      winners: 'Winners',
+    }
+    const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
+    return `Sort by: ${sortLabels[sortBy] || 'Date'} ${orderIcon}`
+  }
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
       <div className="flex items-center gap-2 mb-4">
@@ -40,11 +58,26 @@ const SearchAndFilter = ({
             onChange={(e) => onSortChange(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
           >
-            <option>Date</option>
-            <option>Name</option>
-            <option>Status</option>
-            <option>Responses</option>
+            <option value="date">Date</option>
+            <option value="name">Name</option>
+            <option value="status">Status</option>
+            <option value="responses">Responses</option>
+            <option value="view">View</option>
+            <option value="skip">Skip</option>
+            <option value="incorrect">Incorrect</option>
+            <option value="winners">Winners</option>
           </select>
+          <button
+            onClick={() => onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc')}
+            className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1 text-gray-700"
+            title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
+          >
+            <Icon
+              icon={sortOrder === 'asc' ? 'mdi:arrow-up' : 'mdi:arrow-down'}
+              className="w-4 h-4"
+            />
+            <span className="text-xs">{getSortDisplayText()}</span>
+          </button>
         </div>
       </div>
     </div>

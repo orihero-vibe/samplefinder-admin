@@ -10,14 +10,16 @@ import {
 } from './components'
 import { statisticsService, notificationsService, normalizeNotificationFormData, type NotificationsStats, type NotificationDocument, type NotificationFormData } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTimezoneStore } from '../../stores/timezoneStore'
+import { utcToAppTimeFormInputs } from '../../lib/dateUtils'
 import { Query } from '../../lib/appwrite'
 
 interface Notification {
   id: string
   title: string
-  target: 'Targeted' | 'All' | 'Specific Segment'
+  target: string
   timing: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
   recipients: number
   date: string
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -25,10 +27,12 @@ interface Notification {
 
 const Notifications = () => {
   const { addNotification } = useNotificationStore()
+  const { appTimezone } = useTimezoneStore()
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('All Types')
-  const [sortBy, setSortBy] = useState('Sort by: Date')
+  const [sortBy, setSortBy] = useState<'date' | 'name' | 'recipients' | 'target' | 'timing' | 'type' | 'status'>('date')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingNotification, setEditingNotification] = useState<{ id: string; data: NotificationFormData } | null>(null)
   const [duplicatingData, setDuplicatingData] = useState<NotificationFormData | null>(null)
@@ -49,27 +53,59 @@ const Notifications = () => {
     onConfirm: () => {},
   })
 
+  const getAudienceDisplayLabel = (audience: NotificationDocument['targetAudience']): string => {
+    switch (audience) {
+      case 'All':
+        return 'All'
+      case 'NewUsers':
+        return 'NewUsers'
+      case 'BrandAmbassadors':
+        return 'BrandAmbassadors'
+      case 'Influencers':
+        return 'Influencers'
+      case 'Tier1':
+        return 'Tier1'
+      case 'Tier2':
+        return 'Tier2'
+      case 'Tier3':
+        return 'Tier3'
+      case 'Tier4':
+        return 'Tier4'
+      case 'Tier5':
+        return 'Tier5'
+      case 'ZipCode':
+        return 'ZipCode'
+      case 'Targeted':
+        return 'Targeted'
+      default:
+        return String(audience)
+    }
+  }
+
   // Convert NotificationDocument to UI Notification format
   const convertNotification = (doc: NotificationDocument): Notification => {
     const date = doc.sentAt || doc.scheduledAt || doc.$createdAt
     const dateObj = new Date(date)
-    const timing = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-    const formattedDate = dateObj.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-    
-    // Map target audience for display
-    let targetDisplay: 'Targeted' | 'All' | 'Specific Segment' = doc.targetAudience
-    if (doc.targetAudience === 'Targeted') {
-      targetDisplay = 'Targeted'
-    } else if (doc.targetAudience === 'All') {
-      targetDisplay = 'All'
-    } else {
-      targetDisplay = 'Specific Segment'
-    }
+    const formatOpts = appTimezone
+      ? { timeZone: appTimezone } as const
+      : {}
+    const timing = dateObj.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      ...formatOpts,
+    })
+    const formattedDate = dateObj.toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      ...formatOpts,
+    })
     
     return {
       id: doc.$id,
       title: doc.title,
-      target: targetDisplay,
+      target: getAudienceDisplayLabel(doc.targetAudience),
       timing,
       type: doc.type,
       recipients: doc.recipients || 0,
@@ -177,7 +213,7 @@ const Notifications = () => {
     }, 300) // Debounce search
 
     return () => clearTimeout(timeoutId)
-  }, [searchQuery, typeFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchQuery, typeFilter, appTimezone]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = statistics
     ? [
@@ -246,27 +282,27 @@ const Notifications = () => {
     try {
       if (editingNotification) {
         // Update existing notification (and send if "Send Immediately")
-        await notificationsService.update(editingNotification.id, notificationData)
+        await notificationsService.update(editingNotification.id, notificationData, appTimezone)
         
         addNotification({
           type: 'success',
           title: 'Notification Updated',
           message: notificationData.schedule === 'Send Immediately'
             ? 'Notification has been sent successfully.'
-            : 'Notification has been updated successfully.',
+            : 'Notification has been updated and scheduled for 1:00 PM EST.',
         })
         
         setEditingNotification(null)
       } else {
         // Create new notification
-        await notificationsService.create(notificationData)
+        await notificationsService.create(notificationData, appTimezone)
         
         addNotification({
           type: 'success',
           title: 'Notification Created',
           message: notificationData.schedule === 'Send Immediately' 
             ? 'Notification has been sent successfully.' 
-            : 'Notification has been scheduled successfully.',
+            : 'Notification has been scheduled for 1:00 PM EST.',
         })
         
         // Reset to page 1 after creating
@@ -285,6 +321,7 @@ const Notifications = () => {
         title: editingNotification ? 'Error Updating Notification' : 'Error Creating Notification',
         message: errorMessage,
       })
+      throw error instanceof Error ? error : new Error(errorMessage)
     }
   }
 
@@ -300,9 +337,12 @@ const Notifications = () => {
       let schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring' = 'Send Immediately'
       
       if (fullNotification.scheduledAt) {
-        const scheduledDate = new Date(fullNotification.scheduledAt)
-        scheduledAt = scheduledDate.toISOString().split('T')[0]
-        scheduledTime = scheduledDate.toTimeString().slice(0, 5)
+        const { dateStr, timeStr } = utcToAppTimeFormInputs(
+          fullNotification.scheduledAt,
+          appTimezone
+        )
+        scheduledAt = dateStr
+        scheduledTime = timeStr
         schedule = 'Schedule for Later'
       } else if (fullNotification.status === 'Sent') {
         schedule = 'Send Immediately'
@@ -317,6 +357,7 @@ const Notifications = () => {
           message: fullNotification.message,
           type,
           targetAudience,
+          category: 'AppPush',
           schedule,
           scheduledAt,
           scheduledTime,
@@ -347,7 +388,8 @@ const Notifications = () => {
         message: fullNotification.message,
         type,
         targetAudience,
-        schedule: 'Send Immediately', // Default to send immediately for duplicates
+        category: 'AppPush',
+        schedule: 'Send Immediately',
         scheduledAt: '',
         scheduledTime: '',
         selectedUserIds: fullNotification.selectedUserIds || [],
@@ -397,21 +439,44 @@ const Notifications = () => {
   }
 
   const sortedNotifications = [...notifications].sort((a, b) => {
-    if (sortBy === 'Sort by: Date') {
+    const direction = sortOrder === 'asc' ? 1 : -1
+
+    if (sortBy === 'date') {
       const parseDate = (dateStr: string): Date => {
         const [month, day, year] = dateStr.split('/')
-        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+        return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10))
       }
       const dateA = parseDate(a.date)
       const dateB = parseDate(b.date)
-      return dateB.getTime() - dateA.getTime()
+      return direction * (dateA.getTime() - dateB.getTime())
     }
-    if (sortBy === 'Sort by: Name') {
-      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
+
+    if (sortBy === 'name') {
+      return (
+        direction *
+        a.title.localeCompare(b.title, undefined, {
+          sensitivity: 'base',
+        })
+      )
     }
-    if (sortBy === 'Sort by: Recipients') {
-      return b.recipients - a.recipients
+
+    if (sortBy === 'recipients') {
+      return direction * (a.recipients - b.recipients)
     }
+
+    if (sortBy === 'target') {
+      return direction * (a.target.localeCompare(b.target, undefined, { sensitivity: 'base' }))
+    }
+    if (sortBy === 'timing') {
+      return direction * (a.timing.localeCompare(b.timing, undefined, { sensitivity: 'base' }))
+    }
+    if (sortBy === 'type') {
+      return direction * (a.type.localeCompare(b.type, undefined, { sensitivity: 'base' }))
+    }
+    if (sortBy === 'status') {
+      return direction * (a.status.localeCompare(b.status, undefined, { sensitivity: 'base' }))
+    }
+
     return 0
   })
 
@@ -426,7 +491,9 @@ const Notifications = () => {
           typeFilter={typeFilter}
           onTypeFilterChange={setTypeFilter}
           sortBy={sortBy}
-          onSortByChange={setSortBy}
+          onSortByChange={(value) => setSortBy(value as typeof sortBy)}
+          sortOrder={sortOrder}
+          onSortOrderChange={setSortOrder}
         />
         <NotificationsTable
           notifications={sortedNotifications}
@@ -464,6 +531,7 @@ const Notifications = () => {
         onSave={handleSaveNotification}
         initialData={editingNotification?.data || duplicatingData}
         isEditMode={!!editingNotification}
+        appTimezone={appTimezone}
       />
 
       {/* Confirmation Modal */}
