@@ -84,6 +84,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     eventInfo: '',
     latitude: '',
     longitude: '',
+    locationName: '',
     timezone: DEFAULT_APP_TIMEZONE,
   }
   
@@ -138,6 +139,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             eventInfo: initialData.eventInfo || '',
             latitude: initialData.latitude || '',
             longitude: initialData.longitude || '',
+            locationName: initialData.locationName || '',
             timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
           } : {
             eventName: '',
@@ -159,6 +161,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             eventInfo: '',
             latitude: '',
             longitude: '',
+            locationName: '',
             timezone: DEFAULT_APP_TIMEZONE,
           }
           
@@ -189,6 +192,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                   )
                   if (matchingLocation) {
                     setLocationDisplayValue(matchingLocation.name)
+                    setFormData((prev) => ({ ...prev, locationName: matchingLocation.name }))
                   } else {
                     setLocationDisplayValue(initialData.address || '')
                   }
@@ -227,6 +231,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             eventInfo: '',
             latitude: '',
             longitude: '',
+            locationName: '',
+            timezone: DEFAULT_APP_TIMEZONE,
           }
           
           setFormData(newInitialData)
@@ -467,8 +473,13 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
           location: [parseFloat(trimmed.longitude), parseFloat(trimmed.latitude)],
         })
       }
+
+      const payload =
+        showAddLocationFields && locationName.trim()
+          ? { ...trimmed, locationName: locationName.trim() }
+          : trimmed
       
-      await onSave(trimmed)
+      await onSave(payload)
       // Close unsaved changes modal if it's open
       setShowUnsavedChangesModal(false)
       // Only close on success - parent will handle closing
@@ -887,6 +898,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                     zipCode: location.zipCode || '',
                     latitude,
                     longitude,
+                    locationName: location.name || '',
                   }))
                 }}
                 onAddLocationClick={() => {

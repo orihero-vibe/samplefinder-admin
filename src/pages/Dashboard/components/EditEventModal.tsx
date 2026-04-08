@@ -35,6 +35,7 @@ interface EventData {
   eventInfo?: string
   latitude?: string
   longitude?: string
+  locationName?: string
   timezone?: string
 }
 
@@ -103,6 +104,7 @@ const EditEventModal = ({
     eventInfo: '',
     latitude: '',
     longitude: '',
+    locationName: '',
     timezone: DEFAULT_APP_TIMEZONE,
   })
 
@@ -133,41 +135,6 @@ const EditEventModal = ({
       setShowCropper(false)
       setTempImageForCrop(null)
       
-      // Try to find location by address to get the location name
-      const findLocationByName = async () => {
-        if (initialData.address && initialData.city) {
-          try {
-            // Search for location using address or city
-            const searchTerm = initialData.address || initialData.city
-            const result = await locationsService.search(searchTerm)
-            
-            // Try to find exact match by address and city
-            const matchingLocation = result.documents.find(
-              (loc) =>
-                loc.address === initialData.address &&
-                loc.city === initialData.city &&
-                loc.state === initialData.state
-            )
-            
-            if (matchingLocation) {
-              // Use location name if found
-              setLocationDisplayValue(matchingLocation.name)
-            } else {
-              // If no exact match, leave empty - user can search/select
-              setLocationDisplayValue('')
-            }
-          } catch (error) {
-            console.error('Error finding location:', error)
-            // On error, leave empty
-            setLocationDisplayValue('')
-          }
-        } else {
-          setLocationDisplayValue('')
-        }
-      }
-      
-      findLocationByName()
-      
       // If check-in code doesn't exist, generate a unique one
       if (!initialData.checkInCode) {
         generateUniqueCheckInCode(eventId).then((code) => {
@@ -180,6 +147,26 @@ const EditEventModal = ({
       
       // Fetch default points from global settings if fields are empty
       const fetchDefaultsIfNeeded = async () => {
+        let resolvedLocationName = (initialData.locationName && String(initialData.locationName).trim()) || ''
+        if (!resolvedLocationName && initialData.address && initialData.city) {
+          try {
+            const searchTerm = initialData.address || initialData.city
+            const result = await locationsService.search(searchTerm)
+            const matchingLocation = result.documents.find(
+              (loc) =>
+                loc.address === initialData.address &&
+                loc.city === initialData.city &&
+                loc.state === initialData.state
+            )
+            if (matchingLocation) {
+              resolvedLocationName = matchingLocation.name
+            }
+          } catch (error) {
+            console.error('Error finding location:', error)
+          }
+        }
+        setLocationDisplayValue(resolvedLocationName)
+
         const needsDefaults = !initialData.checkInPoints || !initialData.reviewPoints
         
         if (needsDefaults) {
@@ -209,6 +196,7 @@ const EditEventModal = ({
               eventInfo: initialData.eventInfo || '',
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
+              locationName: resolvedLocationName,
               timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
             
@@ -238,6 +226,7 @@ const EditEventModal = ({
               eventInfo: initialData.eventInfo || '',
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
+              locationName: resolvedLocationName,
               timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
             
@@ -267,6 +256,7 @@ const EditEventModal = ({
             eventInfo: initialData.eventInfo || '',
             latitude: initialData.latitude || '',
             longitude: initialData.longitude || '',
+            locationName: resolvedLocationName,
             timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
           }
           
@@ -893,6 +883,7 @@ const EditEventModal = ({
                   zipCode: location.zipCode || '',
                   latitude,
                   longitude,
+                  locationName: location.name || '',
                 }))
               }}
               placeholder="Search for a location..."

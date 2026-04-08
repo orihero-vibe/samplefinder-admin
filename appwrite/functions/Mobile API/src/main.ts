@@ -45,6 +45,8 @@ interface EventData {
   isArchived: boolean;
   isHidden: boolean;
   location?: [number, number]; // [longitude, latitude]
+  /** Denormalized location/venue display name for event details UI. */
+  locationName?: string;
   client?: string;
   categories?: string;
   [key: string]: unknown;

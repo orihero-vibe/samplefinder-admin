@@ -524,6 +524,8 @@ export interface EventDocument extends Models.Document {
   isHidden: boolean
   radius?: number
   location?: [number, number] // [longitude, latitude]
+  /** Display name of the venue/location (denormalized for mobile and API consumers). */
+  locationName?: string
   locationId?: string // Location document ID (relationship) - used when event is linked to a Location
   client?: string // Client ID (relationship)
   categories?: string // Category ID (relationship)
@@ -547,7 +549,7 @@ export const eventsService = {
     DatabaseService.search<EventDocument>(
       appwriteConfig.collections.events,
       searchTerm,
-      ['name', 'city', 'address', 'state'],
+      ['name', 'city', 'address', 'state', 'locationName'],
       queries
     ),
 }

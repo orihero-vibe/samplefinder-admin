@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Icon } from '@iconify/react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { AuthLayout, AppLogo, AuthHeader, Input, Checkbox, Button } from '../components'
 import { useAuthStore } from '../stores/authStore'
@@ -11,6 +12,7 @@ const Login = () => {
   const { addNotification } = useNotificationStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
@@ -95,15 +97,35 @@ const Login = () => {
           required
         />
 
-        <Input
-          id="password"
-          type="password"
-          label="Password"
-          placeholder="Enter your password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+        <div className="flex flex-col gap-2">
+          <label htmlFor="password" className="text-[0.9rem] font-medium text-gray-700">
+            Password
+          </label>
+          <div className="relative">
+            <input
+              id="password"
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="px-4 py-3 pr-10 border rounded-lg text-base text-gray-800 bg-white transition-all focus:outline-none focus:ring-4 placeholder:text-gray-400 w-full border-gray-200 focus:border-[#1D0A74] focus:ring-[#1D0A74]/10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              <Icon
+                icon={showPassword ? 'mdi:eye-off' : 'mdi:eye'}
+                className="w-5 h-5"
+              />
+            </button>
+          </div>
+        </div>
 
         <div className="flex justify-between items-center text-[0.9rem]">
           <Checkbox
