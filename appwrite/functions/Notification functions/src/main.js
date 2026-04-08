@@ -199,17 +199,23 @@ async function sendPushNotificationToUsers(messaging, userIds, title, body, log,
         const chunk = batches.slice(i, i + PUSH_CONCURRENCY);
         const results = await Promise.allSettled(chunk.map((userBatch) => {
             // Object-based API per Appwrite docs; node-appwrite 14 types only declare positional overload
-            const createPushObj = messaging.createPush;
-            return createPushObj({
-                messageId: ID.unique(),
+            return messaging.createPush(
+                ID.unique(),
                 title,
                 body,
-                topics: [],
-                users: userBatch,
-                targets: [],
-                data: payload,
-                draft: false,
-            });
+                [],           // topics
+                userBatch,    // users
+                [],           // targets
+                payload,      // data
+                undefined,    // action
+                undefined,    // image
+                undefined,    // icon
+                undefined,    // sound
+                undefined,    // color
+                undefined,    // tag
+                undefined,    // badge
+                false         // draft
+            );
         }));
         for (let j = 0; j < results.length; j++) {
             const settled = results[j];

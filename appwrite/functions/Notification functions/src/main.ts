@@ -372,26 +372,23 @@ async function sendPushNotificationToUsers(
     const results = await Promise.allSettled(
       chunk.map((userBatch) => {
         // Object-based API per Appwrite docs; node-appwrite 14 types only declare positional overload
-        const createPushObj = messaging.createPush as unknown as (opts: {
-          messageId: string;
-          title: string;
-          body: string;
-          topics: string[];
-          users: string[];
-          targets: string[];
-          data: Record<string, string>;
-          draft: boolean;
-        }) => Promise<PushResult>;
-        return createPushObj({
-          messageId: ID.unique(),
+        return messaging.createPush(
+          ID.unique(),
           title,
           body,
-          topics: [],
-          users: userBatch,
-          targets: [],
-          data: payload,
-          draft: false,
-        });
+          [],           // topics
+          userBatch,    // users
+          [],           // targets
+          payload,      // data
+          undefined,    // action
+          undefined,    // image
+          undefined,    // icon
+          undefined,    // sound
+          undefined,    // color
+          undefined,    // tag
+          undefined,    // badge
+          false         // draft
+        ) as Promise<PushResult>;
       })
     );
     for (let j = 0; j < results.length; j++) {

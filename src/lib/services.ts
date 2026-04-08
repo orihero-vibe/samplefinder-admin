@@ -1427,6 +1427,26 @@ export interface NotificationFormData {
 }
 
 const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = ['Event Reminder', 'Promotional', 'Engagement']
+
+/**
+ * Map arbitrary input to a valid Appwrite `notifications.type` enum value.
+ * Trims whitespace; maps legacy/mistaken values (e.g. category mixed into type).
+ */
+function coerceAppwriteNotificationType(value: unknown): NotificationFormData['type'] {
+  if (typeof value !== 'string') {
+    return 'Event Reminder'
+  }
+  const normalized = value.replace(/\u00a0/g, ' ').trim()
+  if (VALID_NOTIFICATION_TYPES.includes(normalized as NotificationFormData['type'])) {
+    return normalized as NotificationFormData['type']
+  }
+  // Common mistake: channel/category stored or submitted as notification type
+  if (normalized === 'AppPush' || normalized === 'SystemPush') {
+    return 'Promotional'
+  }
+  return 'Event Reminder'
+}
+
 const VALID_TARGET_AUDIENCES: Array<NotificationAudience> = [
   'All',
   'NewUsers',
@@ -1446,10 +1466,7 @@ export function normalizeNotificationFormData(doc: { type?: string; targetAudien
   type: NotificationFormData['type']
   targetAudience: NotificationAudience
 } {
-  const type: NotificationFormData['type'] =
-    doc.type && VALID_NOTIFICATION_TYPES.includes(doc.type as NotificationFormData['type'])
-      ? (doc.type as NotificationFormData['type'])
-      : 'Event Reminder'
+  const type = coerceAppwriteNotificationType(doc.type)
 
   const targetAudience: NotificationAudience =
     doc.targetAudience && VALID_TARGET_AUDIENCES.includes(doc.targetAudience as NotificationAudience)

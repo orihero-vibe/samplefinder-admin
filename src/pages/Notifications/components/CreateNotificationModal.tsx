@@ -40,18 +40,20 @@ interface StructuredError {
   message: string
 }
 
-const defaultFormData: NotificationFormData = {
-  title: '',
-  message: '',
-  type: 'Event Reminder',
-  targetAudience: 'All',
-  category: 'AppPush',
-  schedule: 'Send Immediately',
-  scheduledAt: '',
-  scheduledTime: '',
-  selectedUserIds: [],
-  selectedZipCodes: [],
-  newUsersTimeRange: undefined,
+function createEmptyNotificationForm(): NotificationFormData {
+  return {
+    title: '',
+    message: '',
+    type: 'Event Reminder',
+    targetAudience: 'All',
+    category: 'AppPush',
+    schedule: 'Send Immediately',
+    scheduledAt: '',
+    scheduledTime: '',
+    selectedUserIds: [],
+    selectedZipCodes: [],
+    newUsersTimeRange: undefined,
+  }
 }
 
 interface NotificationTemplate {
@@ -89,8 +91,8 @@ const CreateNotificationModal = ({
   isEditMode = false,
   appTimezone,
 }: CreateNotificationModalProps) => {
-  const [formData, setFormData] = useState<NotificationFormData>(defaultFormData)
-  const initialDataRef = useRef<NotificationFormData>(defaultFormData)
+  const [formData, setFormData] = useState<NotificationFormData>(() => createEmptyNotificationForm())
+  const initialDataRef = useRef<NotificationFormData>(createEmptyNotificationForm())
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
@@ -172,8 +174,9 @@ const CreateNotificationModal = ({
         setFormData(initialData)
         initialDataRef.current = initialData
       } else {
-        setFormData(defaultFormData)
-        initialDataRef.current = defaultFormData
+        const empty = createEmptyNotificationForm()
+        setFormData(empty)
+        initialDataRef.current = empty
       }
       setValidationErrors({})
       setTouchedFields(new Set())
@@ -365,7 +368,7 @@ const CreateNotificationModal = ({
     try {
       await onSave(trimmed)
       setShowUnsavedChangesModal(false)
-      setFormData(defaultFormData)
+      setFormData(createEmptyNotificationForm())
       setValidationErrors({})
       setTouchedFields(new Set())
       onClose()
@@ -380,14 +383,14 @@ const CreateNotificationModal = ({
     if (hasUnsavedChanges && !isSubmitting) {
       setShowUnsavedChangesModal(true)
     } else {
-      setFormData(defaultFormData)
+      setFormData(createEmptyNotificationForm())
       onClose()
     }
   }
 
   const handleDiscardChanges = () => {
     setShowUnsavedChangesModal(false)
-    setFormData(defaultFormData)
+    setFormData(createEmptyNotificationForm())
     onClose()
   }
 
@@ -538,6 +541,36 @@ const CreateNotificationModal = ({
                 )}
                 <p className="text-xs text-gray-500 mt-1">
                   {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters (iOS ~150, Android ~240 for body)
+                </p>
+              </div>
+
+              {/* Notification type (Appwrite enum: must match exactly) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Notification type
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.type}
+                    onChange={(e) =>
+                      handleInputChange(
+                        'type',
+                        e.target.value as NotificationFormData['type']
+                      )
+                    }
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
+                  >
+                    <option value="Event Reminder">Event Reminder</option>
+                    <option value="Promotional">Promotional</option>
+                    <option value="Engagement">Engagement</option>
+                  </select>
+                  <Icon
+                    icon="mdi:chevron-down"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Classifies the notification in Appwrite. Admin pushes are usually Promotional or Engagement.
                 </p>
               </div>
 

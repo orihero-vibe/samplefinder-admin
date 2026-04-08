@@ -168,7 +168,7 @@
             "enabled": true,
             "logging": true,
             "entrypoint": "src/main.js",
-            "commands": "npm install && npm run build",
+            "commands": "npm install --include=dev && npm run build",
             "path": "functions/Notification functions"
         }
     ],

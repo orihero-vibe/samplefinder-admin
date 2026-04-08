@@ -321,6 +321,7 @@ const Notifications = () => {
         title: editingNotification ? 'Error Updating Notification' : 'Error Creating Notification',
         message: errorMessage,
       })
+      throw error
     }
   }
 
