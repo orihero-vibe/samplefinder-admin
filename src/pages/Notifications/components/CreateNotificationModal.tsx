@@ -5,7 +5,7 @@ import { trimFormStrings } from '../../../lib/formUtils'
 import { appUsersService, locationsService } from '../../../lib/services'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
-import { appTimeToUTC } from '../../../lib/dateUtils'
+import { appTimeToUTC, DEFAULT_APP_TIMEZONE, getTodayDateStringInTimezone } from '../../../lib/dateUtils'
 
 interface CreateNotificationModalProps {
   isOpen: boolean
@@ -44,12 +44,12 @@ function createEmptyNotificationForm(): NotificationFormData {
   return {
     title: '',
     message: '',
-    type: 'Event Reminder',
+    type: 'Notification', // use 'Notification' as in the HEAD
     targetAudience: 'All',
     category: 'AppPush',
     schedule: 'Send Immediately',
     scheduledAt: '',
-    scheduledTime: '',
+    scheduledTime: '13:00', // use '13:00' as default scheduledTime
     selectedUserIds: [],
     selectedZipCodes: [],
     newUsersTimeRange: undefined,
@@ -71,7 +71,7 @@ const APP_PUSH_TEMPLATES: NotificationTemplate[] = [
   { id: 'monthly_winner_promo_loot', label: 'Monthly Winner: Promo Loot Crate', title: 'MONTHLY WINNER: PROMO LOOT CRATE!', body: "Congratulations, you're the lucky winner of our promo loot crate! Our team will be in touch with prize details!" },
 ]
 
-// Validation constants (stricter limits for cross-platform push: iOS ~50 title/150 body, Android ~65/240)
+// Push notification limits (single max per field for admin UI and validation)
 const VALIDATION_RULES = {
   title: {
     minLength: 3,
@@ -89,7 +89,6 @@ const CreateNotificationModal = ({
   onSave,
   initialData,
   isEditMode = false,
-  appTimezone,
 }: CreateNotificationModalProps) => {
   const [formData, setFormData] = useState<NotificationFormData>(() => createEmptyNotificationForm())
   const initialDataRef = useRef<NotificationFormData>(createEmptyNotificationForm())
@@ -106,13 +105,16 @@ const CreateNotificationModal = ({
   const [isLoadingZipCodes, setIsLoadingZipCodes] = useState(false)
   
   const hasUnsavedChanges = useUnsavedChanges(formData as unknown as Record<string, unknown>, initialDataRef.current as unknown as Record<string, unknown>, isOpen)
+  // Scheduled notifications are pinned to 1:00 PM Eastern regardless of app timezone.
+  const scheduleTimezone = DEFAULT_APP_TIMEZONE
+  const minScheduledDate = getTodayDateStringInTimezone(scheduleTimezone)
 
   // Fetch users when modal opens
   useEffect(() => {
     const fetchUsers = async () => {
       setLoadingUsers(true)
       try {
-        const usersList = await appUsersService.list()
+        const usersList = await appUsersService.listAll()
         setUsers(usersList)
       } catch (error) {
         console.error('Error fetching users:', error)
@@ -194,7 +196,7 @@ const CreateNotificationModal = ({
       REQUIRED_FIELD: (field) => `${field} is required`,
       MIN_LENGTH: (field, rules) => `${field} must be at least ${rules.minLength} characters`,
       MAX_LENGTH: (field, rules) => `${field} must not exceed ${rules.maxLength} characters`,
-      INVALID_DATE: () => 'Please select both date and time',
+      INVALID_DATE: () => 'Please select a date',
       PAST_DATE: () => 'Scheduled date and time must be in the future',
       USERS_REQUIRED: () => 'Please select at least one user',
     }
@@ -234,9 +236,7 @@ const CreateNotificationModal = ({
       if (field === 'scheduledAt' && !value) {
         return { code: 'REQUIRED_FIELD', field: 'Scheduled Date', fieldName: 'scheduledAt', message: '' }
       }
-      if (field === 'scheduledTime' && !value) {
-        return { code: 'REQUIRED_FIELD', field: 'Scheduled Time', fieldName: 'scheduledTime', message: '' }
-      }
+      if (field === 'scheduledTime') return null
     }
 
     return null
@@ -264,7 +264,7 @@ const CreateNotificationModal = ({
 
     // Validate scheduled date/time if scheduling for later
     if (data.schedule === 'Schedule for Later') {
-      if (!data.scheduledAt || !data.scheduledTime) {
+      if (!data.scheduledAt) {
         const error: StructuredError = { 
           code: 'INVALID_DATE', 
           field: 'Scheduled Date/Time',
@@ -274,10 +274,8 @@ const CreateNotificationModal = ({
         errors.push(error)
         newValidationErrors.scheduledAt = getErrorMessage(error)
       } else {
-        // Validate that scheduled time is in the future (in app timezone when provided)
-        const scheduledDate = appTimezone
-          ? appTimeToUTC(data.scheduledAt, data.scheduledTime, appTimezone)
-          : new Date(`${data.scheduledAt}T${data.scheduledTime}`)
+        // Same interpretation as notificationsService.create (1:00 PM in app timezone)
+        const scheduledDate = appTimeToUTC(data.scheduledAt, '13:00', scheduleTimezone)
         if (scheduledDate <= new Date()) {
           const error: StructuredError = { 
             code: 'PAST_DATE', 
@@ -352,12 +350,15 @@ const CreateNotificationModal = ({
     e.preventDefault()
     
     const trimmed = trimFormStrings(formData)
+    const normalized = trimmed.schedule === 'Schedule for Later'
+      ? { ...trimmed, scheduledTime: '13:00' }
+      : trimmed
 
     // Mark all fields as touched to show validation errors
     setTouchedFields(new Set(['title', 'message', 'scheduledAt', 'scheduledTime', 'selectedUserIds']))
     
     // Validate form using trimmed data
-    const { isValid, errors } = validateForm(trimmed)
+    const { isValid, errors } = validateForm(normalized)
     
     if (!isValid) {
       console.error('Validation failed:', errors)
@@ -366,7 +367,7 @@ const CreateNotificationModal = ({
 
     setIsSubmitting(true)
     try {
-      await onSave(trimmed)
+      await onSave(normalized)
       setShowUnsavedChangesModal(false)
       setFormData(createEmptyNotificationForm())
       setValidationErrors({})
@@ -418,6 +419,11 @@ const CreateNotificationModal = ({
     }))
   }
 
+  const getUserDisplayName = (user: AppUser): string =>
+    user.firstName && user.lastName
+      ? `${user.firstName} ${user.lastName}`
+      : user.username || user.email || 'Unknown User'
+
   const filteredUsers = users.filter((user) => {
     if (!userSearchQuery) return true
     const searchLower = userSearchQuery.toLowerCase()
@@ -427,7 +433,7 @@ const CreateNotificationModal = ({
       user.email?.toLowerCase().includes(searchLower) ||
       user.username?.toLowerCase().includes(searchLower)
     )
-  })
+  }).sort((a, b) => getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, { sensitivity: 'base' }))
 
   return (
     <>
@@ -512,7 +518,7 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters (iOS ~50, Android ~65 for title)
+                  {formData.title.length}/{VALIDATION_RULES.title.maxLength} characters
                 </p>
               </div>
 
@@ -540,7 +546,7 @@ const CreateNotificationModal = ({
                   </div>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters (iOS ~150, Android ~240 for body)
+                  {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters
                 </p>
               </div>
 
@@ -738,9 +744,7 @@ const CreateNotificationModal = ({
                         {formData.selectedUserIds.map((userId) => {
                           const user = users.find((u) => u.$id === userId)
                           if (!user) return null
-                          const displayName = user.firstName && user.lastName 
-                            ? `${user.firstName} ${user.lastName}` 
-                            : user.username || user.email || 'Unknown User'
+                          const displayName = getUserDisplayName(user)
                           return (
                             <div
                               key={userId}
@@ -792,9 +796,7 @@ const CreateNotificationModal = ({
                             <>
                               {filteredUsers.map((user) => {
                                 const isSelected = formData.selectedUserIds?.includes(user.$id)
-                                const displayName = user.firstName && user.lastName 
-                                  ? `${user.firstName} ${user.lastName}` 
-                                  : user.username || 'Unknown User'
+                                const displayName = getUserDisplayName(user)
                                 return (
                                   <div
                                     key={user.$id}
@@ -874,41 +876,24 @@ const CreateNotificationModal = ({
                       value={formData.scheduledAt}
                       onChange={(e) => handleInputChange('scheduledAt', e.target.value)}
                       onBlur={() => handleBlur('scheduledAt')}
-                      min={new Date().toISOString().split('T')[0]}
+                      min={minScheduledDate}
                       className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
-                        validationErrors.scheduledAt
+                        validationErrors.scheduledAt || validationErrors.scheduledTime
                           ? 'border-red-500 focus:ring-red-500'
                           : 'border-gray-300 focus:ring-[#1D0A74]'
                       }`}
                     />
-                    {validationErrors.scheduledAt && (
+                    {(validationErrors.scheduledAt || validationErrors.scheduledTime) && (
                       <div className="flex items-center gap-1 mt-1 text-red-500 text-sm">
                         <Icon icon="mdi:alert-circle" className="w-4 h-4" />
-                        <span>{validationErrors.scheduledAt}</span>
+                        <span>
+                          {validationErrors.scheduledAt || validationErrors.scheduledTime}
+                        </span>
                       </div>
                     )}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Scheduled Time <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="time"
-                      value={formData.scheduledTime}
-                      onChange={(e) => handleInputChange('scheduledTime', e.target.value)}
-                      onBlur={() => handleBlur('scheduledTime')}
-                      className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
-                        validationErrors.scheduledTime
-                          ? 'border-red-500 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-[#1D0A74]'
-                      }`}
-                    />
-                    {validationErrors.scheduledTime && (
-                      <div className="flex items-center gap-1 mt-1 text-red-500 text-sm">
-                        <Icon icon="mdi:alert-circle" className="w-4 h-4" />
-                        <span>{validationErrors.scheduledTime}</span>
-                      </div>
-                    )}
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                    Scheduled notifications are sent at <span className="font-semibold">1:00 PM EST</span>.
                   </div>
                 </>
               )}

@@ -590,7 +590,6 @@ export const exportService = {
     appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const queries: string[] = [
-      Query.equal('isArchived', false),
       Query.orderDesc('date'),
     ]
     if (dateRange?.start) {
@@ -602,11 +601,55 @@ export const exportService = {
       queries.push(Query.lessThanEqual('date', endDate.toISOString()))
     }
 
-    const eventsResult = await eventsService.list(queries)
+    // Fetch all events in pages so report includes full list, not Appwrite's default first page.
+    const allEvents: EventDocument[] = []
+    let offset = 0
+    let chunk: EventDocument[]
+    do {
+      const pageResult = await eventsService.list([
+        ...queries,
+        Query.limit(REPORT_LIST_PAGE_SIZE),
+        Query.offset(offset),
+      ])
+      chunk = (pageResult.documents ?? []) as EventDocument[]
+      allEvents.push(...chunk)
+      offset += REPORT_LIST_PAGE_SIZE
+    } while (chunk.length === REPORT_LIST_PAGE_SIZE)
+
+    // Build a lookup of saved Locations by normalized address fields.
+    // Many events do not persist locationId, so we recover location name via address/city/state/zip match.
+    const locationsByAddressKey = new Map<string, string>()
+    try {
+      const allLocations: Array<{ name?: string; address?: string; city?: string; state?: string; zipCode?: string }> = []
+      let offset = 0
+      let locationChunk: Array<{ name?: string; address?: string; city?: string; state?: string; zipCode?: string }> = []
+      do {
+        const result = await locationsService.list([
+          Query.limit(REPORT_LIST_PAGE_SIZE),
+          Query.offset(offset),
+        ])
+        locationChunk = (result.documents ?? []) as Array<{ name?: string; address?: string; city?: string; state?: string; zipCode?: string }>
+        allLocations.push(...locationChunk)
+        offset += REPORT_LIST_PAGE_SIZE
+      } while (locationChunk.length === REPORT_LIST_PAGE_SIZE)
+
+      const toPart = (value?: string): string => (value ?? '').trim().toLowerCase()
+      const toKey = (address?: string, city?: string, state?: string, zip?: string): string =>
+        `${toPart(address)}|${toPart(city)}|${toPart(state)}|${toPart(zip)}`
+
+      for (const location of allLocations) {
+        const key = toKey(location.address, location.city, location.state, location.zipCode)
+        if (!locationsByAddressKey.has(key) && location.name?.trim()) {
+          locationsByAddressKey.set(key, location.name.trim())
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching locations for event list report:', err)
+    }
     
     // Map events to report rows
     const rows = await Promise.all(
-      eventsResult.documents.map(async (event: EventDocument) => {
+      allEvents.map(async (event: EventDocument) => {
         const eventTimezone = getEventDisplayTimezone(event, appTimezone)
         let brandName = ''
         if (event.client) {
@@ -629,19 +672,30 @@ export const exportService = {
           }
         }
 
-        // Place / linked location label → "Address" column; street line is event.address → "Location" column
+        // Resolve linked Location document values first, then fallback to event fields.
+        // Report mapping: Address=street address, Location=location name.
         let locationName = ''
+        let resolvedAddress = event.address || ''
+        let resolvedCity = event.city || ''
+        let resolvedState = event.state || ''
+        let resolvedZip = event.zipCode || ''
+        const toPart = (value?: string): string => (value ?? '').trim().toLowerCase()
+        const eventAddressKey = `${toPart(resolvedAddress)}|${toPart(resolvedCity)}|${toPart(resolvedState)}|${toPart(resolvedZip)}`
         const locationId = (event as EventDocument & { locationId?: string }).locationId
         if (locationId) {
           try {
             const location = await locationsService.getById(locationId)
             locationName = location?.name || ''
+            if (!resolvedAddress) resolvedAddress = location?.address || ''
+            if (!resolvedCity) resolvedCity = location?.city || ''
+            if (!resolvedState) resolvedState = location?.state || ''
+            if (!resolvedZip) resolvedZip = location?.zipCode || ''
           } catch (err) {
             console.error('Error fetching location for event:', err)
           }
         }
-        if (!locationName && (event.address || event.city)) {
-          locationName = [event.address, event.city].filter(Boolean).join(', ') || ''
+        if (!locationName) {
+          locationName = locationsByAddressKey.get(eventAddressKey) || ''
         }
 
         // Normalize products: DB may store array or comma-separated string
@@ -661,10 +715,10 @@ export const exportService = {
           eventDate: formatDateForUpload(event.startTime || event.date, eventTimezone),
           startTime: formatTimeForUpload(event.startTime, eventTimezone),
           endTime: formatTimeForUpload(event.endTime, eventTimezone),
-          address: locationName,
-          city: event.city || '',
-          state: event.state || '',
-          zip: event.zipCode || '',
+          address: resolvedAddress,
+          city: resolvedCity,
+          state: resolvedState,
+          zip: resolvedZip,
           productType,
           products: formatProducts(productsArray),
           eventInfo: event.eventInfo || '',
@@ -673,7 +727,7 @@ export const exportService = {
           checkInCode: event.checkInCode || '',
           checkInPoints: event.checkInPoints?.toString() || '0',
           reviewPoints: event.reviewPoints?.toString() || '0',
-          location: event.address || '',
+          location: locationName,
           timeZone: eventTimezone ? getAppTimezoneShortLabel(eventTimezone) : '',
         }
       })

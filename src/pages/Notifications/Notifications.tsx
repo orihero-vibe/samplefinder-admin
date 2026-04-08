@@ -19,7 +19,7 @@ interface Notification {
   title: string
   target: string
   timing: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
   recipients: number
   date: string
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -289,7 +289,7 @@ const Notifications = () => {
           title: 'Notification Updated',
           message: notificationData.schedule === 'Send Immediately'
             ? 'Notification has been sent successfully.'
-            : 'Notification has been updated successfully.',
+            : 'Notification has been updated and scheduled for 1:00 PM EST.',
         })
         
         setEditingNotification(null)
@@ -302,7 +302,7 @@ const Notifications = () => {
           title: 'Notification Created',
           message: notificationData.schedule === 'Send Immediately' 
             ? 'Notification has been sent successfully.' 
-            : 'Notification has been scheduled successfully.',
+            : 'Notification has been scheduled for 1:00 PM EST.',
         })
         
         // Reset to page 1 after creating
@@ -321,7 +321,7 @@ const Notifications = () => {
         title: editingNotification ? 'Error Updating Notification' : 'Error Creating Notification',
         message: errorMessage,
       })
-      throw error
+      throw error instanceof Error ? error : new Error(errorMessage)
     }
   }
 

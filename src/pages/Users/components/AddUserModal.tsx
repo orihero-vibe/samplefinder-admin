@@ -106,11 +106,11 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     return ''
   }
 
-  // Name validation: only alphabets, starting with capital letter
+  // Name validation: alphabetic words separated by single spaces, each starting with capital
   const validateName = (name: string, fieldName: string): string => {
     if (!name) return `${fieldName} is required`
-    if (!/^[A-Z][a-zA-Z]*$/.test(name)) {
-      return `${fieldName} must start with a capital letter and contain only alphabets`
+    if (!/^[A-Z][a-zA-Z]*(?: [A-Z][a-zA-Z]*)*$/.test(name)) {
+      return `${fieldName} must contain only alphabets, and each word must start with a capital letter`
     }
     return ''
   }
@@ -296,12 +296,23 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       return
     }
     
-    // Filter out non-alphabetic characters for name fields and auto-capitalize
+    // Allow alphabetic names with spaces and auto-capitalize each word
     if (field === 'firstName' || field === 'lastName') {
-      // Only allow alphabetic characters (a-z, A-Z)
-      const filteredValue = value.replace(/[^a-zA-Z]/g, '')
-      // Auto-capitalize first letter
-      const capitalizedValue = filteredValue.charAt(0).toUpperCase() + filteredValue.slice(1).toLowerCase()
+      // Keep only letters/spaces, collapse multiple spaces, and preserve one trailing space while typing.
+      const lettersAndSpaces = value.replace(/[^a-zA-Z\s]/g, '')
+      const hasTrailingSpace = /\s$/.test(lettersAndSpaces)
+      const normalizedBase = lettersAndSpaces
+        .replace(/\s+/g, ' ')
+        .trimStart()
+      const words = normalizedBase
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+      const capitalizedWords = words.map(
+        (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      )
+      const capitalizedValue =
+        capitalizedWords.join(' ') + (hasTrailingSpace && capitalizedWords.length > 0 ? ' ' : '')
       setFormData((prev) => ({ ...prev, [field]: capitalizedValue }))
       
       if (field === 'firstName') {
@@ -573,7 +584,24 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} data-user-form className="p-6">
+          <form onSubmit={handleSubmit} data-user-form autoComplete="off" className="p-6">
+          {/* Hidden decoy fields reduce browser autofill on real inputs inside the modal */}
+          <input
+            type="text"
+            name="username"
+            autoComplete="username"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="hidden"
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="hidden"
+          />
           {/* Form Fields */}
           <div className="space-y-4 mb-6">
             {/* Email */}
@@ -584,6 +612,8 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
             <div className="relative">
               <input
                 type="email"
+                name="admin-create-user-email"
+                autoComplete="off"
                 placeholder="Enter Email"
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
@@ -645,6 +675,8 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="admin-create-user-password"
+                  autoComplete="new-password"
                   placeholder="Enter Password (min 8 chars with letter, number, uppercase, special char)"
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
@@ -863,8 +895,8 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
               >
-                <option value="user">User</option>
                 <option value="admin">Admin</option>
+                <option value="user">User</option>
               </select>
             </div>
 

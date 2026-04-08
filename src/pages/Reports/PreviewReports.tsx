@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { DashboardLayout, DownloadModal } from '../../components'
 import type { DownloadFormat } from '../../components'
-import { exportService, getCurrentMonthRange, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
+import { exportService, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useTimezoneStore } from '../../stores/timezoneStore'
 
@@ -29,7 +29,8 @@ const PreviewReports = () => {
   const sortByRef = useRef(sortBy)
   sortByRef.current = sortBy
 
-  // Date filter: URL params (from Reports) take precedence; else default to current month range
+  // Date filter: only apply when provided via URL params.
+  // If no start/end are present, we should not filter the preview report by date.
   const dateRange = useMemo(() => {
     const startStr = searchParams.get('start')
     const endStr = searchParams.get('end')
@@ -38,7 +39,7 @@ const PreviewReports = () => {
       const end = new Date(endStr)
       if (!isNaN(start.getTime()) && !isNaN(end.getTime())) return { start, end }
     }
-    return getCurrentMonthRange()
+    return { start: null, end: null }
   }, [searchParams])
 
   // Map reportId to ReportType

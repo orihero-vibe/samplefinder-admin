@@ -117,10 +117,19 @@ export function appTimeToUTC(
     ) {
       return new Date(guess)
     }
-    const diffMs =
-      (hour - comp.hour) * 36e5 +
-      (minute - comp.minute) * 6e4 +
-      (d - comp.day) * 864e5
+    // Compare full local datetime parts in UTC space (year/month/day/hour/minute),
+    // not just day-of-month, so month/year boundaries are handled correctly.
+    const targetPartsAsUtc = Date.UTC(y, m - 1, d, hour, minute, 0, 0)
+    const currentPartsAsUtc = Date.UTC(
+      comp.year,
+      comp.month - 1,
+      comp.day,
+      comp.hour,
+      comp.minute,
+      0,
+      0
+    )
+    const diffMs = targetPartsAsUtc - currentPartsAsUtc
     guess += diffMs
   }
   return new Date(guess)
@@ -228,6 +237,40 @@ export function formatDateTimeInAppTimezone(
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(d)
+}
+
+/**
+ * Get a YYYY-MM-DD string for a given instant in a specific IANA timezone.
+ * Useful for HTML date input constraints and timezone-correct "today" checks.
+ */
+export function getDateStringInTimezone(date: Date, ianaTimezone: string): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ianaTimezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  // en-CA with numeric parts formats as YYYY-MM-DD in all modern browsers
+  return formatter.format(date)
+}
+
+/**
+ * Get today's date in YYYY-MM-DD for a specific timezone.
+ */
+export function getTodayDateStringInTimezone(ianaTimezone: string, now: Date = new Date()): string {
+  return getDateStringInTimezone(now, ianaTimezone)
+}
+
+/**
+ * Compare a YYYY-MM-DD date string to "today" in the provided timezone.
+ */
+export function isDateStringBeforeTodayInTimezone(
+  dateStr: string,
+  ianaTimezone: string,
+  now: Date = new Date()
+): boolean {
+  const todayStr = getTodayDateStringInTimezone(ianaTimezone, now)
+  return dateStr < todayStr
 }
 
 /**

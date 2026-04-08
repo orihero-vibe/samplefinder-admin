@@ -407,7 +407,7 @@
                     "type": "integer",
                     "required": false,
                     "array": false,
-                    "min": 2000,
+                    "min": 1970,
                     "max": 2100,
                     "default": null
                 },
@@ -416,7 +416,7 @@
                     "type": "integer",
                     "required": false,
                     "array": false,
-                    "min": 2000,
+                    "min": 1970,
                     "max": 2100,
                     "default": null
                 },
@@ -426,6 +426,51 @@
                     "required": false,
                     "array": false,
                     "format": "",
+                    "default": null
+                },
+                {
+                    "key": "nearbyFavoriteNotifiedEventIds",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 10000,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
+                    "key": "zipGeoLat",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": -90,
+                    "max": 90,
+                    "default": null
+                },
+                {
+                    "key": "zipGeoLng",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": -180,
+                    "max": 180,
+                    "default": null
+                },
+                {
+                    "key": "homeLatitude",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": -90,
+                    "max": 90,
+                    "default": null
+                },
+                {
+                    "key": "homeLongitude",
+                    "type": "double",
+                    "required": false,
+                    "array": false,
+                    "min": -180,
+                    "max": 180,
                     "default": null
                 }
             ],
@@ -826,7 +871,7 @@
                     "type": "string",
                     "required": true,
                     "array": false,
-                    "elements": ["Event Reminder", "Promotional", "Engagement"],
+                    "elements": ["Notification", "Event Reminder", "Promotional", "Engagement"],
                     "format": "enum",
                     "default": null
                 },
@@ -897,15 +942,7 @@
                     "default": null
                 }
             ],
-            "indexes": [
-                {
-                    "key": "status_scheduledAt",
-                    "type": "key",
-                    "status": "available",
-                    "attributes": ["status", "scheduledAt"],
-                    "orders": ["ASC", "ASC"]
-                }
-            ]
+            "indexes": []
         },
         {
             "$id": "trivia",

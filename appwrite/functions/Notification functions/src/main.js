@@ -6,6 +6,71 @@ const USER_PROFILES_TABLE_ID = 'user_profiles';
 const EVENTS_TABLE_ID = 'events';
 const SETTINGS_TABLE_ID = 'settings';
 const PAGE_SIZE = 100;
+/** Admin-scheduled notifications (notifications collection) send at 1:00 PM Eastern */
+const NOTIFICATION_SEND_HOUR_EST = 13;
+const EST_TIMEZONE = 'America/New_York';
+/** App push campaigns that should feel like "morning" (Trivia Tuesday, Sampling Today, nearby favorite) */
+const MORNING_START_HOUR_ET = 8;
+const MORNING_END_HOUR_ET = 10; // exclusive: runs during 08:00–09:59 ET
+const CLIENTS_TABLE_ID = 'clients';
+function getTimePartsInTimezone(date, timezone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).formatToParts(date);
+    const year = parseInt(parts.find((p) => p.type === 'year')?.value ?? '0', 10);
+    const month = parseInt(parts.find((p) => p.type === 'month')?.value ?? '0', 10);
+    const day = parseInt(parts.find((p) => p.type === 'day')?.value ?? '0', 10);
+    const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10);
+    const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10);
+    return { year, month, day, hour, minute };
+}
+function timezoneLocalToUTC(year, month, day, hour, minute, timezone) {
+    let guess = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+    for (let i = 0; i < 5; i++) {
+        const comp = getTimePartsInTimezone(new Date(guess), timezone);
+        if (comp.year === year &&
+            comp.month === month &&
+            comp.day === day &&
+            comp.hour === hour &&
+            comp.minute === minute) {
+            return new Date(guess);
+        }
+        const diffMs = (hour - comp.hour) * 36e5 +
+            (minute - comp.minute) * 6e4 +
+            (day - comp.day) * 864e5;
+        guess += diffMs;
+    }
+    return new Date(guess);
+}
+function getNextOnePmEasternUTC(date = new Date()) {
+    const nowEastern = getTimePartsInTimezone(date, EST_TIMEZONE);
+    const useNextDay = nowEastern.hour > NOTIFICATION_SEND_HOUR_EST ||
+        (nowEastern.hour === NOTIFICATION_SEND_HOUR_EST && nowEastern.minute > 0);
+    const targetDay = new Date(Date.UTC(nowEastern.year, nowEastern.month - 1, nowEastern.day + (useNextDay ? 1 : 0)));
+    const targetUtc = timezoneLocalToUTC(targetDay.getUTCFullYear(), targetDay.getUTCMonth() + 1, targetDay.getUTCDate(), NOTIFICATION_SEND_HOUR_EST, 0, EST_TIMEZONE);
+    return targetUtc.toISOString();
+}
+function getEasternDateString(date) {
+    const p = getTimePartsInTimezone(date, EST_TIMEZONE);
+    return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+function isInMorningWindowET(date) {
+    const { hour } = getTimePartsInTimezone(date, EST_TIMEZONE);
+    return hour >= MORNING_START_HOUR_ET && hour < MORNING_END_HOUR_ET;
+}
+function isTuesdayEastern(date) {
+    const wd = new Intl.DateTimeFormat('en-US', {
+        timeZone: EST_TIMEZONE,
+        weekday: 'short',
+    }).format(date);
+    return wd === 'Tue';
+}
 /**
  * Fetch all documents matching queries by paginating with limit/offset.
  * Appwrite defaults to 25 docs per request; this ensures we get every matching document.
@@ -174,11 +239,39 @@ async function appendNotificationToUserProfiles(databases, userProfileIds, notif
         await appendNotificationToUserProfile(databases, userId, entry, log);
     }
 }
+/**
+ * Send a single-user system notification immediately (push + in-app profile entry),
+ * bypassing the scheduled notification table flow.
+ */
+async function sendImmediateSystemNotificationToUser(databases, messaging, profile, title, message, type, log, data) {
+    if (!profile.authID || typeof profile.authID !== 'string') {
+        throw new Error('Target user profile has no valid authID');
+    }
+    const payload = {
+        type,
+        ...(data ?? {}),
+    };
+    const pushResult = await sendPushNotificationToUsers(messaging, [profile.authID], title, message, log, payload);
+    const sentCount = pushResult.sentCount ?? 0;
+    if (sentCount === 0) {
+        throw new Error('Immediate push delivery failed for target user');
+    }
+    await appendNotificationToUserProfile(databases, profile.$id, {
+        id: ID.unique(),
+        type,
+        title,
+        message,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        data: payload,
+    }, log);
+    return { success: true, sentCount };
+}
 const PUSH_BATCH_SIZE = 50;
 const PUSH_CONCURRENCY = 3;
 /**
  * Send push notification using Appwrite Messaging.
- * Uses object-based API and batches users for efficient delivery.
+ * Uses positional createPush (node-appwrite does not accept an object as the first argument).
  * Sends to multiple users per createPush call, with concurrent batch execution.
  * users: array of Appwrite Auth user IDs (each user must have a push target registered).
  */
@@ -194,7 +287,9 @@ async function sendPushNotificationToUsers(messaging, userIds, title, body, log,
     }
     log(`Sending push in ${batches.length} batch(es), ${userIds.length} total users`);
     let sentCount = 0;
+    let failedCount = 0;
     let lastResult = null;
+    let lastError = '';
     for (let i = 0; i < batches.length; i += PUSH_CONCURRENCY) {
         const chunk = batches.slice(i, i + PUSH_CONCURRENCY);
         const results = await Promise.allSettled(chunk.map((userBatch) => {
@@ -223,16 +318,26 @@ async function sendPushNotificationToUsers(messaging, userIds, title, body, log,
             if (settled.status === 'fulfilled') {
                 const result = settled.value;
                 lastResult = result;
-                sentCount += batch.length;
-                log(`Push batch ${i + j + 1}: messageId=${result.$id}, status=${result.status}, users=${batch.length}`);
+                const statusLower = String(result.status ?? '').toLowerCase();
+                const pushFailed = statusLower === 'failed' || statusLower === 'error';
+                if (pushFailed) {
+                    failedCount += batch.length;
+                    log(`Push batch ${i + j + 1}: delivery failed messageId=${result.$id}, status=${result.status}, users=${batch.length}`);
+                }
+                else {
+                    sentCount += batch.length;
+                    log(`Push batch ${i + j + 1}: messageId=${result.$id}, status=${result.status}, users=${batch.length}`);
+                }
             }
             else {
                 const errMsg = settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
+                failedCount += batch.length;
+                lastError = errMsg;
                 log(`Failed to send push batch (${batch.length} users): ${errMsg}`);
             }
         }
     }
-    log(`Push notification summary: ${sentCount}/${userIds.length} users, last messageId: ${lastResult?.$id}, status: ${lastResult?.status}`);
+    log(`Push notification summary: sent=${sentCount}/${userIds.length}, failed=${failedCount}, last messageId: ${lastResult?.$id}, status: ${lastResult?.status}${lastError ? `, lastError: ${lastError}` : ''}`);
     return lastResult
         ? { ...lastResult, sentCount }
         : { $id: null, status: sentCount > 0 ? 'completed' : 'failed', sentCount };
@@ -279,10 +384,11 @@ async function sendNotification(databases, messaging, notificationId, log) {
             .map(user => user.authID)
             .filter(id => id && typeof id === 'string');
         if (userAuthIds.length === 0) {
-            log('No valid user auth IDs found');
+            log(`ERROR: Found ${users.length} user profile(s) but none have a valid authID. Push cannot be sent.`);
             return {
                 success: false,
                 recipients: 0,
+                error: `Found ${users.length} user profile(s) but none have a valid authID linked. Push notifications require users to have an authenticated account.`,
             };
         }
         log(`Preparing to send push notification to ${userAuthIds.length} users`);
@@ -294,6 +400,15 @@ async function sendNotification(databases, messaging, notificationId, log) {
         });
         const recipientCount = pushResult.sentCount ?? userAuthIds.length;
         log(`Push result: ID=${pushResult.$id}, status=${pushResult.status}, sentCount=${recipientCount}`);
+        if (recipientCount === 0 && userAuthIds.length > 0) {
+            log(`ERROR: All push batches failed. ${userAuthIds.length} users targeted but 0 reached. Notification will NOT be marked as Sent.`);
+            await databases.updateDocument(DATABASE_ID, NOTIFICATIONS_TABLE_ID, notificationId, { status: 'Draft' });
+            return {
+                success: false,
+                recipients: 0,
+                error: `Push delivery failed for all ${userAuthIds.length} targeted users. The notification remains in Draft status. Check that Appwrite Messaging has a push provider (FCM/APNS) configured and that users have registered push targets.`,
+            };
+        }
         // Update notification status
         const now = new Date().toISOString();
         await databases.updateDocument(DATABASE_ID, NOTIFICATIONS_TABLE_ID, notificationId, {
@@ -522,14 +637,14 @@ async function setSettingValue(databases, key, value) {
  */
 async function checkAndSendTriviaTuesday(databases, messaging, log) {
     const now = new Date();
-    if (now.getUTCDay() !== 2) {
-        log('Trivia Tuesday: not Tuesday, skipping');
+    if (!isTuesdayEastern(now)) {
+        log('Trivia Tuesday: not Tuesday (America/New_York), skipping');
         return { sent: 0 };
     }
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = getEasternDateString(now);
     const lastSent = await getSettingValue(databases, 'triviaTuesdayLastSent');
     if (lastSent === todayStr) {
-        log('Trivia Tuesday: already sent today, skipping');
+        log('Trivia Tuesday: already sent this Eastern date, skipping');
         return { sent: 0 };
     }
     log('Trivia Tuesday: sending to all users');
@@ -538,8 +653,25 @@ async function checkAndSendTriviaTuesday(databases, messaging, log) {
         .map((u) => u.authID)
         .filter((id) => id && typeof id === 'string');
     const result = await sendPushNotificationToUsers(messaging, authIds, 'TRIVIA TUESDAY', 'Earn points by knowing fun facts about your favorite brands!', log, { type: 'Engagement' });
-    await setSettingValue(databases, 'triviaTuesdayLastSent', todayStr);
-    log(`Trivia Tuesday: sent to ${result.sentCount ?? 0} users`);
+    const sentCount = result.sentCount ?? 0;
+    if (sentCount > 0) {
+        await setSettingValue(databases, 'triviaTuesdayLastSent', todayStr);
+        const triviaTitle = 'TRIVIA TUESDAY';
+        const triviaBody = 'Earn points by knowing fun facts about your favorite brands!';
+        const triviaCreatedAt = new Date().toISOString();
+        for (const u of allUsers) {
+            await appendNotificationToUserProfile(databases, u.$id, {
+                id: ID.unique(),
+                type: 'Engagement',
+                title: triviaTitle,
+                message: triviaBody,
+                isRead: false,
+                createdAt: triviaCreatedAt,
+                data: { type: 'Engagement', campaign: 'triviaTuesday' },
+            }, log);
+        }
+    }
+    log(`Trivia Tuesday: sent to ${sentCount} users`);
     return { sent: result.sentCount ?? 0 };
 }
 /**
@@ -550,12 +682,16 @@ async function checkAndSendTriviaTuesday(databases, messaging, log) {
  */
 async function checkAndSendSamplingToday(databases, messaging, log) {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    log(`Sampling Today: checking for events on ${todayStr}`);
+    const todayStr = getEasternDateString(now);
+    log(`Sampling Today: checking for events on ${todayStr} (America/New_York)`);
     const allEvents = (await listAllDocuments(databases, DATABASE_ID, EVENTS_TABLE_ID, []));
     const todaysEvents = allEvents.filter((e) => {
-        const eventDateStr = (e.startTime || e.date || '').slice(0, 10);
-        return eventDateStr === todayStr && !e.isArchived && !e.isHidden;
+        if (e.isArchived || e.isHidden)
+            return false;
+        const start = new Date(e.startTime || e.date || '');
+        if (Number.isNaN(start.getTime()))
+            return false;
+        return getEasternDateString(start) === todayStr;
     });
     if (todaysEvents.length === 0) {
         log('Sampling Today: no events today');
@@ -590,10 +726,23 @@ async function checkAndSendSamplingToday(databases, messaging, log) {
                 hour: 'numeric',
                 minute: '2-digit',
                 hour12: true,
-                timeZone: 'UTC',
+                timeZone: EST_TIMEZONE,
             });
             const storeName = event.name || 'your event';
-            await sendPushNotificationToUsers(messaging, [user.authID], 'SAMPLING TODAY', `Sampling at ${storeName} starts at ${timeStr}! Click to learn more!`, log, { eventId: event.$id, type: 'Event Reminder' });
+            const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'SAMPLING TODAY', `Sampling at ${storeName} starts at ${timeStr}! Click to learn more!`, log, { eventId: event.$id, type: 'Event Reminder' });
+            if ((pushResult.sentCount ?? 0) === 0) {
+                log(`Sampling Today: push delivery failed for user ${user.$id}, not marking as sent`);
+                continue;
+            }
+            await appendNotificationToUserProfile(databases, user.$id, {
+                id: ID.unique(),
+                type: 'Event Reminder',
+                title: 'SAMPLING TODAY',
+                message: `Sampling at ${storeName} starts at ${timeStr}! Click to learn more!`,
+                isRead: false,
+                createdAt: new Date().toISOString(),
+                data: { eventId: event.$id, type: 'Event Reminder', campaign: 'samplingToday' },
+            }, log);
             saved.samplingTodaySent = true;
             needsUpdate = true;
             totalSent++;
@@ -611,6 +760,205 @@ async function checkAndSendSamplingToday(databases, messaging, log) {
     log(`Sampling Today: sent ${totalSent} notification(s)`);
     return { sent: totalSent };
 }
+const NEARBY_MAX_MILES = 50;
+const NEARBY_MAX_DAYS = 7;
+const EARTH_RADIUS_MILES = 3958.8;
+function haversineMiles(lat1, lon1, lat2, lon2) {
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * EARTH_RADIUS_MILES * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function getEventLatLng(e) {
+    const loc = e.location;
+    if (!loc)
+        return null;
+    if (Array.isArray(loc) && loc.length >= 2) {
+        const a = Number(loc[0]);
+        const b = Number(loc[1]);
+        if (Number.isNaN(a) || Number.isNaN(b))
+            return null;
+        return { lng: a, lat: b };
+    }
+    if (typeof loc === 'object' && loc !== null && 'coordinates' in loc) {
+        const c = loc.coordinates;
+        if (Array.isArray(c) && c.length >= 2) {
+            return { lng: c[0], lat: c[1] };
+        }
+    }
+    return null;
+}
+function getEventClientId(e) {
+    const c = e.client;
+    if (!c)
+        return null;
+    if (typeof c === 'string')
+        return c;
+    if (typeof c === 'object' && c !== null && '$id' in c)
+        return c.$id;
+    return null;
+}
+async function geocodeUsZip(zip) {
+    const cleaned = zip.replace(/\D/g, '').slice(0, 5);
+    if (cleaned.length !== 5)
+        return null;
+    try {
+        const res = await fetch(`https://api.zippopotam.us/us/${cleaned}`);
+        if (!res.ok)
+            return null;
+        const data = (await res.json());
+        const p = data.places?.[0];
+        if (!p)
+            return null;
+        return { lat: parseFloat(p.latitude), lng: parseFloat(p.longitude) };
+    }
+    catch {
+        return null;
+    }
+}
+function parseNearbyNotifiedIds(raw) {
+    if (!raw || typeof raw !== 'string')
+        return [];
+    try {
+        const p = JSON.parse(raw);
+        return Array.isArray(p) ? p.filter((x) => typeof x === 'string') : [];
+    }
+    catch {
+        return [];
+    }
+}
+async function resolveUserLatLng(databases, user, log) {
+    const hLat = user.homeLatitude;
+    const hLng = user.homeLongitude;
+    if (typeof hLat === 'number' && typeof hLng === 'number' && !Number.isNaN(hLat) && !Number.isNaN(hLng)) {
+        return { lat: hLat, lng: hLng };
+    }
+    const zLat = user.zipGeoLat;
+    const zLng = user.zipGeoLng;
+    if (typeof zLat === 'number' && typeof zLng === 'number' && !Number.isNaN(zLat) && !Number.isNaN(zLng)) {
+        return { lat: zLat, lng: zLng };
+    }
+    const zip = typeof user.zipCode === 'string' ? user.zipCode.trim() : '';
+    if (!zip)
+        return null;
+    const geo = await geocodeUsZip(zip);
+    if (geo) {
+        try {
+            await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
+                zipGeoLat: geo.lat,
+                zipGeoLng: geo.lng,
+            });
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`Nearby favorite: could not cache zip geocode for user ${user.$id}: ${msg}`);
+        }
+    }
+    return geo;
+}
+/**
+ * NEW SAMPLING EVENT NEAR YOU
+ * Favorite brand has an event in the next 7 days within 50 miles of the user's zip/home.
+ */
+async function checkAndSendNearbyFavoriteSampling(databases, messaging, log) {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + NEARBY_MAX_DAYS * 24 * 60 * 60 * 1000);
+    const allEvents = (await listAllDocuments(databases, DATABASE_ID, EVENTS_TABLE_ID, []));
+    const upcoming = allEvents.filter((e) => {
+        if (e.isArchived || e.isHidden)
+            return false;
+        const start = new Date(e.startTime || e.date || '');
+        if (Number.isNaN(start.getTime()))
+            return false;
+        return start >= now && start <= horizon;
+    });
+    if (upcoming.length === 0) {
+        log('Nearby favorite: no upcoming events in window');
+        return { sent: 0 };
+    }
+    const clientNameCache = new Map();
+    async function getBrandName(clientId) {
+        if (clientNameCache.has(clientId)) {
+            return clientNameCache.get(clientId) ?? 'A brand';
+        }
+        try {
+            const doc = await databases.getDocument(DATABASE_ID, CLIENTS_TABLE_ID, clientId);
+            const row = doc;
+            const name = (row.title || row.name || 'A brand').trim();
+            clientNameCache.set(clientId, name);
+            return name;
+        }
+        catch {
+            clientNameCache.set(clientId, 'A brand');
+            return 'A brand';
+        }
+    }
+    const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
+    let totalSent = 0;
+    for (const user of allUsers) {
+        if (!user.authID)
+            continue;
+        const favRaw = user.favoriteIds;
+        const favorites = Array.isArray(favRaw)
+            ? favRaw.filter((x) => typeof x === 'string')
+            : [];
+        if (favorites.length === 0)
+            continue;
+        const userPos = await resolveUserLatLng(databases, user, log);
+        if (!userPos) {
+            continue;
+        }
+        let notified = parseNearbyNotifiedIds(user.nearbyFavoriteNotifiedEventIds);
+        let needsProfileUpdate = false;
+        for (const event of upcoming) {
+            const clientId = getEventClientId(event);
+            if (!clientId || !favorites.includes(clientId))
+                continue;
+            const evPos = getEventLatLng(event);
+            if (!evPos)
+                continue;
+            const miles = haversineMiles(userPos.lat, userPos.lng, evPos.lat, evPos.lng);
+            if (miles > NEARBY_MAX_MILES)
+                continue;
+            if (notified.includes(event.$id))
+                continue;
+            const brandName = await getBrandName(clientId);
+            const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'NEW SAMPLING EVENT NEAR YOU', `Heads up, ${brandName} has a sampling event coming up near you. Click to learn more!`, log, { eventId: event.$id, type: 'Promotional' });
+            if ((pushResult.sentCount ?? 0) === 0) {
+                log(`Nearby favorite: push failed for user ${user.$id} event ${event.$id}`);
+                continue;
+            }
+            await appendNotificationToUserProfile(databases, user.$id, {
+                id: ID.unique(),
+                type: 'Promotional',
+                title: 'NEW SAMPLING EVENT NEAR YOU',
+                message: `Heads up, ${brandName} has a sampling event coming up near you. Click to learn more!`,
+                isRead: false,
+                createdAt: new Date().toISOString(),
+                data: { eventId: event.$id, type: 'Promotional', campaign: 'nearbyFavorite' },
+            }, log);
+            notified = [...notified, event.$id];
+            needsProfileUpdate = true;
+            totalSent++;
+        }
+        if (needsProfileUpdate) {
+            const trimmed = notified.slice(-500);
+            try {
+                await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
+                    nearbyFavoriteNotifiedEventIds: JSON.stringify(trimmed),
+                });
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                log(`Nearby favorite: failed to save notified ids for ${user.$id}: ${msg}`);
+            }
+        }
+    }
+    log(`Nearby favorite: sent ${totalSent} notification(s)`);
+    return { sent: totalSent };
+}
 /**
  * HAPPY BIRTHDAY
  * Sends birthday push + awards configurable points on the user's birthday.
@@ -618,18 +966,19 @@ async function checkAndSendSamplingToday(databases, messaging, log) {
  */
 async function checkAndSendBirthdayNotifications(databases, messaging, log) {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayEastern = getEasternDateString(now);
     const lastRun = await getSettingValue(databases, 'birthdayCheckLastRun');
-    if (lastRun === todayStr) {
-        log('Birthday: already checked today, skipping');
+    if (lastRun === todayEastern) {
+        log('Birthday: already checked this Eastern calendar day, skipping');
         return { sent: 0 };
     }
-    const currentYear = now.getUTCFullYear();
-    const currentMonth = now.getUTCMonth();
-    const currentDay = now.getUTCDate();
+    const todayParts = getTimePartsInTimezone(now, EST_TIMEZONE);
+    const currentYear = todayParts.year;
+    const currentMonth = todayParts.month;
+    const currentDay = todayParts.day;
     const pointsStr = await getSettingValue(databases, 'birthdayPoints');
     const points = pointsStr ? parseInt(pointsStr, 10) : 100;
-    log(`Birthday: checking for birthdays on ${currentMonth + 1}/${currentDay}, awarding ${points} points`);
+    log(`Birthday: checking for birthdays on ${currentMonth}/${currentDay} (${EST_TIMEZONE}), awarding ${points} points`);
     const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
     let sent = 0;
     for (const user of allUsers) {
@@ -638,10 +987,17 @@ async function checkAndSendBirthdayNotifications(databases, messaging, log) {
         if (user.birthdayNotifYear === currentYear)
             continue;
         const dob = new Date(user.dob);
-        if (dob.getUTCMonth() !== currentMonth || dob.getUTCDate() !== currentDay)
+        if (Number.isNaN(dob.getTime()))
+            continue;
+        const dobParts = getTimePartsInTimezone(dob, EST_TIMEZONE);
+        if (dobParts.month !== currentMonth || dobParts.day !== currentDay)
             continue;
         log(`Birthday: sending to user ${user.$id}`);
-        await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY BIRTHDAY!', `We wish you a very happy birthday, from all of us here at SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY BIRTHDAY!', `We wish you a very happy birthday, from all of us here at SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        if ((pushResult.sentCount ?? 0) === 0) {
+            log(`Birthday: push delivery failed for user ${user.$id}, skipping yearly flag/points update`);
+            continue;
+        }
         const currentPoints = user.totalPoints ?? 0;
         try {
             await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
@@ -655,7 +1011,7 @@ async function checkAndSendBirthdayNotifications(databases, messaging, log) {
         }
         sent++;
     }
-    await setSettingValue(databases, 'birthdayCheckLastRun', todayStr);
+    await setSettingValue(databases, 'birthdayCheckLastRun', todayEastern);
     log(`Birthday: sent ${sent} notification(s)`);
     return { sent };
 }
@@ -666,18 +1022,19 @@ async function checkAndSendBirthdayNotifications(databases, messaging, log) {
  */
 async function checkAndSendAnniversaryNotifications(databases, messaging, log) {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayEastern = getEasternDateString(now);
     const lastRun = await getSettingValue(databases, 'anniversaryCheckLastRun');
-    if (lastRun === todayStr) {
-        log('Anniversary: already checked today, skipping');
+    if (lastRun === todayEastern) {
+        log('Anniversary: already checked this Eastern calendar day, skipping');
         return { sent: 0 };
     }
-    const currentYear = now.getUTCFullYear();
-    const currentMonth = now.getUTCMonth();
-    const currentDay = now.getUTCDate();
+    const todayParts = getTimePartsInTimezone(now, EST_TIMEZONE);
+    const currentYear = todayParts.year;
+    const currentMonth = todayParts.month;
+    const currentDay = todayParts.day;
     const pointsStr = await getSettingValue(databases, 'anniversaryPoints');
     const points = pointsStr ? parseInt(pointsStr, 10) : 200;
-    log(`Anniversary: checking for join-date anniversaries on ${currentMonth + 1}/${currentDay}, awarding ${points} points`);
+    log(`Anniversary: checking for join-date anniversaries on ${currentMonth}/${currentDay} (${EST_TIMEZONE}), awarding ${points} points`);
     const allUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, []));
     let sent = 0;
     for (const user of allUsers) {
@@ -686,13 +1043,20 @@ async function checkAndSendAnniversaryNotifications(databases, messaging, log) {
         if (user.anniversaryNotifYear === currentYear)
             continue;
         const createdAt = new Date(user.$createdAt);
-        if (createdAt.getUTCMonth() !== currentMonth || createdAt.getUTCDate() !== currentDay)
+        if (Number.isNaN(createdAt.getTime()))
             continue;
-        const yearsOnPlatform = currentYear - createdAt.getUTCFullYear();
+        const createdParts = getTimePartsInTimezone(createdAt, EST_TIMEZONE);
+        if (createdParts.month !== currentMonth || createdParts.day !== currentDay)
+            continue;
+        const yearsOnPlatform = currentYear - createdParts.year;
         if (yearsOnPlatform < 1)
             continue;
         log(`Anniversary: sending to user ${user.$id} (${yearsOnPlatform} year(s))`);
-        await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY SAMPLING ANNIVERSARY!', `Congratulations on reaching a full new year of sampling with SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        const pushResult = await sendPushNotificationToUsers(messaging, [user.authID], 'HAPPY SAMPLING ANNIVERSARY!', `Congratulations on reaching a full new year of sampling with SampleFinder! As a gift, we've awarded you ${points} points.`, log, { type: 'Engagement' });
+        if ((pushResult.sentCount ?? 0) === 0) {
+            log(`Anniversary: push delivery failed for user ${user.$id}, skipping yearly flag/points update`);
+            continue;
+        }
         const currentPoints = user.totalPoints ?? 0;
         try {
             await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, user.$id, {
@@ -706,7 +1070,7 @@ async function checkAndSendAnniversaryNotifications(databases, messaging, log) {
         }
         sent++;
     }
-    await setSettingValue(databases, 'anniversaryCheckLastRun', todayStr);
+    await setSettingValue(databases, 'anniversaryCheckLastRun', todayEastern);
     log(`Anniversary: sent ${sent} notification(s)`);
     return { sent };
 }
@@ -762,7 +1126,11 @@ async function checkAndSendInactivityNotifications(databases, messaging, users, 
                     continue;
             }
             log(`Inactivity: sending to user ${profile.$id} (last access: ${authUser.accessedAt})`);
-            await sendPushNotificationToUsers(messaging, [profile.authID], "YOU'VE BEEN MISSING SAMPLES!", 'Enjoy experiencing new brands, earning points and winning prizes!', log, { type: 'Engagement' });
+            const pushResult = await sendPushNotificationToUsers(messaging, [profile.authID], "YOU'VE BEEN MISSING SAMPLES!", 'Enjoy experiencing new brands, earning points and winning prizes!', log, { type: 'Engagement' });
+            if ((pushResult.sentCount ?? 0) === 0) {
+                log(`Inactivity: push delivery failed for user ${profile.$id}, not updating inactivity marker`);
+                continue;
+            }
             try {
                 await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, profile.$id, { lastInactivityNotifAt: now.toISOString() });
             }
@@ -783,37 +1151,19 @@ async function checkAndSendInactivityNotifications(databases, messaging, users, 
  * Called via POST /send-badge-notification.
  */
 async function sendBadgeNotification(databases, messaging, userId, badgeType, log) {
-    log(`Badge notification: sending ${badgeType} badge notification to auth user ${userId}`);
+    log(`Badge notification: sending ${badgeType} badge notification for auth user ${userId}`);
     const title = badgeType === 'ambassador'
         ? 'BRAND AMBASSADOR BADGE EARNED!'
         : 'INFLUENCER BADGE EARNED!';
     const body = badgeType === 'ambassador'
         ? "Congratulations, you're an official SampleFinder Brand Ambassador!"
         : 'Congratulations on earning your SampleFinder Influencer badge!';
-    const result = await sendPushNotificationToUsers(messaging, [userId], title, body, log, { type: 'Engagement', badgeType });
-    // Also append to user's in-app notifications
-    try {
-        const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
-        if (profileResult.documents.length > 0) {
-            const profile = profileResult.documents[0];
-            const entry = {
-                id: ID.unique(),
-                type: 'Engagement',
-                title,
-                message: body,
-                isRead: false,
-                createdAt: new Date().toISOString(),
-                data: { badgeType },
-            };
-            await appendNotificationToUserProfile(databases, profile.$id, entry, log);
-        }
+    const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
+    if (profileResult.documents.length === 0) {
+        throw new Error('Badge notification target profile not found');
     }
-    catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log(`Badge notification: failed to append in-app notification: ${msg}`);
-    }
-    log(`Badge notification: sent ${result.sentCount ?? 0}`);
-    return { success: true, sentCount: result.sentCount ?? 0 };
+    const profile = profileResult.documents[0];
+    return await sendImmediateSystemNotificationToUser(databases, messaging, profile, title, body, 'Engagement', log, { badgeType });
 }
 /**
  * TIER CHANGED NOTIFICATION
@@ -821,41 +1171,37 @@ async function sendBadgeNotification(databases, messaging, userId, badgeType, lo
  * Called via POST /send-tier-notification.
  */
 async function sendTierNotification(databases, messaging, userId, newTierName, oldTierName, log) {
-    log(`Tier notification: sending tierChanged notification to auth user ${userId}`);
+    log(`Tier notification: sending tierChanged notification for auth user ${userId}`);
     const title = `NEW TIER: ${newTierName}!`;
     const body = `Congratulations, you've reached the ${newTierName} tier! Keep earning points to level up!`;
-    const result = await sendPushNotificationToUsers(messaging, [userId], title, body, log, {
-        type: 'tierChanged',
+    const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
+    if (profileResult.documents.length === 0) {
+        throw new Error('Tier notification target profile not found');
+    }
+    const profile = profileResult.documents[0];
+    return await sendImmediateSystemNotificationToUser(databases, messaging, profile, title, body, 'Engagement', log, {
         oldTierName: oldTierName ?? '',
         newTierName,
-        screen: 'Promotions',
     });
-    // Also append to user's in-app notifications
-    try {
-        const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
-        if (profileResult.documents.length > 0) {
-            const profile = profileResult.documents[0];
-            const entry = {
-                id: ID.unique(),
-                type: 'tierChanged',
-                title,
-                message: body,
-                isRead: false,
-                createdAt: new Date().toISOString(),
-                data: {
-                    oldTierName: oldTierName ?? '',
-                    newTierName,
-                },
-            };
-            await appendNotificationToUserProfile(databases, profile.$id, entry, log);
-        }
+}
+/**
+ * REFERRAL POINTS EARNED NOTIFICATION
+ * Sends a push notification when a user earns referral points.
+ * Called via POST /send-referral-points-notification.
+ */
+async function sendReferralPointsNotification(databases, messaging, userId, points, log) {
+    log(`Referral notification: sending referral points notification for auth user ${userId}`);
+    const normalizedPoints = typeof points === 'number' && points > 0 ? Math.floor(points) : undefined;
+    const title = 'REFERRAL POINTS EARNED';
+    const body = normalizedPoints
+        ? `You earned ${normalizedPoints} referral points. Keep sharing SampleFinder!`
+        : 'You earned referral points. Keep sharing SampleFinder!';
+    const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
+    if (profileResult.documents.length === 0) {
+        throw new Error('Referral notification target profile not found');
     }
-    catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log(`Tier notification: failed to append in-app notification: ${msg}`);
-    }
-    log(`Tier notification: sent ${result.sentCount ?? 0}`);
-    return { success: true, sentCount: result.sentCount ?? 0 };
+    const profile = profileResult.documents[0];
+    return await sendImmediateSystemNotificationToUser(databases, messaging, profile, title, body, 'Engagement', log, normalizedPoints ? { points: String(normalizedPoints) } : undefined);
 }
 /**
  * Archive events that completed more than 7 days ago (endTime < now - 7 days).
@@ -928,10 +1274,16 @@ export default async function handler({ req, res, log, error }) {
             // Parse and validate request body
             let requestBody;
             try {
-                if (!req.body || typeof req.body !== 'object') {
+                let body;
+                if (typeof req.body === 'string') {
+                    body = JSON.parse(req.body);
+                }
+                else if (req.body && typeof req.body === 'object') {
+                    body = req.body;
+                }
+                else {
                     throw new Error('Request body is required');
                 }
-                const body = req.body;
                 if (!body.notificationId || typeof body.notificationId !== 'string') {
                     throw new Error('notificationId is required and must be a string');
                 }
@@ -960,10 +1312,16 @@ export default async function handler({ req, res, log, error }) {
             log('Processing send-badge-notification request');
             let requestBody;
             try {
-                if (!req.body || typeof req.body !== 'object') {
+                let body;
+                if (typeof req.body === 'string') {
+                    body = JSON.parse(req.body);
+                }
+                else if (req.body && typeof req.body === 'object') {
+                    body = req.body;
+                }
+                else {
                     throw new Error('Request body is required');
                 }
-                const body = req.body;
                 if (!body.userId || typeof body.userId !== 'string') {
                     throw new Error('userId is required and must be a string');
                 }
@@ -988,10 +1346,16 @@ export default async function handler({ req, res, log, error }) {
             log('Processing send-tier-notification request');
             let requestBody;
             try {
-                if (!req.body || typeof req.body !== 'object') {
+                let body;
+                if (typeof req.body === 'string') {
+                    body = JSON.parse(req.body);
+                }
+                else if (req.body && typeof req.body === 'object') {
+                    body = req.body;
+                }
+                else {
                     throw new Error('Request body is required');
                 }
-                const body = req.body;
                 if (!body.userId || typeof body.userId !== 'string') {
                     throw new Error('userId is required and must be a string');
                 }
@@ -1014,6 +1378,151 @@ export default async function handler({ req, res, log, error }) {
             const result = await sendTierNotification(databases, messaging, requestBody.userId, requestBody.newTierName, requestBody.oldTierName, log);
             return res.json(result);
         }
+        // Handle referral points notification endpoint (triggered by referral award flows)
+        if (req.path === '/send-referral-points-notification' && req.method === 'POST') {
+            log('Processing send-referral-points-notification request');
+            let requestBody;
+            try {
+                let body;
+                if (typeof req.body === 'string') {
+                    body = JSON.parse(req.body);
+                }
+                else if (req.body && typeof req.body === 'object') {
+                    body = req.body;
+                }
+                else {
+                    throw new Error('Request body is required');
+                }
+                if (!body.userId || typeof body.userId !== 'string') {
+                    throw new Error('userId is required and must be a string');
+                }
+                if (body.points !== undefined && (typeof body.points !== 'number' || body.points <= 0)) {
+                    throw new Error('points must be a positive number when provided');
+                }
+                requestBody = {
+                    userId: body.userId,
+                    points: body.points,
+                };
+            }
+            catch (validationError) {
+                const errorMessage = validationError instanceof Error ? validationError.message : String(validationError);
+                error(`Validation error: ${errorMessage}`);
+                return res.json({ success: false, error: errorMessage }, 400);
+            }
+            const result = await sendReferralPointsNotification(databases, messaging, requestBody.userId, requestBody.points, log);
+            return res.json(result);
+        }
+        if (req.path === '/send-user-push' && req.method === 'POST') {
+            log('Processing send-user-push request');
+            let requestBody;
+            try {
+                if (!req.body || typeof req.body !== 'object') {
+                    throw new Error('Request body is required');
+                }
+                const body = req.body;
+                const { userId, title, message, data } = body;
+                if (!userId || typeof userId !== 'string') {
+                    throw new Error('userId is required and must be a string');
+                }
+                if (!title || typeof title !== 'string') {
+                    throw new Error('title is required and must be a string');
+                }
+                if (!message || typeof message !== 'string') {
+                    throw new Error('message is required and must be a string');
+                }
+                if (data && typeof data !== 'object') {
+                    throw new Error('data must be an object if provided');
+                }
+                // Normalize data to Record<string, string>
+                const payloadData = {};
+                if (data && typeof data === 'object') {
+                    Object.entries(data).forEach(([key, value]) => {
+                        payloadData[key] = String(value);
+                    });
+                }
+                requestBody = {
+                    userId,
+                    title,
+                    message,
+                    data: payloadData,
+                };
+            }
+            catch (validationError) {
+                const errorMessage = validationError instanceof Error ? validationError.message : String(validationError);
+                error(`Validation error (send-user-push): ${errorMessage}`);
+                return res.json({
+                    success: false,
+                    error: errorMessage,
+                }, 400);
+            }
+            log(`Sending push notification to user: ${requestBody.userId}`);
+            const pushResult = await sendPushNotificationToUsers(messaging, [requestBody.userId], requestBody.title, requestBody.message, log, requestBody.data);
+            const success = pushResult.status !== 'failed';
+            return res.json({
+                success,
+                status: pushResult.status,
+                messageId: pushResult.$id,
+                sentCount: pushResult.sentCount ?? (success ? 1 : 0),
+            });
+        }
+        // Handle batch push endpoint (used by mobile app)
+        if (req.path === '/send-batch-push' && req.method === 'POST') {
+            log('Processing send-batch-push request');
+            let requestBody;
+            try {
+                if (!req.body || typeof req.body !== 'object') {
+                    throw new Error('Request body is required');
+                }
+                const body = req.body;
+                const { userIds, title, message, data } = body;
+                if (!Array.isArray(userIds) || userIds.length === 0) {
+                    throw new Error('userIds is required and must be a non-empty array of strings');
+                }
+                if (!title || typeof title !== 'string') {
+                    throw new Error('title is required and must be a string');
+                }
+                if (!message || typeof message !== 'string') {
+                    throw new Error('message is required and must be a string');
+                }
+                if (data && typeof data !== 'object') {
+                    throw new Error('data must be an object if provided');
+                }
+                const normalizedUserIds = userIds.filter((id) => typeof id === 'string' && id.trim().length > 0);
+                if (normalizedUserIds.length === 0) {
+                    throw new Error('userIds must contain at least one valid string');
+                }
+                // Normalize data to Record<string, string>
+                const payloadData = {};
+                if (data && typeof data === 'object') {
+                    Object.entries(data).forEach(([key, value]) => {
+                        payloadData[key] = String(value);
+                    });
+                }
+                requestBody = {
+                    userIds: normalizedUserIds,
+                    title,
+                    message,
+                    data: payloadData,
+                };
+            }
+            catch (validationError) {
+                const errorMessage = validationError instanceof Error ? validationError.message : String(validationError);
+                error(`Validation error (send-batch-push): ${errorMessage}`);
+                return res.json({
+                    success: false,
+                    error: errorMessage,
+                }, 400);
+            }
+            log(`Sending batch push notification to ${requestBody.userIds.length} users`);
+            const pushResult = await sendPushNotificationToUsers(messaging, requestBody.userIds, requestBody.title, requestBody.message, log, requestBody.data);
+            const success = pushResult.status !== 'failed';
+            return res.json({
+                success,
+                status: pushResult.status,
+                messageId: pushResult.$id,
+                sentCount: pushResult.sentCount ?? (success ? requestBody.userIds.length : 0),
+            });
+        }
         // Handle scheduled execution: event reminders + due scheduled notifications
         // Triggered by: Appwrite cron (path / or empty) or manual GET /check-event-reminders
         const isScheduledRun = req.path === '/check-event-reminders' ||
@@ -1021,21 +1530,51 @@ export default async function handler({ req, res, log, error }) {
             req.path === '';
         if (isScheduledRun) {
             log('Processing scheduled run: event reminders + scheduled notifications');
-            // 1. Send due scheduled notifications (status=Scheduled, scheduledAt <= now)
-            const scheduledResult = await checkAndSendScheduledNotifications(databases, messaging, log);
-            log(`Scheduled notifications: sent=${scheduledResult.sent}, failed=${scheduledResult.failed}`);
+            const { hour: easternHour } = getTimePartsInTimezone(new Date(), EST_TIMEZONE);
+            const shouldRunScheduledNotifications = easternHour === NOTIFICATION_SEND_HOUR_EST;
+            const shouldRunMorningCampaigns = isInMorningWindowET(new Date());
+            let scheduledResult = { success: true, sent: 0, failed: 0 };
+            if (shouldRunScheduledNotifications) {
+                // 1. Send due scheduled notifications (status=Scheduled, scheduledAt <= now)
+                scheduledResult = await checkAndSendScheduledNotifications(databases, messaging, log);
+                log(`Scheduled notifications: sent=${scheduledResult.sent}, failed=${scheduledResult.failed}`);
+            }
+            else {
+                log(`Skipping admin scheduled notifications. Current ET hour is ${easternHour}; those only send at 1:00 PM ET.`);
+            }
             // 2. Check and send event reminders (24h / 1h)
             const remindersResult = await checkAndSendEventReminders(databases, messaging, log);
             log(`Event reminders: 24h=${remindersResult.reminders24h}, 1h=${remindersResult.reminders1h}`);
             // 3. Auto-archive events that completed more than 7 days ago
             const archiveResult = await archiveEventsCompletedOver7DaysAgo(databases, log);
             log(`Auto-archive events: ${archiveResult.archived}`);
-            // 4. Trivia Tuesday (sends once per Tuesday)
-            const triviaTuesdayResult = await checkAndSendTriviaTuesday(databases, messaging, log);
-            log(`Trivia Tuesday: sent=${triviaTuesdayResult.sent}`);
-            // 5. Sampling Today (morning of event day)
-            const samplingTodayResult = await checkAndSendSamplingToday(databases, messaging, log);
-            log(`Sampling Today: sent=${samplingTodayResult.sent}`);
+            // 4. Trivia Tuesday (Tuesday morning ET, once per Eastern calendar day)
+            let triviaTuesdayResult = { sent: 0 };
+            if (shouldRunMorningCampaigns) {
+                triviaTuesdayResult = await checkAndSendTriviaTuesday(databases, messaging, log);
+                log(`Trivia Tuesday: sent=${triviaTuesdayResult.sent}`);
+            }
+            else {
+                log(`Trivia Tuesday: skipped outside morning window (${MORNING_START_HOUR_ET}:00–${MORNING_END_HOUR_ET}:00 ET)`);
+            }
+            // 5. Sampling Today (morning ET on the day of the event)
+            let samplingTodayResult = { sent: 0 };
+            if (shouldRunMorningCampaigns) {
+                samplingTodayResult = await checkAndSendSamplingToday(databases, messaging, log);
+                log(`Sampling Today: sent=${samplingTodayResult.sent}`);
+            }
+            else {
+                log(`Sampling Today: skipped outside morning window (${MORNING_START_HOUR_ET}:00–${MORNING_END_HOUR_ET}:00 ET)`);
+            }
+            // 5b. New sampling event near you (favorite brand, 50 mi, 7 days)
+            let nearbyFavoriteResult = { sent: 0 };
+            if (shouldRunMorningCampaigns) {
+                nearbyFavoriteResult = await checkAndSendNearbyFavoriteSampling(databases, messaging, log);
+                log(`Nearby favorite sampling: sent=${nearbyFavoriteResult.sent}`);
+            }
+            else {
+                log('Nearby favorite sampling: skipped outside morning ET window');
+            }
             // 6. Happy Birthday (once per year per user)
             const birthdayResult = await checkAndSendBirthdayNotifications(databases, messaging, log);
             log(`Birthday: sent=${birthdayResult.sent}`);
@@ -1063,6 +1602,9 @@ export default async function handler({ req, res, log, error }) {
                 },
                 samplingToday: {
                     sent: samplingTodayResult.sent,
+                },
+                nearbyFavoriteSampling: {
+                    sent: nearbyFavoriteResult.sent,
                 },
                 birthday: {
                     sent: birthdayResult.sent,

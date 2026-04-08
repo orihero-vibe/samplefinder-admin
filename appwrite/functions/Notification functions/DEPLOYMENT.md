@@ -52,19 +52,37 @@ If CLI push doesn't work, add fields manually:
    - Type: Point (Geographic coordinates)
    - Required: No
 
-### Step 2: Deploy the Function
+**Additional user_profiles attributes (automated push / nearby favorites):**
 
-After building the function (`npm run build` in this directory), push it to Appwrite:
+| Attribute | Type | Notes |
+|-----------|------|--------|
+| `nearbyFavoriteNotifiedEventIds` | String (e.g. 10000) | JSON array of event IDs already notified |
+| `zipGeoLat`, `zipGeoLng` | Double | Cached US zip centroid (filled by Notification function) |
+| `homeLatitude`, `homeLongitude` | Double | Optional; if set, used instead of zip for distance |
+| `birthdayNotifYear`, `anniversaryNotifYear` | Integer | Set by the Notification function after a successful birthday/anniversary push (dedupes once per calendar year in Eastern time). **Required on the collection** or profile updates will fail after the push. |
+| `lastInactivityNotifAt` | DateTime | Last 30-day re-engagement push (optional but recommended). |
+
+**Birthday & sampling anniversary:** The function compares **month/day in `America/New_York`** for both “today” and the user’s `dob` / profile `$createdAt`, and uses an **Eastern calendar date** for the once-per-day `birthdayCheckLastRun` / `anniversaryCheckLastRun` settings (not UTC), so US users are aligned with their local calendar day.
+
+**Schedule behavior (Notification function):**
+
+- Cron should remain `*/15 * * * *` (every 15 minutes).
+- **Morning campaigns** (Trivia Tuesday, Sampling Today, NEW SAMPLING EVENT NEAR YOU): run only when the server time in **America/New_York** is **08:00–09:59** (hour 8 or 9).
+- **Admin scheduled notifications** (from the `notifications` collection): still send **only at 1:00 PM Eastern** (`NOTIFICATION_SEND_HOUR_EST = 13`).
+- Event reminders (24h / 1h) and auto-archive still run on every cron tick.
+
+### Step 2: Deploy the Function
 
 ```bash
 # Navigate to the appwrite directory
 cd appwrite
 
-# Push the Notification function (select "Notification functions" when prompted)
-appwrite push function -f 695d55bb002bc6b75430
-```
+# Deploy the Notification functions
+appwrite deploy function 695d55bb002bc6b75430
 
-Alternatively, run `appwrite push function` and choose which function(s) to push from the list. You can also deploy via the Appwrite Console by uploading the built code from `functions/Notification functions/`.
+# Or deploy all functions
+appwrite deploy function
+```
 
 The deployment will:
 - Upload the updated function code

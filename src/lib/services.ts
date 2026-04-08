@@ -957,6 +957,58 @@ export const appUsersService = {
       throw error
     }
   },
+
+  /**
+   * List every user profile (all pages). Use for admin UIs that must show the full user set
+   * (e.g. notification audience picker). Plain `list()` only returns Appwrite’s default first page.
+   */
+  listAll: async (): Promise<AppUser[]> => {
+    try {
+      const PAGE_SIZE = 500
+      const allDocuments: UserProfile[] = []
+      let offset = 0
+      let total = 0
+      for (;;) {
+        const profiles = await userProfilesService.list([
+          Query.orderDesc('$createdAt'),
+          Query.limit(PAGE_SIZE),
+          Query.offset(offset),
+        ])
+        total = profiles.total
+        allDocuments.push(...profiles.documents)
+        if (profiles.documents.length < PAGE_SIZE || allDocuments.length >= total) break
+        offset += PAGE_SIZE
+      }
+
+      const authIDs = allDocuments
+        .map((profile) => (profile as { authID?: string }).authID)
+        .filter((id): id is string => !!id)
+
+      let emailMap: Record<string, string> = {}
+      let lastLoginMap: Record<string, string> = {}
+      try {
+        const result = await fetchUserEmailsInBatches(authIDs)
+        emailMap = result.emailMap
+        lastLoginMap = result.lastLoginMap
+      } catch (emailError) {
+        console.warn('Failed to fetch user emails:', emailError)
+      }
+
+      return allDocuments.map((profile) => {
+        const authID = (profile as { authID?: string }).authID
+        return {
+          ...profile,
+          firstName: (profile as { firstname?: string }).firstname,
+          lastName: (profile as { lastname?: string }).lastname,
+          email: authID ? emailMap[authID] : undefined,
+          lastLoginDate: authID ? lastLoginMap[authID] : undefined,
+        }
+      }) as AppUser[]
+    } catch (error) {
+      console.error('Error listing all users:', error)
+      throw error
+    }
+  },
   
   // List users with pagination info
   listWithPagination: async (queries?: string[]): Promise<{ users: AppUser[]; total: number }> => {
@@ -1396,7 +1448,7 @@ export type NotificationAudience =
 export interface NotificationDocument extends Models.Document {
   title: string
   message: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
   targetAudience: NotificationAudience
   category?: 'AppPush' | 'SystemPush'
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -1415,7 +1467,7 @@ export interface NotificationDocument extends Models.Document {
 export interface NotificationFormData {
   title: string
   message: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
   targetAudience: NotificationAudience
   category?: 'AppPush'
   schedule: 'Send Immediately' | 'Schedule for Later' | 'Recurring'
@@ -1482,11 +1534,13 @@ function normalizeNotificationPayload(
   return normalizeNotificationFormData(data)
 }
 
+const NOTIFICATION_SEND_TIME_EST = '13:00'
+
 // Notifications service
 export const notificationsService = {
   create: async (
     data: NotificationFormData,
-    appTimezone?: string
+    _appTimezone?: string
   ): Promise<NotificationDocument> => {
     const { type, targetAudience } = normalizeNotificationPayload(data)
     const dbData: Record<string, unknown> = {
@@ -1495,7 +1549,7 @@ export const notificationsService = {
       type,
       targetAudience,
       category: data.category || 'AppPush',
-      // Always start with 'Draft' status - function will update to 'Sent' after sending
+      // Send Immediately stays immediate; Schedule for Later uses fixed 1:00 PM EST
       status: data.schedule === 'Schedule for Later' ? 'Scheduled' : 'Draft',
       recipients: 0, // Will be updated when notification is sent
     }
@@ -1514,21 +1568,15 @@ export const notificationsService = {
       }
     }
 
-    // Handle scheduling: store in UTC when app timezone is provided
-    if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
-      if (appTimezone) {
-        const utcDate = appTimeToUTC(
-          data.scheduledAt,
-          data.scheduledTime,
-          appTimezone
-        )
-        dbData.scheduledAt = utcDate.toISOString()
-      } else {
-        const [hours, minutes] = data.scheduledTime.split(':')
-        const scheduledDate = new Date(data.scheduledAt)
-        scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-        dbData.scheduledAt = scheduledDate.toISOString()
-      }
+    if (data.schedule === 'Schedule for Later' && data.scheduledAt) {
+      // Admin scheduled notifications are fixed to 1:00 PM Eastern.
+      const sourceTimezone = DEFAULT_APP_TIMEZONE
+      const utcDate = appTimeToUTC(
+        data.scheduledAt,
+        NOTIFICATION_SEND_TIME_EST,
+        sourceTimezone
+      )
+      dbData.scheduledAt = utcDate.toISOString()
     }
 
     const notification = await DatabaseService.create<NotificationDocument>(
@@ -1536,16 +1584,9 @@ export const notificationsService = {
       dbData
     )
 
-    // If sending immediately, trigger the send function
-    // The function will update status to 'Sent' and set sentAt after sending
+    // If sending immediately, trigger send now.
     if (data.schedule === 'Send Immediately') {
-      try {
-        await notificationsService.sendNotification(notification.$id)
-      } catch (error) {
-        console.error('Error sending notification:', error)
-        // Status is already Draft, so just re-throw the error
-        throw error
-      }
+      await notificationsService.sendNotification(notification.$id)
     }
 
     return notification
@@ -1560,7 +1601,7 @@ export const notificationsService = {
   update: async (
     id: string,
     data: Partial<NotificationFormData>,
-    appTimezone?: string
+    _appTimezone?: string
   ): Promise<NotificationDocument> => {
     const { type, targetAudience } = normalizeNotificationPayload(data)
     // Only include actual database fields
@@ -1586,24 +1627,18 @@ export const notificationsService = {
       }
     }
 
-    // Handle scheduling updates
-    if (data.schedule === 'Schedule for Later' && data.scheduledAt && data.scheduledTime) {
-      if (appTimezone) {
-        const utcDate = appTimeToUTC(
-          data.scheduledAt,
-          data.scheduledTime,
-          appTimezone
-        )
-        dbData.scheduledAt = utcDate.toISOString()
-      } else {
-        const [hours, minutes] = data.scheduledTime.split(':')
-        const scheduledDate = new Date(data.scheduledAt)
-        scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0)
-        dbData.scheduledAt = scheduledDate.toISOString()
-      }
+    // Handle scheduling updates (all sends are pinned to 1:00 PM EST)
+    if (data.schedule === 'Schedule for Later' && data.scheduledAt) {
+      // Admin scheduled notifications are fixed to 1:00 PM Eastern.
+      const sourceTimezone = DEFAULT_APP_TIMEZONE
+      const utcDate = appTimeToUTC(
+        data.scheduledAt,
+        NOTIFICATION_SEND_TIME_EST,
+        sourceTimezone
+      )
+      dbData.scheduledAt = utcDate.toISOString()
       dbData.status = 'Scheduled'
     } else if (data.schedule === 'Send Immediately') {
-      // Clear scheduledAt if switching to immediate
       dbData.scheduledAt = null
       dbData.status = 'Draft'
     }
@@ -1614,14 +1649,8 @@ export const notificationsService = {
       dbData
     )
 
-    // If publishing (Send Immediately), trigger the send function after updating the document
     if (data.schedule === 'Send Immediately') {
-      try {
-        await notificationsService.sendNotification(id)
-      } catch (error) {
-        console.error('Error sending notification:', error)
-        throw error
-      }
+      await notificationsService.sendNotification(id)
     }
 
     return updated

@@ -311,7 +311,7 @@ const LocationPicker = ({
       {/* Address Fields - Above Map */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Address */}
-        <div className="relative z-[1000]">
+        <div className="relative z-1000">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Address <span className="text-red-500">*</span>
           </label>
@@ -377,14 +377,13 @@ const LocationPicker = ({
         {/* ZIP Code */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            ZIP Code <span className="text-red-500">*</span>
+            ZIP Code
           </label>
           <input
             type="text"
             placeholder="Enter ZIP Code"
             value={zipCode || ''}
             onChange={(e) => onZipCodeChange?.(e.target.value)}
-            required
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
           />
         </div>

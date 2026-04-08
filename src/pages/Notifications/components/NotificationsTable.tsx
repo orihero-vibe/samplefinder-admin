@@ -6,7 +6,7 @@ interface Notification {
   title: string
   target: string
   timing: string
-  type: 'Event Reminder' | 'Promotional' | 'Engagement'
+  type: 'Notification' | 'Event Reminder' | 'Promotional' | 'Engagement'
   recipients: number
   date: string
   status: 'Scheduled' | 'Sent' | 'Draft'
@@ -39,6 +39,8 @@ const NotificationsTable = ({
 }: NotificationsTableProps) => {
   const getTypeColor = (type: string) => {
     switch (type) {
+      case 'Notification':
+        return 'bg-red-100 text-red-800'
       case 'Event Reminder':
         return 'bg-red-100 text-red-800'
       case 'Promotional':

@@ -13,7 +13,7 @@ const AuthLayout = ({ children }: AuthLayoutProps) => {
         <div className="w-full max-w-[400px]">{children}</div>
       </div>
 
-      <div className="flex-1 bg-primary-gradient relative hidden lg:block md:min-h-screen min-h-[40vh] overflow-hidden">
+      <div className="flex-1 bg-admin-login-gradient relative hidden lg:block md:min-h-screen min-h-[40vh] overflow-hidden">
         <AppLogo
           variant="icon"
           className="text-[#1E0E50]/70 absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2"

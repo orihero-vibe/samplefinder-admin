@@ -1,0 +1,1 @@
+I will be using react, tailwindcdss, vite, type alias, 

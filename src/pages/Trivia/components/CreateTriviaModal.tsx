@@ -103,6 +103,10 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     onClose()
   }
 
+  const sortedBrands = [...brands].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+  )
+
   const getNextTuesdayWindowUTC = (timezone: string): { startDate: string; endDate: string } => {
     const now = new Date()
     const { dateStr } = utcToAppTimeFormInputs(now.toISOString(), timezone)
@@ -258,7 +262,7 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
                 <option value="">
                   {isLoadingBrands ? 'Loading clients...' : 'Choose Client'}
                 </option>
-                {brands.map((brand) => (
+                {sortedBrands.map((brand) => (
                   <option key={brand.$id} value={brand.$id}>
                     {brand.name}
                   </option>
