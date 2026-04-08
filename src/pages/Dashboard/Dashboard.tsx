@@ -463,8 +463,8 @@ const Dashboard = () => {
       latitude = eventDoc.location[1]?.toString() || ''
     }
 
-    // Resolve locationId when event references a Location document (for display + duplicate)
-    let locationName = ''
+    // Prefer persisted location name; else resolve via locationId (legacy events)
+    let locationName = (eventDoc.locationName && String(eventDoc.locationName).trim()) || ''
     let resolvedAddress = eventDoc.address || ''
     let resolvedCity = eventDoc.city || ''
     let resolvedState = eventDoc.state || ''
@@ -472,7 +472,7 @@ const Dashboard = () => {
     let resolvedLatitude = latitude
     let resolvedLongitude = longitude
     const locationId = (eventDoc as EventDocument & { locationId?: string }).locationId
-    if (locationId) {
+    if (!locationName && locationId) {
       try {
         const location = await locationsService.getById(locationId)
         if (location) {
@@ -921,6 +921,10 @@ const Dashboard = () => {
             eventPayload.location = locationDoc.location
           }
 
+          if (locationDoc.name) {
+            eventPayload.locationName = locationDoc.name
+          }
+
           if (discount) {
             eventPayload.discount = discount.trim()
           }
@@ -1069,6 +1073,14 @@ const Dashboard = () => {
         eventPayload.discount = String(eventData.discount).trim()
       }
 
+      const trimmedLocationName =
+        eventData.locationName != null && String(eventData.locationName).trim() !== ''
+          ? String(eventData.locationName).trim()
+          : ''
+      if (trimmedLocationName) {
+        eventPayload.locationName = trimmedLocationName
+      }
+
       // 6. Create event
       await eventsService.create(eventPayload)
 
@@ -1207,6 +1219,12 @@ const Dashboard = () => {
       } else {
         eventPayload.discount = null
       }
+
+      const trimmedLocationName =
+        eventData.locationName != null && String(eventData.locationName).trim() !== ''
+          ? String(eventData.locationName).trim()
+          : ''
+      eventPayload.locationName = trimmedLocationName || null
 
       // 6. Update event
       await eventsService.update(eventId, eventPayload)
