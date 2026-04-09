@@ -367,7 +367,7 @@ const CreateNotificationModal = ({
 
     setIsSubmitting(true)
     try {
-      await onSave(normalized)
+      await onSave({ ...normalized, type: 'Notification' })
       setShowUnsavedChangesModal(false)
       setFormData(createEmptyNotificationForm())
       setValidationErrors({})
@@ -547,36 +547,6 @@ const CreateNotificationModal = ({
                 )}
                 <p className="text-xs text-gray-500 mt-1">
                   {formData.message.length}/{VALIDATION_RULES.message.maxLength} characters
-                </p>
-              </div>
-
-              {/* Notification type (Appwrite enum: must match exactly) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Notification type
-                </label>
-                <div className="relative">
-                  <select
-                    value={formData.type}
-                    onChange={(e) =>
-                      handleInputChange(
-                        'type',
-                        e.target.value as NotificationFormData['type']
-                      )
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
-                  >
-                    <option value="Event Reminder">Event Reminder</option>
-                    <option value="Promotional">Promotional</option>
-                    <option value="Engagement">Engagement</option>
-                  </select>
-                  <Icon
-                    icon="mdi:chevron-down"
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Classifies the notification in Appwrite. Admin pushes are usually Promotional or Engagement.
                 </p>
               </div>
 
