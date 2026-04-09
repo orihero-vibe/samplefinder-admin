@@ -214,8 +214,16 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
 // ============================================================================
 // TRIVIA FUNCTIONS
 // ============================================================================
-/** Trivia modal is only valid Tuesday 00:00–23:59 America/New_York (see Trivia Tuesday push). */
-function isTriviaTuesdayEastern(now = new Date()) {
+/**
+ * Trivia availability gate.
+ * Default behavior is enabled daily to support QA/testing and faster bug resolution.
+ * Set TRIVIA_ONLY_TUESDAY_ET=true to restore Tuesday-only gating.
+ */
+function isTriviaAvailableNow(now = new Date()) {
+    const enforceTuesdayOnly = String(process.env.TRIVIA_ONLY_TUESDAY_ET || '').toLowerCase() === 'true';
+    if (!enforceTuesdayOnly) {
+        return true;
+    }
     const weekday = new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/New_York',
         weekday: 'long',
@@ -230,8 +238,8 @@ function isTriviaTuesdayEastern(now = new Date()) {
 const GET_ACTIVE_TRIVIA_LIMIT = 100;
 const GET_ACTIVE_TRIVIA_RESPONSES_LIMIT = 500;
 async function getActiveTrivia(databases, userId, log) {
-    if (!isTriviaTuesdayEastern()) {
-        log('Trivia: not Tuesday (America/New_York), returning no active trivia');
+    if (!isTriviaAvailableNow()) {
+        log('Trivia is not available by current schedule configuration');
         return [];
     }
     const now = new Date().toISOString();
@@ -323,10 +331,10 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
             message: 'This trivia question is not currently active',
         };
     }
-    if (!isTriviaTuesdayEastern()) {
+    if (!isTriviaAvailableNow()) {
         throw {
             code: 400,
-            message: 'Trivia is only available on Tuesday (Eastern Time)',
+            message: 'Trivia is not available right now',
         };
     }
     // 3. Validate the user exists
@@ -353,6 +361,15 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
     }
     // 6. Check if answer is correct (coerce to number - DB may return string)
     const correctIndex = Number(trivia.correctOptionIndex);
+    if (!Number.isInteger(correctIndex) ||
+        correctIndex < 0 ||
+        correctIndex >= trivia.answers.length) {
+        log(`Invalid correctOptionIndex for trivia ${triviaId}: ${String(trivia.correctOptionIndex)} (answers length: ${trivia.answers.length})`);
+        throw {
+            code: 500,
+            message: 'Trivia configuration error: invalid correct answer index',
+        };
+    }
     const isCorrect = Number(answerIndex) === correctIndex;
     const answerText = trivia.answers[answerIndex];
     // 7. Create the trivia response record
@@ -369,7 +386,7 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
         pointsAwarded = trivia.points;
         // Get current user points
         const userDoc = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
-        const currentPoints = userDoc.totalPoints || 0;
+        const currentPoints = Number(userDoc.totalPoints) || 0;
         // Update user's total points
         await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId, {
             totalPoints: currentPoints + pointsAwarded,
@@ -396,10 +413,10 @@ async function dismissTrivia(databases, userId, triviaId, log) {
     catch {
         throw { code: 404, message: 'User not found' };
     }
-    if (!isTriviaTuesdayEastern()) {
+    if (!isTriviaAvailableNow()) {
         throw {
             code: 400,
-            message: 'Trivia is only available on Tuesday (Eastern Time)',
+            message: 'Trivia is not available right now',
         };
     }
     let trivia;
