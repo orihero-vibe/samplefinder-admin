@@ -348,14 +348,14 @@ const Notifications = () => {
         schedule = 'Send Immediately'
       }
 
-      const { type, targetAudience } = normalizeNotificationFormData(fullNotification)
+      const { targetAudience } = normalizeNotificationFormData(fullNotification)
 
       setEditingNotification({
         id: notification.id,
         data: {
           title: fullNotification.title,
           message: fullNotification.message,
-          type,
+          type: 'Notification',
           targetAudience,
           category: 'AppPush',
           schedule,
@@ -380,13 +380,13 @@ const Notifications = () => {
     try {
       // Fetch full notification document to get all fields including message
       const fullNotification = await notificationsService.getById(notification.id)
-      const { type, targetAudience } = normalizeNotificationFormData(fullNotification)
+      const { targetAudience } = normalizeNotificationFormData(fullNotification)
 
       // Set duplicating data (not edit mode - will create a new notification)
       setDuplicatingData({
         title: fullNotification.title,
         message: fullNotification.message,
-        type,
+        type: 'Notification',
         targetAudience,
         category: 'AppPush',
         schedule: 'Send Immediately',
