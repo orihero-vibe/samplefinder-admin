@@ -67,8 +67,19 @@ async function getReferralPointSettings(databases) {
  */
 async function applyReferral(databases, functions, data, log) {
     const { userId, referralCode } = data;
-    // 1. Get invitee profile
-    const inviteeProfile = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
+    // 1. Get invitee profile (userId may be an Auth ID, not a document ID)
+    let inviteeProfile;
+    try {
+        inviteeProfile = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
+    }
+    catch {
+        // Fallback: look up by authID field
+        const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
+        if (profileResult.total === 0) {
+            throw { code: 404, message: 'User profile not found' };
+        }
+        inviteeProfile = profileResult.documents[0];
+    }
     // 2. Idempotency check: invitee already used a referral code
     if (inviteeProfile.usedReferralCode) {
         log(`User ${userId} already used referral code: ${inviteeProfile.usedReferralCode}`);
@@ -83,8 +94,8 @@ async function applyReferral(databases, functions, data, log) {
         throw { code: 404, message: 'Referral code not found' };
     }
     const referrerProfile = referrerResult.documents[0];
-    // 4. Prevent self-referral
-    if (referrerProfile.$id === userId) {
+    // 4. Prevent self-referral (compare doc IDs since userId may be an auth ID)
+    if (referrerProfile.$id === inviteeProfile.$id) {
         throw { code: 400, message: 'Cannot use your own referral code' };
     }
     // 5. Read point values from Settings table
@@ -96,11 +107,11 @@ async function applyReferral(databases, functions, data, log) {
     log(`Awarded ${referrerPts} pts to referrer ${referrerProfile.$id}`);
     // 7. Award points to invitee and mark usedReferralCode
     const inviteeCurrentPts = inviteeProfile.totalPoints || 0;
-    await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId, {
+    await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, inviteeProfile.$id, {
         totalPoints: inviteeCurrentPts + refereePts,
         usedReferralCode: referralCode,
     });
-    log(`Awarded ${refereePts} pts to invitee ${userId}, set usedReferralCode`);
+    log(`Awarded ${refereePts} pts to invitee ${inviteeProfile.$id}, set usedReferralCode`);
     // 8. Send push notification to referrer (best-effort)
     const notificationFunctionId = process.env.APPWRITE_NOTIFICATION_FUNCTION_ID;
     if (notificationFunctionId) {
