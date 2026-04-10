@@ -552,6 +552,53 @@ export const eventsService = {
       ['name', 'city', 'address', 'state', 'locationName'],
       queries
     ),
+
+  /** Push saved Location fields onto every event linked via `locationId` (denormalized copy on the event). */
+  updateDenormalizedFieldsForLinkedLocation: async (
+    locationId: string,
+    fields: {
+      locationName: string
+      address: string
+      city: string
+      state: string
+      zipCode: string
+      location?: [number, number] | null
+    }
+  ): Promise<void> => {
+    const batchSize = 100
+    let offset = 0
+    for (;;) {
+      const result = await DatabaseService.list<EventDocument>(
+        appwriteConfig.collections.events,
+        [
+          Query.equal('locationId', [locationId]),
+          Query.limit(batchSize),
+          Query.offset(offset),
+        ]
+      )
+      const patch: Record<string, unknown> = {
+        locationName: fields.locationName,
+        address: fields.address,
+        city: fields.city,
+        state: fields.state,
+        zipCode: fields.zipCode,
+      }
+      if (fields.location !== undefined) {
+        patch.location = fields.location
+      }
+      await Promise.all(
+        result.documents.map((doc) =>
+          DatabaseService.update<EventDocument>(
+            appwriteConfig.collections.events,
+            doc.$id,
+            patch
+          )
+        )
+      )
+      if (result.documents.length < batchSize) break
+      offset += batchSize
+    }
+  },
 }
 
 // Category Document interface

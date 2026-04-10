@@ -50,6 +50,7 @@ interface EventData {
   latitude?: string
   longitude?: string
   locationName?: string
+  locationId?: string
   timezone?: string
 }
 
@@ -85,6 +86,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     latitude: '',
     longitude: '',
     locationName: '',
+    locationId: undefined,
     timezone: DEFAULT_APP_TIMEZONE,
   }
   
@@ -140,6 +142,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             latitude: initialData.latitude || '',
             longitude: initialData.longitude || '',
             locationName: initialData.locationName || '',
+            locationId: initialData.locationId,
             timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
           } : {
             eventName: '',
@@ -162,6 +165,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             latitude: '',
             longitude: '',
             locationName: '',
+            locationId: undefined,
             timezone: DEFAULT_APP_TIMEZONE,
           }
           
@@ -192,7 +196,11 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                   )
                   if (matchingLocation) {
                     setLocationDisplayValue(matchingLocation.name)
-                    setFormData((prev) => ({ ...prev, locationName: matchingLocation.name }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      locationName: matchingLocation.name,
+                      locationId: matchingLocation.$id,
+                    }))
                   } else {
                     setLocationDisplayValue(initialData.address || '')
                   }
@@ -232,6 +240,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             latitude: '',
             longitude: '',
             locationName: '',
+            locationId: undefined,
             timezone: DEFAULT_APP_TIMEZONE,
           }
           
@@ -463,8 +472,9 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
     setIsSubmitting(true)
     try {
       // If location name is filled, create location first
+      let createdLocationId: string | undefined
       if (showAddLocationFields && locationName.trim() && trimmed.address && trimmed.city && trimmed.state && trimmed.latitude && trimmed.longitude) {
-        await locationsService.create({
+        const created = await locationsService.create({
           name: locationName.trim(),
           address: trimmed.address,
           city: trimmed.city,
@@ -472,11 +482,12 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
           zipCode: trimmed.zipCode || '',
           location: [parseFloat(trimmed.longitude), parseFloat(trimmed.latitude)],
         })
+        createdLocationId = created.$id
       }
 
       const payload =
         showAddLocationFields && locationName.trim()
-          ? { ...trimmed, locationName: locationName.trim() }
+          ? { ...trimmed, locationName: locationName.trim(), locationId: createdLocationId }
           : trimmed
       
       await onSave(payload)
@@ -852,7 +863,10 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             {!showAddLocationFields ? (
               <LocationAutocomplete
                 value={locationDisplayValue}
-                onChange={setLocationDisplayValue}
+                onChange={(v) => {
+                  setLocationDisplayValue(v)
+                  setFormData((prev) => ({ ...prev, locationId: undefined }))
+                }}
                 onLocationSelect={(location: LocationDocument) => {
                   // Extract coordinates - handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
                   let latitude = ''
@@ -899,11 +913,13 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                     latitude,
                     longitude,
                     locationName: location.name || '',
+                    locationId: location.$id,
                   }))
                 }}
                 onAddLocationClick={() => {
                   setShowAddLocationFields(true)
                   setLocationDisplayValue('')
+                  setFormData((prev) => ({ ...prev, locationId: undefined }))
                 }}
                 placeholder="Search for a location..."
                 required
@@ -969,6 +985,7 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                       zipCode: '',
                       latitude: '',
                       longitude: '',
+                      locationId: undefined,
                     }))
                   }}
                   className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"

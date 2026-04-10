@@ -1,8 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Icon } from '@iconify/react'
+import { Query } from '../lib/appwrite'
 import { locationsService, type LocationDocument } from '../lib/services'
 import { useNotificationStore } from '../stores/notificationStore'
 import AddLocationModal from '../pages/Locations/components/AddLocationModal'
+
+const LOCATION_PICKER_PAGE_SIZE = 2000
+const LOCATION_SEARCH_FIELDS = ['name', 'address', 'city', 'state', 'zipCode'] as const
 
 // Helper function to extract error message from Appwrite error
 const extractErrorMessage = (error: unknown): string => {
@@ -31,15 +35,27 @@ const LocationAutocomplete = ({
   className = '',
   onAddLocationClick,
 }: LocationAutocompleteProps) => {
-  const [locations, setLocations] = useState<LocationDocument[]>([])
+  const [pickableLocations, setPickableLocations] = useState<LocationDocument[]>([])
   const [isOpen, setIsOpen] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isPickerListLoading, setIsPickerListLoading] = useState(false)
+  const [pickerListError, setPickerListError] = useState(false)
   const [isAddLocationModalOpen, setIsAddLocationModalOpen] = useState(false)
-  
+
   const inputRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pickListFetchedRef = useRef(false)
   const { addNotification } = useNotificationStore()
+
+  const filteredLocations = useMemo(() => {
+    const q = value.trim().toLowerCase()
+    if (!q) return pickableLocations
+    return pickableLocations.filter((doc) =>
+      LOCATION_SEARCH_FIELDS.some((field) => {
+        const fieldValue = (doc as Record<string, unknown>)[field]
+        return typeof fieldValue === 'string' && fieldValue.toLowerCase().includes(q)
+      })
+    )
+  }, [pickableLocations, value])
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -58,55 +74,46 @@ const LocationAutocomplete = ({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Fetch locations from database
-  const fetchLocations = useCallback(async (searchTerm: string) => {
-    if (!searchTerm.trim()) {
-      setLocations([])
-      setIsOpen(false)
-      return
-    }
-
-    setIsLoading(true)
+  const loadPickableLocations = useCallback(async () => {
+    setIsPickerListLoading(true)
+    setPickerListError(false)
     try {
-      const result = await locationsService.search(searchTerm.trim())
-      setLocations(result.documents)
-      setIsOpen(result.documents.length > 0 || searchTerm.trim().length > 0)
+      const result = await locationsService.list([
+        Query.orderAsc('name'),
+        Query.limit(LOCATION_PICKER_PAGE_SIZE),
+      ])
+      setPickableLocations(result.documents)
     } catch (error) {
-      console.error('Error fetching locations:', error)
-      setLocations([])
+      console.error('Error loading locations:', error)
+      setPickableLocations([])
+      setPickerListError(true)
     } finally {
-      setIsLoading(false)
+      setIsPickerListLoading(false)
+      pickListFetchedRef.current = true
     }
   }, [])
 
-  // Handle input change with debounce
+  const openDropdown = useCallback(async () => {
+    if (!pickListFetchedRef.current) {
+      await loadPickableLocations()
+    }
+    setIsOpen(true)
+  }, [loadPickableLocations])
+
+  // Handle input change — filter is client-side via filteredLocations
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
     onChange(newValue)
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current)
-    }
-
-    if (newValue.trim().length >= 1) {
-      debounceTimerRef.current = setTimeout(() => {
-        fetchLocations(newValue)
-      }, 300)
-    } else {
-      setLocations([])
-      setIsOpen(false)
-    }
+    setIsOpen(true)
   }
 
   // Handle location selection
   const handleSelect = (location: LocationDocument) => {
-    // Display only the location name
     const displayValue = location.name || `${location.address}, ${location.city}`
-    
+
     onChange(displayValue)
     onLocationSelect(location)
     setIsOpen(false)
-    setLocations([])
   }
 
   // Handle keyboard navigation
@@ -119,7 +126,6 @@ const LocationAutocomplete = ({
   // Clear input
   const handleClear = () => {
     onChange('')
-    setLocations([])
     setIsOpen(false)
     inputRef.current?.focus()
   }
@@ -144,7 +150,6 @@ const LocationAutocomplete = ({
     longitude: string
   }) => {
     try {
-      // Create location in database
       const newLocation = await locationsService.create({
         name: locationData.name,
         address: locationData.address,
@@ -156,30 +161,39 @@ const LocationAutocomplete = ({
           : undefined,
       })
 
-      // Show success notification
       addNotification({
         type: 'success',
         title: 'Location Created',
         message: 'The location has been successfully created.',
       })
 
-      // Select the newly created location
+      setPickableLocations((prev) => {
+        const next = [...prev, newLocation]
+        next.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        return next
+      })
       handleSelect(newLocation)
       setIsAddLocationModalOpen(false)
     } catch (error) {
       console.error('Error creating location:', error)
-      
-      // Show error notification
+
       addNotification({
         type: 'error',
         title: 'Failed to Create Location',
         message: extractErrorMessage(error),
       })
-      
-      // Re-throw to let modal handle it (keep modal open)
+
       throw error
     }
   }
+
+  const showDropdown =
+    isOpen &&
+    (isPickerListLoading ||
+      pickerListError ||
+      filteredLocations.length > 0 ||
+      value.trim().length > 0 ||
+      (pickableLocations.length === 0 && !isPickerListLoading))
 
   return (
     <>
@@ -191,9 +205,7 @@ const LocationAutocomplete = ({
             value={value}
             onChange={handleInputChange}
             onFocus={() => {
-              if (value.trim().length > 0 || locations.length > 0) {
-                setIsOpen(true)
-              }
+              void openDropdown()
             }}
             onKeyDown={handleKeyDown}
             onInvalid={(e) => {
@@ -210,10 +222,10 @@ const LocationAutocomplete = ({
             autoComplete="off"
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-            {isLoading && (
+            {isPickerListLoading && (
               <Icon icon="mdi:loading" className="w-5 h-5 text-gray-400 animate-spin" />
             )}
-            {value && !isLoading && (
+            {value && !isPickerListLoading && (
               <button
                 type="button"
                 onClick={handleClear}
@@ -225,15 +237,18 @@ const LocationAutocomplete = ({
           </div>
         </div>
 
-        {/* Locations Dropdown */}
-        {isOpen && (locations.length > 0 || value.trim().length > 0) && (
+        {showDropdown && (
           <div
             ref={dropdownRef}
             className="absolute z-[9999] w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto"
           >
-            {locations.length > 0 ? (
+            {isPickerListLoading && pickableLocations.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-gray-600">Loading locations…</div>
+            ) : pickerListError ? (
+              <div className="px-4 py-3 text-sm text-red-600">Could not load locations. Try again.</div>
+            ) : filteredLocations.length > 0 ? (
               <>
-                {locations.map((location) => (
+                {filteredLocations.map((location) => (
                   <button
                     key={location.$id}
                     type="button"
@@ -253,7 +268,6 @@ const LocationAutocomplete = ({
                     </div>
                   </button>
                 ))}
-                {/* Create New Location Button */}
                 <button
                   type="button"
                   onClick={() => {
@@ -272,7 +286,27 @@ const LocationAutocomplete = ({
                   </span>
                 </button>
               </>
-            ) : value.trim().length > 0 && !isLoading ? (
+            ) : value.trim().length > 0 ? (
+              <div className="px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false)
+                    if (onAddLocationClick) {
+                      onAddLocationClick()
+                    } else {
+                      setIsAddLocationModalOpen(true)
+                    }
+                  }}
+                  className="w-full px-4 py-3 text-left hover:bg-[#1D0A74]/5 focus:bg-[#1D0A74]/5 focus:outline-none flex items-center gap-3 border border-[#1D0A74] rounded-lg bg-white"
+                >
+                  <Icon icon="mdi:plus-circle" className="w-5 h-5 text-[#1D0A74] flex-shrink-0" />
+                  <span className="font-semibold text-[#1D0A74] text-sm">
+                    Create New Location
+                  </span>
+                </button>
+              </div>
+            ) : pickableLocations.length === 0 ? (
               <div className="px-4 py-3">
                 <button
                   type="button"
@@ -297,7 +331,6 @@ const LocationAutocomplete = ({
         )}
       </div>
 
-      {/* Add Location Modal */}
       <AddLocationModal
         isOpen={isAddLocationModalOpen}
         onClose={() => setIsAddLocationModalOpen(false)}

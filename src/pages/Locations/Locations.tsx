@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ConfirmationModal, DashboardLayout } from '../../components'
 import { Query } from '../../lib/appwrite'
-import { locationsService, type LocationDocument, type LocationFormData } from '../../lib/services'
+import { eventsService, locationsService, type LocationDocument, type LocationFormData } from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 import {
   AddLocationModal,
@@ -315,6 +315,21 @@ const Locations = () => {
       }
       
       await locationsService.update(selectedLocation.id, formData)
+
+      const locPoint =
+        locationData.latitude && locationData.longitude
+          ? ([parseFloat(locationData.longitude), parseFloat(locationData.latitude)] as [number, number])
+          : null
+
+      await eventsService.updateDenormalizedFieldsForLinkedLocation(selectedLocation.id, {
+        locationName: locationData.name,
+        address: locationData.address,
+        city: locationData.city,
+        state: locationData.state,
+        zipCode: locationData.zipCode,
+        location: locPoint,
+      })
+
       await fetchLocations(currentPage) // Refresh list - keep current page
       
       // Show success notification

@@ -36,6 +36,7 @@ interface EventData {
   latitude?: string
   longitude?: string
   locationName?: string
+  locationId?: string
   timezone?: string
 }
 
@@ -105,6 +106,7 @@ const EditEventModal = ({
     latitude: '',
     longitude: '',
     locationName: '',
+    locationId: undefined,
     timezone: DEFAULT_APP_TIMEZONE,
   })
 
@@ -165,6 +167,10 @@ const EditEventModal = ({
             console.error('Error finding location:', error)
           }
         }
+        const initialLocationId =
+          initialData.locationId != null && String(initialData.locationId).trim() !== ''
+            ? String(initialData.locationId).trim()
+            : undefined
         setLocationDisplayValue(resolvedLocationName)
 
         const needsDefaults = !initialData.checkInPoints || !initialData.reviewPoints
@@ -197,6 +203,7 @@ const EditEventModal = ({
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
               locationName: resolvedLocationName,
+              locationId: initialLocationId,
               timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
             
@@ -227,6 +234,7 @@ const EditEventModal = ({
               latitude: initialData.latitude || '',
               longitude: initialData.longitude || '',
               locationName: resolvedLocationName,
+              locationId: initialLocationId,
               timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
             
@@ -257,6 +265,7 @@ const EditEventModal = ({
             latitude: initialData.latitude || '',
             longitude: initialData.longitude || '',
             locationName: resolvedLocationName,
+            locationId: initialLocationId,
             timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
           }
           
@@ -837,7 +846,10 @@ const EditEventModal = ({
             </label>
             <LocationAutocomplete
               value={locationDisplayValue}
-              onChange={setLocationDisplayValue}
+              onChange={(v) => {
+                setLocationDisplayValue(v)
+                setFormData((prev) => ({ ...prev, locationId: undefined }))
+              }}
               onLocationSelect={(location: LocationDocument) => {
                 // Extract coordinates - handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
                 let latitude = ''
@@ -884,6 +896,7 @@ const EditEventModal = ({
                   latitude,
                   longitude,
                   locationName: location.name || '',
+                  locationId: location.$id,
                 }))
               }}
               placeholder="Search for a location..."

@@ -73,6 +73,7 @@ const Dashboard = () => {
     latitude?: string
     longitude?: string
     locationName?: string
+    locationId?: string
     timezone?: string
   } | undefined>(undefined)
   const [editModalInitialData, setEditModalInitialData] = useState<{
@@ -96,6 +97,7 @@ const Dashboard = () => {
     latitude?: string
     longitude?: string
     locationName?: string
+    locationId?: string
     timezone?: string
   } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -467,7 +469,6 @@ const Dashboard = () => {
       latitude = eventDoc.location[1]?.toString() || ''
     }
 
-    // Prefer persisted location name; else resolve via locationId (legacy events)
     let locationName = (eventDoc.locationName && String(eventDoc.locationName).trim()) || ''
     let resolvedAddress = eventDoc.address || ''
     let resolvedCity = eventDoc.city || ''
@@ -476,16 +477,16 @@ const Dashboard = () => {
     let resolvedLatitude = latitude
     let resolvedLongitude = longitude
     const locationId = (eventDoc as EventDocument & { locationId?: string }).locationId
-    if (!locationName && locationId) {
+    if (locationId) {
       try {
         const location = await locationsService.getById(locationId)
         if (location) {
           locationName = location.name || ''
-          if (!eventDoc.address) resolvedAddress = location.address || ''
-          if (!eventDoc.city) resolvedCity = location.city || ''
-          if (!eventDoc.state) resolvedState = location.state || ''
-          if (!eventDoc.zipCode) resolvedZipCode = location.zipCode || ''
-          if (!resolvedLatitude && !resolvedLongitude && location.location && Array.isArray(location.location) && location.location.length >= 2) {
+          resolvedAddress = location.address || ''
+          resolvedCity = location.city || ''
+          resolvedState = location.state || ''
+          resolvedZipCode = location.zipCode || ''
+          if (location.location && Array.isArray(location.location) && location.location.length >= 2) {
             resolvedLongitude = location.location[0]?.toString() || ''
             resolvedLatitude = location.location[1]?.toString() || ''
           }
@@ -514,6 +515,7 @@ const Dashboard = () => {
       state: resolvedState,
       zipCode: resolvedZipCode,
       locationName: locationName || undefined,
+      locationId: locationId || undefined,
       category: categoryTitle,
       products: productsArray,
       discount: formatDiscountForInput(eventDoc.discount),
@@ -1085,6 +1087,17 @@ const Dashboard = () => {
         eventPayload.locationName = trimmedLocationName
       }
 
+      const trimmedLocationId =
+        eventData.locationId != null && String(eventData.locationId).trim() !== ''
+          ? String(eventData.locationId).trim()
+          : ''
+      if (trimmedLocationId) {
+        eventPayload.locationId = trimmedLocationId
+      } else if (trimmedLocationName) {
+        const linked = await locationsService.findByName(trimmedLocationName)
+        if (linked) eventPayload.locationId = linked.$id
+      }
+
       // 6. Create event
       await eventsService.create(eventPayload)
 
@@ -1229,6 +1242,19 @@ const Dashboard = () => {
           ? String(eventData.locationName).trim()
           : ''
       eventPayload.locationName = trimmedLocationName || null
+
+      const trimmedLocationId =
+        eventData.locationId != null && String(eventData.locationId).trim() !== ''
+          ? String(eventData.locationId).trim()
+          : ''
+      if (trimmedLocationId) {
+        eventPayload.locationId = trimmedLocationId
+      } else if (trimmedLocationName) {
+        const linked = await locationsService.findByName(trimmedLocationName)
+        eventPayload.locationId = linked?.$id ?? null
+      } else {
+        eventPayload.locationId = null
+      }
 
       // 6. Update event
       await eventsService.update(eventId, eventPayload)
