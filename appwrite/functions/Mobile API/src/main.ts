@@ -438,9 +438,9 @@ function haversineDistance(
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRadians(lat1)) *
-      Math.cos(toRadians(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos(toRadians(lat2)) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
@@ -607,7 +607,7 @@ async function getEventsByLocation(
           typeof event.client === 'string'
             ? event.client
             : (event.client as Record<string, unknown>)?.$id ||
-              JSON.stringify(event.client).substring(0, 50);
+            JSON.stringify(event.client).substring(0, 50);
         const errorMessage = err instanceof Error ? err.message : String(err);
         log(`Error fetching client ${clientInfo}: ${errorMessage}`);
       }
@@ -1178,11 +1178,11 @@ async function createUser(
       referralCode,
       ...(data.dob?.trim()
         ? {
-            dob:
-              data.dob.trim().length === 10
-                ? `${data.dob.trim()}T00:00:00.000Z`
-                : data.dob.trim(),
-          }
+          dob:
+            data.dob.trim().length === 10
+              ? `${data.dob.trim()}T00:00:00.000Z`
+              : data.dob.trim(),
+        }
         : {}),
     };
 

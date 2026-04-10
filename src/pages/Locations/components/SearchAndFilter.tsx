@@ -52,8 +52,7 @@ const SearchAndFilter = ({
       state: 'State',
       zipCode: 'ZIP Code',
     }
-    const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
-    return `${sortLabels[sortBy] || 'Sort'} ${orderIcon}`
+    return `${sortLabels[sortBy] || 'Sort'}`
   }
 
   return (

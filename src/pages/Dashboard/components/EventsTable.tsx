@@ -7,6 +7,7 @@ interface Event {
   brand: string
   startTime: string
   endTime: string
+  timezone: string
   discount: string
   status: string
   statusColor: string
@@ -103,6 +104,12 @@ const EventsTable = ({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:pin" className="w-4 h-4" />
+                  Time Zone
+                </div>
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <div className="flex items-center gap-2">
+                  <Icon icon="mdi:pin" className="w-4 h-4" />
                   Discount
                 </div>
               </th>
@@ -120,7 +127,7 @@ const EventsTable = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {events.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500">
+                <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
                   <div className="flex flex-col items-center">
                     <Icon icon="mdi:calendar-remove" className="w-12 h-12 text-gray-400 mb-4" />
                     <p className="text-lg font-medium text-gray-900 mb-1">No events found</p>
@@ -146,6 +153,7 @@ const EventsTable = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{event.brand}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{event.startTime}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{event.endTime}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{event.timezone}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{event.discount}</td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${event.statusColor}`}>

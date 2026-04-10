@@ -16,12 +16,16 @@ interface EditTriviaModalProps {
 
 const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModalProps) => {
   const { appTimezone } = useTimezoneStore()
+  const isCustomTriviaScheduleEnabled =
+    import.meta.env.VITE_ENABLE_TRIVIA_CUSTOM_SCHEDULE !== 'false'
   const [formData, setFormData] = useState({
     client: '', // Client ID
     question: '',
     answers: ['', '', '', ''], // Array of answer strings
     correctOptionIndex: 0, // Index of correct answer
     points: 10, // Default points
+    scheduleDate: '',
+    scheduleTime: '',
   })
   const [brands, setBrands] = useState<ClientDocument[]>([])
   const [isLoadingBrands, setIsLoadingBrands] = useState(false)
@@ -67,12 +71,18 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
         ? [...trivia.answers, ...Array(Math.max(0, 4 - trivia.answers.length)).fill('')].slice(0, 4)
         : ['', '', '', '']
       
+      const startDateForm = trivia.startDate
+        ? utcToAppTimeFormInputs(trivia.startDate, appTimezone)
+        : { dateStr: '', timeStr: '' }
+
       const initialFormData = {
         client: trivia.client || '',
         question: trivia.question || '',
         answers,
         correctOptionIndex: trivia.correctOptionIndex ?? 0,
         points: trivia.points ?? 10,
+        scheduleDate: startDateForm.dateStr,
+        scheduleTime: startDateForm.timeStr,
       }
       setFormData(initialFormData)
       initialDataRef.current = initialFormData
@@ -93,6 +103,8 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
         answers: ['', '', '', ''],
         correctOptionIndex: 0,
         points: 10,
+        scheduleDate: '',
+        scheduleTime: '',
       })
       setError(null)
     }
@@ -116,7 +128,6 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
 
   const getNextTuesdayWindowUTC = (timezone: string): { startDate: string; endDate: string } => {
     const now = new Date()
-    const { dateStr } = utcToAppTimeFormInputs(now.toISOString(), timezone)
     const weekday = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       weekday: 'short',
@@ -130,17 +141,22 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
       Fri: 5,
       Sat: 6,
     }
+
     const currentWeekday = weekdayMap[weekday] ?? 0
     const rawDaysUntilTuesday = (2 - currentWeekday + 7) % 7
     const daysUntilTuesday = rawDaysUntilTuesday === 0 ? 7 : rawDaysUntilTuesday
 
-    const [y, m, d] = dateStr.split('-').map(Number)
-    const tuesdayDate = new Date(Date.UTC(y, m - 1, d + daysUntilTuesday, 0, 0, 0, 0))
-    const tuesdayDateStr = `${tuesdayDate.getUTCFullYear()}-${String(tuesdayDate.getUTCMonth() + 1).padStart(2, '0')}-${String(tuesdayDate.getUTCDate()).padStart(2, '0')}`
+    const baseDate = new Date()
+    baseDate.setDate(baseDate.getDate() + daysUntilTuesday)
+    const dateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(baseDate)
 
-    const startUtc = appTimeToUTC(tuesdayDateStr, '00:00', timezone)
-    const endUtc = appTimeToUTC(tuesdayDateStr, '23:59', timezone)
-
+    const startUtc = appTimeToUTC(dateStr, '00:00', timezone)
+    const endUtc = appTimeToUTC(dateStr, '23:59', timezone)
     return {
       startDate: startUtc.toISOString(),
       endDate: endUtc.toISOString(),
@@ -176,16 +192,38 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
       return
     }
 
+    if (isCustomTriviaScheduleEnabled && (!trimmed.scheduleDate || !trimmed.scheduleTime)) {
+      alert('Please select both schedule date and time.')
+      return
+    }
+
     try {
       setError(null)
       setIsSubmitting(true)
-      // Convert app-timezone form values to UTC ISO for storage
+      const scheduleWindow = isCustomTriviaScheduleEnabled
+        ? (() => {
+            const startUtc = appTimeToUTC(trimmed.scheduleDate, trimmed.scheduleTime, appTimezone)
+            const endUtc = appTimeToUTC(trimmed.scheduleDate, '23:59', appTimezone)
+            if (startUtc >= endUtc) {
+              alert('Please choose a time earlier than 11:59 PM.')
+              return null
+            }
+            return {
+              startDate: startUtc.toISOString(),
+              endDate: endUtc.toISOString(),
+            }
+          })()
+        : getNextTuesdayWindowUTC(appTimezone)
+
+      if (!scheduleWindow) return
+
       const triviaData = {
         client: trimmed.client || undefined,
         question: trimmed.question,
         answers: trimmed.answers,
         correctOptionIndex: trimmed.correctOptionIndex,
-        ...getNextTuesdayWindowUTC(appTimezone),
+        startDate: scheduleWindow.startDate,
+        endDate: scheduleWindow.endDate,
         points: trimmed.points,
       }
       await triviaService.update(triviaId, triviaData)
@@ -356,14 +394,42 @@ const EditTriviaModal = ({ isOpen, onClose, triviaId, onUpdate }: EditTriviaModa
             </p>
           </div>
 
+          {isCustomTriviaScheduleEnabled ? (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Schedule Date and Time <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  type="date"
+                  value={formData.scheduleDate}
+                  onChange={(e) => handleInputChange('scheduleDate', e.target.value)}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                />
+                <input
+                  type="time"
+                  value={formData.scheduleTime}
+                  onChange={(e) => handleInputChange('scheduleTime', e.target.value)}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Scheduled in app timezone ({appTimezone}).
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500 mb-6">
+              Trivia availability is automatically set to Tuesday only (12:00 AM - 11:59 PM in app timezone).
+            </p>
+          )}
+
           {/* Points Section */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Points Awarded <span className="text-red-500">*</span>
             </label>
-            <p className="text-xs text-gray-500 mb-2">
-              Trivia availability is automatically set to Tuesday only (12:00 AM - 11:59 PM in user timezone).
-            </p>
             <input
               type="number"
               min="0"

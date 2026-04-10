@@ -11,6 +11,7 @@ import {
   appTimeToUTC,
   formatDateInAppTimezone,
   formatTimeInAppTimezone,
+  getTimezoneAbbrevForDisplay,
   resolveSupportedAppTimezone,
   utcToAppTimeFormInputs,
 } from '../../lib/dateUtils'
@@ -35,6 +36,7 @@ interface Event {
   brand: string
   startTime: string
   endTime: string
+  timezone: string
   discount: string
   status: string
   statusColor: string
@@ -176,10 +178,11 @@ const Dashboard = () => {
 
   // Helper function to map database event document to EventsTable format (dates in app timezone)
   const mapEventDocumentToEvent = (doc: LocalEventDocument): Event => {
+    const eventTimezone = doc.timezone || appTimezone
     const formatDate = (dateStr?: string): string =>
-      dateStr ? formatDateInAppTimezone(dateStr, appTimezone, 'short') : ''
+      dateStr ? formatDateInAppTimezone(dateStr, eventTimezone, 'short') : ''
     const formatTime = (timeStr?: string): string =>
-      timeStr ? formatTimeInAppTimezone(timeStr, appTimezone) : ''
+      timeStr ? formatTimeInAppTimezone(timeStr, eventTimezone) : ''
 
     // Derive status from isArchived, isHidden, and event date/time (Active = live, In Active = scheduled or completed)
     const status = getEventStatus(doc)
@@ -197,6 +200,7 @@ const Dashboard = () => {
       brand: '', // Will be populated from client relationship if needed
       startTime: formatTime(doc.startTime),
       endTime: formatTime(doc.endTime),
+      timezone: getTimezoneAbbrevForDisplay(eventTimezone, doc.startTime || doc.date),
       discount: hasDiscount ? 'YES' : 'NO',
       status: status,
       statusColor: getEventStatusColor(status),
@@ -463,8 +467,8 @@ const Dashboard = () => {
       latitude = eventDoc.location[1]?.toString() || ''
     }
 
-    // Resolve locationId when event references a Location document (for display + duplicate)
-    let locationName = ''
+    // Prefer persisted location name; else resolve via locationId (legacy events)
+    let locationName = (eventDoc.locationName && String(eventDoc.locationName).trim()) || ''
     let resolvedAddress = eventDoc.address || ''
     let resolvedCity = eventDoc.city || ''
     let resolvedState = eventDoc.state || ''
@@ -472,7 +476,7 @@ const Dashboard = () => {
     let resolvedLatitude = latitude
     let resolvedLongitude = longitude
     const locationId = (eventDoc as EventDocument & { locationId?: string }).locationId
-    if (locationId) {
+    if (!locationName && locationId) {
       try {
         const location = await locationsService.getById(locationId)
         if (location) {
@@ -921,6 +925,10 @@ const Dashboard = () => {
             eventPayload.location = locationDoc.location
           }
 
+          if (locationDoc.name) {
+            eventPayload.locationName = locationDoc.name
+          }
+
           if (discount) {
             eventPayload.discount = discount.trim()
           }
@@ -1069,6 +1077,14 @@ const Dashboard = () => {
         eventPayload.discount = String(eventData.discount).trim()
       }
 
+      const trimmedLocationName =
+        eventData.locationName != null && String(eventData.locationName).trim() !== ''
+          ? String(eventData.locationName).trim()
+          : ''
+      if (trimmedLocationName) {
+        eventPayload.locationName = trimmedLocationName
+      }
+
       // 6. Create event
       await eventsService.create(eventPayload)
 
@@ -1207,6 +1223,12 @@ const Dashboard = () => {
       } else {
         eventPayload.discount = null
       }
+
+      const trimmedLocationName =
+        eventData.locationName != null && String(eventData.locationName).trim() !== ''
+          ? String(eventData.locationName).trim()
+          : ''
+      eventPayload.locationName = trimmedLocationName || null
 
       // 6. Update event
       await eventsService.update(eventId, eventPayload)

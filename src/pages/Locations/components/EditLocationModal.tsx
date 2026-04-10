@@ -138,9 +138,9 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto m-4">
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col m-4 overflow-hidden">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+          <div className="shrink-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Edit Location</h2>
             <p className="text-sm text-gray-600 mt-1">
@@ -157,6 +157,7 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
         </div>
 
         {/* Form */}
+          <div className="overflow-y-auto flex-1 min-h-0">
         <form onSubmit={handleSubmit} data-location-form className="p-6">
           {/* Location Name Input */}
           <div className="mb-6">
@@ -224,6 +225,7 @@ const EditLocationModal = ({ isOpen, onClose, onSave, initialData }: EditLocatio
             </button>
           </div>
         </form>
+          </div>
       </div>
     </div>
     </>

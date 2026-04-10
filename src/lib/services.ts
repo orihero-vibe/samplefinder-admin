@@ -524,6 +524,8 @@ export interface EventDocument extends Models.Document {
   isHidden: boolean
   radius?: number
   location?: [number, number] // [longitude, latitude]
+  /** Display name of the venue/location (denormalized for mobile and API consumers). */
+  locationName?: string
   locationId?: string // Location document ID (relationship) - used when event is linked to a Location
   client?: string // Client ID (relationship)
   categories?: string // Category ID (relationship)
@@ -547,7 +549,7 @@ export const eventsService = {
     DatabaseService.search<EventDocument>(
       appwriteConfig.collections.events,
       searchTerm,
-      ['name', 'city', 'address', 'state'],
+      ['name', 'city', 'address', 'state', 'locationName'],
       queries
     ),
 }
@@ -1478,7 +1480,12 @@ export interface NotificationFormData {
   newUsersTimeRange?: number // Days back for NewUsers audience
 }
 
-const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = ['Event Reminder', 'Promotional', 'Engagement']
+const VALID_NOTIFICATION_TYPES: Array<NotificationFormData['type']> = [
+  'Notification',
+  'Event Reminder',
+  'Promotional',
+  'Engagement',
+]
 
 /**
  * Map arbitrary input to a valid Appwrite `notifications.type` enum value.
@@ -1542,11 +1549,11 @@ export const notificationsService = {
     data: NotificationFormData,
     _appTimezone?: string
   ): Promise<NotificationDocument> => {
-    const { type, targetAudience } = normalizeNotificationPayload(data)
+    const { targetAudience } = normalizeNotificationPayload(data)
     const dbData: Record<string, unknown> = {
       title: data.title,
       message: data.message,
-      type,
+      type: 'Notification' satisfies NotificationFormData['type'],
       targetAudience,
       category: data.category || 'AppPush',
       // Send Immediately stays immediate; Schedule for Later uses fixed 1:00 PM EST
@@ -1603,12 +1610,12 @@ export const notificationsService = {
     data: Partial<NotificationFormData>,
     _appTimezone?: string
   ): Promise<NotificationDocument> => {
-    const { type, targetAudience } = normalizeNotificationPayload(data)
+    const { targetAudience } = normalizeNotificationPayload(data)
     // Only include actual database fields
     const dbData: Record<string, unknown> = {
       title: data.title,
       message: data.message,
-      type,
+      type: 'Notification' satisfies NotificationFormData['type'],
       targetAudience,
       category: data.category || 'AppPush',
     }
