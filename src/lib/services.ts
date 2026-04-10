@@ -565,6 +565,9 @@ export const eventsService = {
       location?: [number, number] | null
     }
   ): Promise<void> => {
+    if (!appwriteConfig.eventsHasLocationIdAttribute) {
+      return
+    }
     const batchSize = 100
     let offset = 0
     for (;;) {

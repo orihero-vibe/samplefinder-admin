@@ -1087,15 +1087,17 @@ const Dashboard = () => {
         eventPayload.locationName = trimmedLocationName
       }
 
-      const trimmedLocationId =
-        eventData.locationId != null && String(eventData.locationId).trim() !== ''
-          ? String(eventData.locationId).trim()
-          : ''
-      if (trimmedLocationId) {
-        eventPayload.locationId = trimmedLocationId
-      } else if (trimmedLocationName) {
-        const linked = await locationsService.findByName(trimmedLocationName)
-        if (linked) eventPayload.locationId = linked.$id
+      if (appwriteConfig.eventsHasLocationIdAttribute) {
+        const trimmedLocationId =
+          eventData.locationId != null && String(eventData.locationId).trim() !== ''
+            ? String(eventData.locationId).trim()
+            : ''
+        if (trimmedLocationId) {
+          eventPayload.locationId = trimmedLocationId
+        } else if (trimmedLocationName) {
+          const linked = await locationsService.findByName(trimmedLocationName)
+          if (linked) eventPayload.locationId = linked.$id
+        }
       }
 
       // 6. Create event
@@ -1243,17 +1245,19 @@ const Dashboard = () => {
           : ''
       eventPayload.locationName = trimmedLocationName || null
 
-      const trimmedLocationId =
-        eventData.locationId != null && String(eventData.locationId).trim() !== ''
-          ? String(eventData.locationId).trim()
-          : ''
-      if (trimmedLocationId) {
-        eventPayload.locationId = trimmedLocationId
-      } else if (trimmedLocationName) {
-        const linked = await locationsService.findByName(trimmedLocationName)
-        eventPayload.locationId = linked?.$id ?? null
-      } else {
-        eventPayload.locationId = null
+      if (appwriteConfig.eventsHasLocationIdAttribute) {
+        const trimmedLocationId =
+          eventData.locationId != null && String(eventData.locationId).trim() !== ''
+            ? String(eventData.locationId).trim()
+            : ''
+        if (trimmedLocationId) {
+          eventPayload.locationId = trimmedLocationId
+        } else if (trimmedLocationName) {
+          const linked = await locationsService.findByName(trimmedLocationName)
+          eventPayload.locationId = linked?.$id ?? null
+        } else {
+          eventPayload.locationId = null
+        }
       }
 
       // 6. Update event

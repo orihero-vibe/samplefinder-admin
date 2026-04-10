@@ -29,6 +29,12 @@ export const appwriteConfig = {
     statisticsFunctionId: import.meta.env.VITE_APPWRITE_STATISTICS_FUNCTION_ID || '',
     notificationFunctionId: import.meta.env.VITE_APPWRITE_NOTIFICATION_FUNCTION_ID || '',
   },
+  /**
+   * Set to `true` only after the events collection defines a `locationId` attribute
+   * (string; relationship to `locations` recommended). Otherwise create/update will fail.
+   */
+  eventsHasLocationIdAttribute:
+    import.meta.env.VITE_APPWRITE_EVENTS_HAS_LOCATION_ID === 'true',
 }
 
 // Initialize Appwrite client
