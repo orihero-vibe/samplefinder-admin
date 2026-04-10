@@ -32,6 +32,49 @@ export function getAppTimezoneShortLabel(ianaTimezone: string): AppTimezoneCode 
   return entry ? (entry[0] as AppTimezoneCode) : ianaTimezone
 }
 
+/**
+ * Short timezone label for UI (e.g. ET, CT, MT, PT). Resolves app codes and supported IANA
+ * IDs to {@link APP_TIMEZONES} labels; for other valid IANA zones uses Intl generic abbrev at `utcInstant`.
+ */
+export function getTimezoneAbbrevForDisplay(
+  ianaOrCode: string,
+  utcInstant?: string | Date | null
+): string {
+  const raw = ianaOrCode?.trim() ?? ''
+  if (!raw) return ''
+
+  const resolved = resolveSupportedAppTimezone(raw)
+  if (resolved.ok) {
+    return String(getAppTimezoneShortLabel(resolved.timezone))
+  }
+
+  const fromMap = getAppTimezoneShortLabel(raw)
+  if (fromMap !== raw) {
+    return String(fromMap)
+  }
+
+  const instant =
+    utcInstant != null && utcInstant !== ''
+      ? new Date(typeof utcInstant === 'string' ? utcInstant : utcInstant)
+      : new Date()
+  if (isNaN(instant.getTime())) {
+    return raw
+  }
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: raw,
+      timeZoneName: 'shortGeneric',
+    }).formatToParts(instant)
+    const name = parts.find((p) => p.type === 'timeZoneName')?.value?.trim()
+    if (name) return name
+  } catch {
+    // Invalid IANA id or environment limitation
+  }
+
+  return raw
+}
+
 export type SupportedTimezoneResolution =
   | { ok: true; timezone: string }
   | { ok: false; error: string }

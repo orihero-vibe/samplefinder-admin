@@ -11,6 +11,7 @@ import {
   appTimeToUTC,
   formatDateInAppTimezone,
   formatTimeInAppTimezone,
+  getTimezoneAbbrevForDisplay,
   resolveSupportedAppTimezone,
   utcToAppTimeFormInputs,
 } from '../../lib/dateUtils'
@@ -199,7 +200,7 @@ const Dashboard = () => {
       brand: '', // Will be populated from client relationship if needed
       startTime: formatTime(doc.startTime),
       endTime: formatTime(doc.endTime),
-      timezone: eventTimezone,
+      timezone: getTimezoneAbbrevForDisplay(eventTimezone, doc.startTime || doc.date),
       discount: hasDiscount ? 'YES' : 'NO',
       status: status,
       statusColor: getEventStatusColor(status),
