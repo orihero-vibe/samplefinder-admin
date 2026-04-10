@@ -35,6 +35,7 @@ interface Event {
   brand: string
   startTime: string
   endTime: string
+  timezone: string
   discount: string
   status: string
   statusColor: string
@@ -176,10 +177,11 @@ const Dashboard = () => {
 
   // Helper function to map database event document to EventsTable format (dates in app timezone)
   const mapEventDocumentToEvent = (doc: LocalEventDocument): Event => {
+    const eventTimezone = doc.timezone || appTimezone
     const formatDate = (dateStr?: string): string =>
-      dateStr ? formatDateInAppTimezone(dateStr, appTimezone, 'short') : ''
+      dateStr ? formatDateInAppTimezone(dateStr, eventTimezone, 'short') : ''
     const formatTime = (timeStr?: string): string =>
-      timeStr ? formatTimeInAppTimezone(timeStr, appTimezone) : ''
+      timeStr ? formatTimeInAppTimezone(timeStr, eventTimezone) : ''
 
     // Derive status from isArchived, isHidden, and event date/time (Active = live, In Active = scheduled or completed)
     const status = getEventStatus(doc)
@@ -197,6 +199,7 @@ const Dashboard = () => {
       brand: '', // Will be populated from client relationship if needed
       startTime: formatTime(doc.startTime),
       endTime: formatTime(doc.endTime),
+      timezone: eventTimezone,
       discount: hasDiscount ? 'YES' : 'NO',
       status: status,
       statusColor: getEventStatusColor(status),
