@@ -1,4 +1,12 @@
-import { Client, Databases, Query, ID, Users } from 'node-appwrite';
+import {
+  Client,
+  Databases,
+  ExecutionMethod,
+  Functions,
+  Query,
+  ID,
+  Users,
+} from 'node-appwrite';
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -45,6 +53,8 @@ interface EventData {
   isArchived: boolean;
   isHidden: boolean;
   location?: [number, number]; // [longitude, latitude]
+  /** Denormalized location/venue display name for event details UI. */
+  locationName?: string;
   client?: string;
   categories?: string;
   [key: string]: unknown;
@@ -119,6 +129,12 @@ interface CreateUserRequest {
   dob?: string;
 }
 
+// Apply referral request
+interface ApplyReferralRequest {
+  userId: string;
+  referralCode: string;
+}
+
 /**
  * Format: 6 uppercase alphanumeric characters (excluding I, O, 0, 1)
  */
@@ -131,7 +147,10 @@ function generateReferralCode(): string {
   return code;
 }
 
-async function checkReferralCodeExists(databases: Databases, code: string): Promise<boolean> {
+async function checkReferralCodeExists(
+  databases: Databases,
+  code: string
+): Promise<boolean> {
   try {
     const result = await databases.listDocuments(
       DATABASE_ID,
@@ -144,21 +163,185 @@ async function checkReferralCodeExists(databases: Databases, code: string): Prom
   }
 }
 
-async function generateUniqueReferralCode(databases: Databases): Promise<string> {
+async function generateUniqueReferralCode(
+  databases: Databases
+): Promise<string> {
   let code = generateReferralCode();
   let attempts = 0;
   const maxAttempts = 10;
 
-  while ((await checkReferralCodeExists(databases, code)) && attempts < maxAttempts) {
+  while (
+    (await checkReferralCodeExists(databases, code)) &&
+    attempts < maxAttempts
+  ) {
     code = generateReferralCode();
     attempts++;
   }
 
   if (attempts >= maxAttempts) {
-    code = generateReferralCode() + Date.now().toString(36).slice(-2).toUpperCase();
+    code =
+      generateReferralCode() + Date.now().toString(36).slice(-2).toUpperCase();
   }
 
   return code;
+}
+
+// ============================================================================
+// REFERRAL FUNCTIONS
+// ============================================================================
+
+const REFERRAL_SETTING_REFEREE_PTS_ID = 'ref_setting_referee_pts';
+const REFERRAL_SETTING_REFERRER_PTS_ID = 'ref_setting_referrer_pts';
+
+interface ReferralPointSettings {
+  refereePts: number;
+  referrerPts: number;
+}
+
+async function getReferralPointSettings(
+  databases: Databases
+): Promise<ReferralPointSettings> {
+  const [refereeDoc, referrerDoc] = await Promise.all([
+    databases.getDocument(
+      DATABASE_ID,
+      SETTINGS_TABLE_ID,
+      REFERRAL_SETTING_REFEREE_PTS_ID
+    ),
+    databases.getDocument(
+      DATABASE_ID,
+      SETTINGS_TABLE_ID,
+      REFERRAL_SETTING_REFERRER_PTS_ID
+    ),
+  ]);
+
+  const refereePts = parseInt(refereeDoc.value as string, 10);
+  const referrerPts = parseInt(referrerDoc.value as string, 10);
+
+  if (isNaN(refereePts) || refereePts < 0) {
+    throw { code: 500, message: 'Invalid referee points setting' };
+  }
+  if (isNaN(referrerPts) || referrerPts < 0) {
+    throw { code: 500, message: 'Invalid referrer points setting' };
+  }
+
+  return { refereePts, referrerPts };
+}
+
+/**
+ * Apply a referral code after signup verification.
+ *
+ * 1. Look up the referrer by referralCode.
+ * 2. Validate referrer exists and is not the same user.
+ * 3. Check idempotency via usedReferralCode on the invitee profile.
+ * 4. Read point values from the Settings table.
+ * 5. Award points to both referrer and invitee.
+ * 6. Mark invitee's usedReferralCode so it cannot be applied again.
+ * 7. Send push notification to referrer via the Notification function.
+ */
+async function applyReferral(
+  databases: Databases,
+  functions: Functions,
+  data: ApplyReferralRequest,
+  log: (msg: string) => void
+): Promise<{
+  success: boolean;
+  referrerPtsAwarded: number;
+  refereePtsAwarded: number;
+}> {
+  const { userId, referralCode } = data;
+
+  // 1. Get invitee profile
+  const inviteeProfile = await databases.getDocument(
+    DATABASE_ID,
+    USER_PROFILES_TABLE_ID,
+    userId
+  );
+
+  // 2. Idempotency check: invitee already used a referral code
+  if (inviteeProfile.usedReferralCode) {
+    log(
+      `User ${userId} already used referral code: ${inviteeProfile.usedReferralCode}`
+    );
+    throw {
+      code: 409,
+      message: 'Referral code already applied for this account',
+    };
+  }
+
+  // 3. Find the referrer by referralCode
+  const referrerResult = await databases.listDocuments(
+    DATABASE_ID,
+    USER_PROFILES_TABLE_ID,
+    [Query.equal('referralCode', referralCode), Query.limit(1)]
+  );
+
+  if (referrerResult.total === 0) {
+    throw { code: 404, message: 'Referral code not found' };
+  }
+
+  const referrerProfile = referrerResult.documents[0];
+
+  // 4. Prevent self-referral
+  if (referrerProfile.$id === userId) {
+    throw { code: 400, message: 'Cannot use your own referral code' };
+  }
+
+  // 5. Read point values from Settings table
+  const { refereePts, referrerPts } = await getReferralPointSettings(databases);
+  log(
+    `Referral points from settings — referee: ${refereePts}, referrer: ${referrerPts}`
+  );
+
+  // 6. Award points to referrer
+  const referrerCurrentPts = (referrerProfile.totalPoints as number) || 0;
+  await databases.updateDocument(
+    DATABASE_ID,
+    USER_PROFILES_TABLE_ID,
+    referrerProfile.$id,
+    { totalPoints: referrerCurrentPts + referrerPts }
+  );
+  log(`Awarded ${referrerPts} pts to referrer ${referrerProfile.$id}`);
+
+  // 7. Award points to invitee and mark usedReferralCode
+  const inviteeCurrentPts = (inviteeProfile.totalPoints as number) || 0;
+  await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId, {
+    totalPoints: inviteeCurrentPts + refereePts,
+    usedReferralCode: referralCode,
+  });
+  log(`Awarded ${refereePts} pts to invitee ${userId}, set usedReferralCode`);
+
+  // 8. Send push notification to referrer (best-effort)
+  const notificationFunctionId = process.env.APPWRITE_NOTIFICATION_FUNCTION_ID;
+  if (notificationFunctionId) {
+    try {
+      await functions.createExecution(
+        notificationFunctionId,
+        JSON.stringify({
+          userId: referrerProfile.authID || referrerProfile.$id,
+          points: referrerPts,
+        }),
+        false,
+        '/send-referral-points-notification',
+        ExecutionMethod.POST,
+        { 'Content-Type': 'application/json' }
+      );
+      log(`Referral notification sent to referrer ${referrerProfile.$id}`);
+    } catch (notifErr: unknown) {
+      const msg =
+        notifErr instanceof Error ? notifErr.message : String(notifErr);
+      log(`Failed to send referral notification (non-fatal): ${msg}`);
+    }
+  } else {
+    log(
+      'APPWRITE_NOTIFICATION_FUNCTION_ID not set — skipping referral push notification'
+    );
+  }
+
+  return {
+    success: true,
+    referrerPtsAwarded: referrerPts,
+    refereePtsAwarded: refereePts,
+  };
 }
 
 interface TriviaClientDocument {
@@ -224,6 +407,7 @@ const CLIENTS_TABLE_ID = 'clients';
 const TRIVIA_TABLE_ID = 'trivia';
 const TRIVIA_RESPONSES_TABLE_ID = 'trivia_responses';
 const USER_PROFILES_TABLE_ID = 'user_profiles';
+const SETTINGS_TABLE_ID = 'settings';
 const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_PAGE = 1;
 
@@ -289,10 +473,11 @@ function validateEventsRequestBody(body: unknown): GetEventsByLocationRequest {
     throw new Error('longitude must be between -180 and 180');
   }
 
-  const page =
-    bodyObj.page !== undefined ? Number(bodyObj.page) : DEFAULT_PAGE;
+  const page = bodyObj.page !== undefined ? Number(bodyObj.page) : DEFAULT_PAGE;
   const pageSize =
-    bodyObj.pageSize !== undefined ? Number(bodyObj.pageSize) : DEFAULT_PAGE_SIZE;
+    bodyObj.pageSize !== undefined
+      ? Number(bodyObj.pageSize)
+      : DEFAULT_PAGE_SIZE;
 
   if (page < 1 || !Number.isInteger(page)) {
     throw new Error('page must be a positive integer');
@@ -366,11 +551,14 @@ async function getEventsByLocation(
         typeof event.location === 'object' &&
         event.location !== null &&
         'coordinates' in event.location &&
-        Array.isArray((event.location as { coordinates: number[] }).coordinates) &&
+        Array.isArray(
+          (event.location as { coordinates: number[] }).coordinates
+        ) &&
         (event.location as { coordinates: number[] }).coordinates.length >= 2
       ) {
         // GeoJSON format: {coordinates: [longitude, latitude]}
-        const coords = (event.location as { coordinates: number[] }).coordinates;
+        const coords = (event.location as { coordinates: number[] })
+          .coordinates;
         eventLon = coords[0];
         eventLat = coords[1];
       }
@@ -401,7 +589,9 @@ async function getEventsByLocation(
           if (clientObj.$id || clientObj.name) {
             clientData = clientObj as unknown as ClientData;
           } else {
-            const clientId = (clientObj.id || clientObj.$id) as string | undefined;
+            const clientId = (clientObj.id || clientObj.$id) as
+              | string
+              | undefined;
             if (clientId && typeof clientId === 'string') {
               const clientResponse = await databases.getDocument(
                 DATABASE_ID,
@@ -460,8 +650,17 @@ async function getEventsByLocation(
 // TRIVIA FUNCTIONS
 // ============================================================================
 
-/** Trivia modal is only valid Tuesday 00:00–23:59 America/New_York (see Trivia Tuesday push). */
-function isTriviaTuesdayEastern(now: Date = new Date()): boolean {
+/**
+ * Trivia availability gate.
+ * Default behavior is enabled daily to support QA/testing and faster bug resolution.
+ * Set TRIVIA_ONLY_TUESDAY_ET=true to restore Tuesday-only gating.
+ */
+function isTriviaAvailableNow(now: Date = new Date()): boolean {
+  const enforceTuesdayOnly =
+    String(process.env.TRIVIA_ONLY_TUESDAY_ET || '').toLowerCase() === 'true';
+  if (!enforceTuesdayOnly) {
+    return true;
+  }
   const weekday = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     weekday: 'long',
@@ -482,26 +681,27 @@ async function getActiveTrivia(
   userId: string,
   log: (message: string) => void
 ): Promise<ActiveTriviaResponse[]> {
-  if (!isTriviaTuesdayEastern()) {
-    log('Trivia: not Tuesday (America/New_York), returning no active trivia');
+  if (!isTriviaAvailableNow()) {
+    log('Trivia is not available by current schedule configuration');
     return [];
   }
 
   const now = new Date().toISOString();
 
   // Fetch active trivia and user's responses in parallel to minimize execution time
-  const [activeTriviaResponse, userResponsesResult, userProfile] = await Promise.all([
-    databases.listDocuments(DATABASE_ID, TRIVIA_TABLE_ID, [
-      Query.lessThanEqual('startDate', now),
-      Query.greaterThanEqual('endDate', now),
-      Query.limit(GET_ACTIVE_TRIVIA_LIMIT),
-    ]),
-    databases.listDocuments(DATABASE_ID, TRIVIA_RESPONSES_TABLE_ID, [
-      Query.equal('user', userId),
-      Query.limit(GET_ACTIVE_TRIVIA_RESPONSES_LIMIT),
-    ]),
-    databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId),
-  ]);
+  const [activeTriviaResponse, userResponsesResult, userProfile] =
+    await Promise.all([
+      databases.listDocuments(DATABASE_ID, TRIVIA_TABLE_ID, [
+        Query.lessThanEqual('startDate', now),
+        Query.greaterThanEqual('endDate', now),
+        Query.limit(GET_ACTIVE_TRIVIA_LIMIT),
+      ]),
+      databases.listDocuments(DATABASE_ID, TRIVIA_RESPONSES_TABLE_ID, [
+        Query.equal('user', userId),
+        Query.limit(GET_ACTIVE_TRIVIA_RESPONSES_LIMIT),
+      ]),
+      databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId),
+    ]);
 
   log(`Found ${activeTriviaResponse.total} active trivia questions`);
 
@@ -514,7 +714,9 @@ async function getActiveTrivia(
   for (const response of userResponsesResult.documents) {
     const triviaRef = response.trivia as string | { $id?: string; id?: string };
     const triviaId =
-      typeof triviaRef === 'string' ? triviaRef : triviaRef?.$id || triviaRef?.id;
+      typeof triviaRef === 'string'
+        ? triviaRef
+        : triviaRef?.$id || triviaRef?.id;
     if (triviaId) {
       answeredTriviaIds.add(triviaId);
     }
@@ -535,11 +737,16 @@ async function getActiveTrivia(
 
   for (const trivia of activeTriviaResponse.documents as unknown as TriviaDocument[]) {
     const wasSkippedByUser =
-      Array.isArray(trivia.skippedUsers) && trivia.skippedUsers.includes(userId);
+      Array.isArray(trivia.skippedUsers) &&
+      trivia.skippedUsers.includes(userId);
     const clientId = trivia.client?.$id;
     const isFavoritedBrand = !clientId || favoriteIds.has(clientId);
 
-    if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser && isFavoritedBrand) {
+    if (
+      !answeredTriviaIds.has(trivia.$id) &&
+      !wasSkippedByUser &&
+      isFavoritedBrand
+    ) {
       unansweredTrivia.push({
         $id: trivia.$id,
         question: trivia.question,
@@ -563,7 +770,9 @@ async function getActiveTrivia(
           views: (trivia.views ?? 0) + 1,
         })
         .catch((err) =>
-          log(`Failed to increment views for trivia ${trivia.$id}: ${String(err)}`)
+          log(
+            `Failed to increment views for trivia ${trivia.$id}: ${String(err)}`
+          )
         )
     )
   );
@@ -583,7 +792,12 @@ async function submitTriviaAnswer(
   triviaId: string,
   answerIndex: number,
   log: (message: string) => void
-): Promise<{ isCorrect: boolean; correctAnswerIndex: number; pointsAwarded: number; message: string }> {
+): Promise<{
+  isCorrect: boolean;
+  correctAnswerIndex: number;
+  pointsAwarded: number;
+  message: string;
+}> {
   const now = new Date().toISOString();
 
   // 1. Get the trivia question and validate it exists
@@ -610,10 +824,10 @@ async function submitTriviaAnswer(
     };
   }
 
-  if (!isTriviaTuesdayEastern()) {
+  if (!isTriviaAvailableNow()) {
     throw {
       code: 400,
-      message: 'Trivia is only available on Tuesday (Eastern Time)',
+      message: 'Trivia is not available right now',
     };
   }
 
@@ -648,6 +862,21 @@ async function submitTriviaAnswer(
 
   // 6. Check if answer is correct (coerce to number - DB may return string)
   const correctIndex = Number(trivia.correctOptionIndex);
+  if (
+    !Number.isInteger(correctIndex) ||
+    correctIndex < 0 ||
+    correctIndex >= trivia.answers.length
+  ) {
+    log(
+      `Invalid correctOptionIndex for trivia ${triviaId}: ${String(
+        trivia.correctOptionIndex
+      )} (answers length: ${trivia.answers.length})`
+    );
+    throw {
+      code: 500,
+      message: 'Trivia configuration error: invalid correct answer index',
+    };
+  }
   const isCorrect = Number(answerIndex) === correctIndex;
   const answerText = trivia.answers[answerIndex];
 
@@ -679,7 +908,8 @@ async function submitTriviaAnswer(
       USER_PROFILES_TABLE_ID,
       userId
     );
-    const currentPoints = (userDoc.totalPoints as number) || 0;
+    const currentPoints =
+      Number((userDoc as Record<string, unknown>).totalPoints) || 0;
 
     // Update user's total points
     await databases.updateDocument(
@@ -719,10 +949,10 @@ async function dismissTrivia(
   } catch {
     throw { code: 404, message: 'User not found' };
   }
-  if (!isTriviaTuesdayEastern()) {
+  if (!isTriviaAvailableNow()) {
     throw {
       code: 400,
-      message: 'Trivia is only available on Tuesday (Eastern Time)',
+      message: 'Trivia is not available right now',
     };
   }
   let trivia: TriviaDocument;
@@ -739,7 +969,9 @@ async function dismissTrivia(
     ? [...trivia.skippedUsers]
     : [];
   if (skippedUsers.includes(userId)) {
-    log(`User ${userId} already in skippedUsers for trivia ${triviaId}, no update`);
+    log(
+      `User ${userId} already in skippedUsers for trivia ${triviaId}, no update`
+    );
     return;
   }
   skippedUsers.push(userId);
@@ -800,19 +1032,19 @@ async function updateUserStatus(
     // 3. Update user profile isBlocked field
     try {
       log(`Attempting to find user profile by authID: ${userId}`);
-      
+
       const profileQuery = await databases.listDocuments(
         DATABASE_ID,
         USER_PROFILES_TABLE_ID,
         [Query.equal('authID', userId)]
       );
-      
+
       log(`Profile query completed. Total found: ${profileQuery.total}`);
-      
+
       if (profileQuery.total === 0) {
         throw { code: 404, message: 'User profile not found' };
       }
-      
+
       // Update the profile document
       const profile = profileQuery.documents[0];
       log(`Updating user profile document: ${profile.$id}`);
@@ -823,10 +1055,11 @@ async function updateUserStatus(
         { isBlocked: block }
       );
       log(`User profile updated successfully`);
-      
     } catch (profileError: unknown) {
       const typedProfileError = profileError as { message?: string };
-      log(`Error updating profile: ${typedProfileError.message || 'Unknown error'}`);
+      log(
+        `Error updating profile: ${typedProfileError.message || 'Unknown error'}`
+      );
       // If profile update fails, revert the auth status
       await users.updateStatus(userId, block);
       throw {
@@ -837,11 +1070,15 @@ async function updateUserStatus(
 
     return {
       success: true,
-      message: block ? 'User successfully blocked' : 'User successfully unblocked',
+      message: block
+        ? 'User successfully blocked'
+        : 'User successfully unblocked',
     };
   } catch (err: unknown) {
     const typedErr = err as { code?: number; message?: string };
-    log(`Error during user status update: ${typedErr.message || 'Unknown error'}`);
+    log(
+      `Error during user status update: ${typedErr.message || 'Unknown error'}`
+    );
     throw typedErr;
   }
 }
@@ -859,23 +1096,40 @@ async function createUser(
   databases: Databases,
   data: CreateUserRequest,
   log: (message: string) => void
-): Promise<{ success: boolean; userId: string; profileId: string; error?: string }> {
+): Promise<{
+  success: boolean;
+  userId: string;
+  profileId: string;
+  error?: string;
+}> {
   log(`Creating user: ${data.email}`);
 
   try {
     // 1. Check if email already exists in Auth
-    const existingByEmail = await users.list([Query.equal('email', data.email)]);
+    const existingByEmail = await users.list([
+      Query.equal('email', data.email),
+    ]);
     if (existingByEmail.total > 0) {
-      throw { code: 409, message: 'A user with this email already exists. Please use a different email.' };
+      throw {
+        code: 409,
+        message:
+          'A user with this email already exists. Please use a different email.',
+      };
     }
 
     // 2. Check if phone already exists (when provided)
     if (data.phoneNumber?.trim()) {
       const phoneFormatted = `+1${data.phoneNumber.replace(/\D/g, '')}`;
       if (phoneFormatted.length >= 12) {
-        const existingByPhone = await users.list([Query.equal('phone', phoneFormatted)]);
+        const existingByPhone = await users.list([
+          Query.equal('phone', phoneFormatted),
+        ]);
         if (existingByPhone.total > 0) {
-          throw { code: 409, message: 'A user with this phone number already exists. Please use a different email or phone.' };
+          throw {
+            code: 409,
+            message:
+              'A user with this phone number already exists. Please use a different email or phone.',
+          };
         }
       }
     }
@@ -888,13 +1142,18 @@ async function createUser(
         [Query.equal('username', data.username.trim())]
       );
       if (existingByUsername.total > 0) {
-        throw { code: 409, message: 'Username already exists. Please choose a different username.' };
+        throw {
+          code: 409,
+          message:
+            'Username already exists. Please choose a different username.',
+        };
       }
     }
 
     // 4. Create Auth user (node-appwrite v14 uses positional params: userId, email, phone, password, name)
     const userId = ID.unique();
-    const name = [data.firstname, data.lastname].filter(Boolean).join(' ').trim() || '';
+    const name =
+      [data.firstname, data.lastname].filter(Boolean).join(' ').trim() || '';
     await users.create(
       userId,
       data.email,
@@ -917,7 +1176,14 @@ async function createUser(
       isBlocked: false,
       idAdult: true,
       referralCode,
-      ...(data.dob?.trim() ? { dob: data.dob.trim().length === 10 ? `${data.dob.trim()}T00:00:00.000Z` : data.dob.trim() } : {}),
+      ...(data.dob?.trim()
+        ? {
+            dob:
+              data.dob.trim().length === 10
+                ? `${data.dob.trim()}T00:00:00.000Z`
+                : data.dob.trim(),
+          }
+        : {}),
     };
 
     const profile = await databases.createDocument(
@@ -974,32 +1240,40 @@ async function deleteUserAccount(
     try {
       log(`Attempting to find user profile by authID: ${userId}`);
       log(`Database ID: ${DATABASE_ID}, Table ID: ${USER_PROFILES_TABLE_ID}`);
-      
+
       // Query for the user profile document where authID matches the user's auth ID
       const profileQuery = await databases.listDocuments(
         DATABASE_ID,
         USER_PROFILES_TABLE_ID,
         [Query.equal('authID', userId)]
       );
-      
+
       log(`Profile query completed. Total found: ${profileQuery.total}`);
-      
+
       if (profileQuery.total === 0) {
-        log(`No user profile found with authID: ${userId} - continuing with auth deletion`);
+        log(
+          `No user profile found with authID: ${userId} - continuing with auth deletion`
+        );
       } else {
         log(`Found ${profileQuery.total} profile(s) to delete`);
         // Delete the profile document(s) - there should only be one, but handle multiple just in case
         for (const profile of profileQuery.documents) {
-          log(`Profile document details: ID=${profile.$id}, authID=${profile.authID || 'N/A'}`);
+          log(
+            `Profile document details: ID=${profile.$id}, authID=${profile.authID || 'N/A'}`
+          );
           log(`Attempting to delete user profile document: ${profile.$id}`);
-          await databases.deleteDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, profile.$id);
+          await databases.deleteDocument(
+            DATABASE_ID,
+            USER_PROFILES_TABLE_ID,
+            profile.$id
+          );
           log(`User profile deleted successfully: ${profile.$id}`);
         }
         log(`Deleted ${profileQuery.total} user profile(s) from database`);
       }
     } catch (profileError: unknown) {
       // Log the full error for debugging
-      const typedProfileError = profileError as { 
+      const typedProfileError = profileError as {
         constructor?: { name?: string };
         message?: string;
         code?: number;
@@ -1019,7 +1293,7 @@ async function deleteUserAccount(
           response: typedProfileError.response,
         })}`
       );
-      
+
       // For any error, throw it to prevent partial deletion
       throw {
         code: 500,
@@ -1039,7 +1313,9 @@ async function deleteUserAccount(
     };
   } catch (err: unknown) {
     const typedErr = err as { code?: number; message?: string };
-    log(`Error during account deletion: ${typedErr.message || 'Unknown error'}`);
+    log(
+      `Error during account deletion: ${typedErr.message || 'Unknown error'}`
+    );
     throw typedErr;
   }
 }
@@ -1113,9 +1389,16 @@ async function verifyEmailOTP(
     const text = await res.text();
     log(`OTP verification failed: ${res.status} ${text}`);
     if (res.status === 401 || res.status === 400 || res.status === 404) {
-      throw { code: 400, message: 'Invalid or expired code. Please request a new password reset.' };
+      throw {
+        code: 400,
+        message:
+          'Invalid or expired code. Please request a new password reset.',
+      };
     }
-    throw { code: 400, message: 'Invalid or expired code. Please request a new password reset.' };
+    throw {
+      code: 400,
+      message: 'Invalid or expired code. Please request a new password reset.',
+    };
   }
 }
 
@@ -1149,7 +1432,8 @@ async function resetPasswordAfterOTP(
       [Query.equal('authID', userId)]
     );
     if (profileQuery.total > 0) {
-      const username = (profileQuery.documents[0] as { username?: string }).username ?? '';
+      const username =
+        (profileQuery.documents[0] as { username?: string }).username ?? '';
       if (
         username &&
         newPassword.trim().toLowerCase() === username.trim().toLowerCase()
@@ -1177,7 +1461,12 @@ async function resetPasswordAfterOTP(
 // MAIN HANDLER
 // ============================================================================
 
-export default async function handler({ req, res, log, error }: HandlerContext) {
+export default async function handler({
+  req,
+  res,
+  log,
+  error,
+}: HandlerContext) {
   try {
     // Initialize Appwrite client
     const endpoint =
@@ -1211,6 +1500,7 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
 
     const databases = new Databases(client);
     const users = new Users(client);
+    const appwriteFunctions = new Functions(client);
 
     // ========================================================================
     // PING ENDPOINT
@@ -1378,16 +1668,10 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       const body = req.body as DismissTriviaRequest;
 
       if (!body || !body.userId) {
-        return res.json(
-          { success: false, error: 'userId is required' },
-          400
-        );
+        return res.json({ success: false, error: 'userId is required' }, 400);
       }
       if (!body.triviaId) {
-        return res.json(
-          { success: false, error: 'triviaId is required' },
-          400
-        );
+        return res.json({ success: false, error: 'triviaId is required' }, 400);
       }
       try {
         await dismissTrivia(databases, body.userId, body.triviaId, log);
@@ -1425,7 +1709,12 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       }
 
       try {
-        const result = await deleteUserAccount(users, databases, body.userId, log);
+        const result = await deleteUserAccount(
+          users,
+          databases,
+          body.userId,
+          log
+        );
 
         return res.json({
           success: true,
@@ -1500,7 +1789,7 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     // ========================================================================
     // USER STATUS MANAGEMENT
     // ========================================================================
-    
+
     // UPDATE user status (block/unblock)
     if (req.path === '/update-user-status' && req.method === 'POST') {
       log('Processing update-user-status request');
@@ -1633,12 +1922,53 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     }
 
     // ========================================================================
+    // APPLY REFERRAL ENDPOINT
+    // ========================================================================
+    if (req.path === '/apply-referral' && req.method === 'POST') {
+      log('Processing apply-referral request');
+
+      const body = req.body as ApplyReferralRequest;
+
+      if (!body || !body.userId || !body.referralCode) {
+        return res.json(
+          {
+            success: false,
+            error: 'userId and referralCode are required',
+          },
+          400
+        );
+      }
+
+      try {
+        const result = await applyReferral(
+          databases,
+          appwriteFunctions,
+          body,
+          log
+        );
+        return res.json(result);
+      } catch (err: unknown) {
+        const typedErr = err as { code?: number; message?: string };
+        if (typedErr.code && typedErr.message) {
+          return res.json(
+            {
+              success: false,
+              error: typedErr.message,
+            },
+            typedErr.code
+          );
+        }
+        throw err;
+      }
+    }
+
+    // ========================================================================
     // DEFAULT RESPONSE
     // ========================================================================
     return res.json({
       success: false,
       error:
-        'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, GET /ping',
+        'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, POST /apply-referral, GET /ping',
     });
   } catch (err: unknown) {
     const errorMessage =

@@ -1,7 +1,7 @@
 {
     "projectId": "691d4a54003b21bf0136",
-    "endpoint": "https://nyc.cloud.appwrite.io/v1",
     "projectName": "SampleFinder",
+    "endpoint": "https://nyc.cloud.appwrite.io/v1",
     "settings": {
         "services": {
             "account": true,
@@ -110,7 +110,10 @@
             "entrypoint": "src/main.js",
             "commands": "npm install && npm run build",
             "specification": "s-0.5vcpu-512mb",
-            "path": "functions/Mobile API"
+            "path": "functions/Mobile API",
+            "buildSpecification": "s-0.5vcpu-512mb",
+            "runtimeSpecification": "s-0.5vcpu-512mb",
+            "deploymentRetention": 0
         },
         {
             "$id": "69341ffa001a4ebd28c2",
@@ -134,7 +137,10 @@
             "logging": true,
             "entrypoint": "src/main.js",
             "commands": "npm install",
-            "path": "functions/Statistics functions"
+            "path": "functions/Statistics functions",
+            "buildSpecification": "s-0.5vcpu-512mb",
+            "runtimeSpecification": "s-0.5vcpu-512mb",
+            "deploymentRetention": 0
         },
         {
             "$id": "695d55bb002bc6b75430",
@@ -164,12 +170,15 @@
                 "subscribers.read"
             ],
             "schedule": "*/15 * * * *",
-            "timeout": 300,
+            "timeout": 15,
             "enabled": true,
             "logging": true,
             "entrypoint": "src/main.js",
             "commands": "npm install --include=dev && npm run build",
-            "path": "functions/Notification functions"
+            "path": "functions/Notification functions",
+            "buildSpecification": "s-0.5vcpu-512mb",
+            "runtimeSpecification": "s-0.5vcpu-512mb",
+            "deploymentRetention": 0
         }
     ],
     "tablesDB": [
@@ -871,7 +880,12 @@
                     "type": "string",
                     "required": true,
                     "array": false,
-                    "elements": ["Notification", "Event Reminder", "Promotional", "Engagement"],
+                    "elements": [
+                        "Notification",
+                        "Event Reminder",
+                        "Promotional",
+                        "Engagement"
+                    ],
                     "format": "enum",
                     "default": null
                 },
@@ -928,7 +942,10 @@
                     "type": "string",
                     "required": false,
                     "array": false,
-                    "elements": ["AppPush", "SystemPush"],
+                    "elements": [
+                        "AppPush",
+                        "SystemPush"
+                    ],
                     "format": "enum",
                     "default": "AppPush"
                 },
@@ -937,7 +954,11 @@
                     "type": "string",
                     "required": true,
                     "array": false,
-                    "elements": ["Scheduled", "Sent", "Draft"],
+                    "elements": [
+                        "Scheduled",
+                        "Sent",
+                        "Draft"
+                    ],
                     "format": "enum",
                     "default": null
                 }

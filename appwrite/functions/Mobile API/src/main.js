@@ -1,4 +1,4 @@
-import { Client, Databases, Query, ID, Users } from 'node-appwrite';
+import { Client, Databases, ExecutionMethod, Functions, Query, ID, Users, } from 'node-appwrite';
 /**
  * Format: 6 uppercase alphanumeric characters (excluding I, O, 0, 1)
  */
@@ -23,14 +23,107 @@ async function generateUniqueReferralCode(databases) {
     let code = generateReferralCode();
     let attempts = 0;
     const maxAttempts = 10;
-    while ((await checkReferralCodeExists(databases, code)) && attempts < maxAttempts) {
+    while ((await checkReferralCodeExists(databases, code)) &&
+        attempts < maxAttempts) {
         code = generateReferralCode();
         attempts++;
     }
     if (attempts >= maxAttempts) {
-        code = generateReferralCode() + Date.now().toString(36).slice(-2).toUpperCase();
+        code =
+            generateReferralCode() + Date.now().toString(36).slice(-2).toUpperCase();
     }
     return code;
+}
+// ============================================================================
+// REFERRAL FUNCTIONS
+// ============================================================================
+const REFERRAL_SETTING_REFEREE_PTS_ID = 'ref_setting_referee_pts';
+const REFERRAL_SETTING_REFERRER_PTS_ID = 'ref_setting_referrer_pts';
+async function getReferralPointSettings(databases) {
+    const [refereeDoc, referrerDoc] = await Promise.all([
+        databases.getDocument(DATABASE_ID, SETTINGS_TABLE_ID, REFERRAL_SETTING_REFEREE_PTS_ID),
+        databases.getDocument(DATABASE_ID, SETTINGS_TABLE_ID, REFERRAL_SETTING_REFERRER_PTS_ID),
+    ]);
+    const refereePts = parseInt(refereeDoc.value, 10);
+    const referrerPts = parseInt(referrerDoc.value, 10);
+    if (isNaN(refereePts) || refereePts < 0) {
+        throw { code: 500, message: 'Invalid referee points setting' };
+    }
+    if (isNaN(referrerPts) || referrerPts < 0) {
+        throw { code: 500, message: 'Invalid referrer points setting' };
+    }
+    return { refereePts, referrerPts };
+}
+/**
+ * Apply a referral code after signup verification.
+ *
+ * 1. Look up the referrer by referralCode.
+ * 2. Validate referrer exists and is not the same user.
+ * 3. Check idempotency via usedReferralCode on the invitee profile.
+ * 4. Read point values from the Settings table.
+ * 5. Award points to both referrer and invitee.
+ * 6. Mark invitee's usedReferralCode so it cannot be applied again.
+ * 7. Send push notification to referrer via the Notification function.
+ */
+async function applyReferral(databases, functions, data, log) {
+    const { userId, referralCode } = data;
+    // 1. Get invitee profile
+    const inviteeProfile = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
+    // 2. Idempotency check: invitee already used a referral code
+    if (inviteeProfile.usedReferralCode) {
+        log(`User ${userId} already used referral code: ${inviteeProfile.usedReferralCode}`);
+        throw {
+            code: 409,
+            message: 'Referral code already applied for this account',
+        };
+    }
+    // 3. Find the referrer by referralCode
+    const referrerResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('referralCode', referralCode), Query.limit(1)]);
+    if (referrerResult.total === 0) {
+        throw { code: 404, message: 'Referral code not found' };
+    }
+    const referrerProfile = referrerResult.documents[0];
+    // 4. Prevent self-referral
+    if (referrerProfile.$id === userId) {
+        throw { code: 400, message: 'Cannot use your own referral code' };
+    }
+    // 5. Read point values from Settings table
+    const { refereePts, referrerPts } = await getReferralPointSettings(databases);
+    log(`Referral points from settings — referee: ${refereePts}, referrer: ${referrerPts}`);
+    // 6. Award points to referrer
+    const referrerCurrentPts = referrerProfile.totalPoints || 0;
+    await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, referrerProfile.$id, { totalPoints: referrerCurrentPts + referrerPts });
+    log(`Awarded ${referrerPts} pts to referrer ${referrerProfile.$id}`);
+    // 7. Award points to invitee and mark usedReferralCode
+    const inviteeCurrentPts = inviteeProfile.totalPoints || 0;
+    await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId, {
+        totalPoints: inviteeCurrentPts + refereePts,
+        usedReferralCode: referralCode,
+    });
+    log(`Awarded ${refereePts} pts to invitee ${userId}, set usedReferralCode`);
+    // 8. Send push notification to referrer (best-effort)
+    const notificationFunctionId = process.env.APPWRITE_NOTIFICATION_FUNCTION_ID;
+    if (notificationFunctionId) {
+        try {
+            await functions.createExecution(notificationFunctionId, JSON.stringify({
+                userId: referrerProfile.authID || referrerProfile.$id,
+                points: referrerPts,
+            }), false, '/send-referral-points-notification', ExecutionMethod.POST, { 'Content-Type': 'application/json' });
+            log(`Referral notification sent to referrer ${referrerProfile.$id}`);
+        }
+        catch (notifErr) {
+            const msg = notifErr instanceof Error ? notifErr.message : String(notifErr);
+            log(`Failed to send referral notification (non-fatal): ${msg}`);
+        }
+    }
+    else {
+        log('APPWRITE_NOTIFICATION_FUNCTION_ID not set — skipping referral push notification');
+    }
+    return {
+        success: true,
+        referrerPtsAwarded: referrerPts,
+        refereePtsAwarded: refereePts,
+    };
 }
 // ============================================================================
 // CONSTANTS
@@ -41,6 +134,7 @@ const CLIENTS_TABLE_ID = 'clients';
 const TRIVIA_TABLE_ID = 'trivia';
 const TRIVIA_RESPONSES_TABLE_ID = 'trivia_responses';
 const USER_PROFILES_TABLE_ID = 'user_profiles';
+const SETTINGS_TABLE_ID = 'settings';
 const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_PAGE = 1;
 // ============================================================================
@@ -88,7 +182,9 @@ function validateEventsRequestBody(body) {
         throw new Error('longitude must be between -180 and 180');
     }
     const page = bodyObj.page !== undefined ? Number(bodyObj.page) : DEFAULT_PAGE;
-    const pageSize = bodyObj.pageSize !== undefined ? Number(bodyObj.pageSize) : DEFAULT_PAGE_SIZE;
+    const pageSize = bodyObj.pageSize !== undefined
+        ? Number(bodyObj.pageSize)
+        : DEFAULT_PAGE_SIZE;
     if (page < 1 || !Number.isInteger(page)) {
         throw new Error('page must be a positive integer');
     }
@@ -143,7 +239,8 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
                 Array.isArray(event.location.coordinates) &&
                 event.location.coordinates.length >= 2) {
                 // GeoJSON format: {coordinates: [longitude, latitude]}
-                const coords = event.location.coordinates;
+                const coords = event.location
+                    .coordinates;
                 eventLon = coords[0];
                 eventLat = coords[1];
             }
@@ -214,8 +311,16 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
 // ============================================================================
 // TRIVIA FUNCTIONS
 // ============================================================================
-/** Trivia modal is only valid Tuesday 00:00–23:59 America/New_York (see Trivia Tuesday push). */
-function isTriviaTuesdayEastern(now = new Date()) {
+/**
+ * Trivia availability gate.
+ * Default behavior is enabled daily to support QA/testing and faster bug resolution.
+ * Set TRIVIA_ONLY_TUESDAY_ET=true to restore Tuesday-only gating.
+ */
+function isTriviaAvailableNow(now = new Date()) {
+    const enforceTuesdayOnly = String(process.env.TRIVIA_ONLY_TUESDAY_ET || '').toLowerCase() === 'true';
+    if (!enforceTuesdayOnly) {
+        return true;
+    }
     const weekday = new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/New_York',
         weekday: 'long',
@@ -230,8 +335,8 @@ function isTriviaTuesdayEastern(now = new Date()) {
 const GET_ACTIVE_TRIVIA_LIMIT = 100;
 const GET_ACTIVE_TRIVIA_RESPONSES_LIMIT = 500;
 async function getActiveTrivia(databases, userId, log) {
-    if (!isTriviaTuesdayEastern()) {
-        log('Trivia: not Tuesday (America/New_York), returning no active trivia');
+    if (!isTriviaAvailableNow()) {
+        log('Trivia is not available by current schedule configuration');
         return [];
     }
     const now = new Date().toISOString();
@@ -256,7 +361,9 @@ async function getActiveTrivia(databases, userId, log) {
     const answeredTriviaIds = new Set();
     for (const response of userResponsesResult.documents) {
         const triviaRef = response.trivia;
-        const triviaId = typeof triviaRef === 'string' ? triviaRef : triviaRef?.$id || triviaRef?.id;
+        const triviaId = typeof triviaRef === 'string'
+            ? triviaRef
+            : triviaRef?.$id || triviaRef?.id;
         if (triviaId) {
             answeredTriviaIds.add(triviaId);
         }
@@ -272,10 +379,13 @@ async function getActiveTrivia(databases, userId, log) {
     const unansweredTrivia = [];
     const triviaToIncrementViews = [];
     for (const trivia of activeTriviaResponse.documents) {
-        const wasSkippedByUser = Array.isArray(trivia.skippedUsers) && trivia.skippedUsers.includes(userId);
+        const wasSkippedByUser = Array.isArray(trivia.skippedUsers) &&
+            trivia.skippedUsers.includes(userId);
         const clientId = trivia.client?.$id;
         const isFavoritedBrand = !clientId || favoriteIds.has(clientId);
-        if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser && isFavoritedBrand) {
+        if (!answeredTriviaIds.has(trivia.$id) &&
+            !wasSkippedByUser &&
+            isFavoritedBrand) {
             unansweredTrivia.push({
                 $id: trivia.$id,
                 question: trivia.question,
@@ -323,10 +433,10 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
             message: 'This trivia question is not currently active',
         };
     }
-    if (!isTriviaTuesdayEastern()) {
+    if (!isTriviaAvailableNow()) {
         throw {
             code: 400,
-            message: 'Trivia is only available on Tuesday (Eastern Time)',
+            message: 'Trivia is not available right now',
         };
     }
     // 3. Validate the user exists
@@ -353,6 +463,15 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
     }
     // 6. Check if answer is correct (coerce to number - DB may return string)
     const correctIndex = Number(trivia.correctOptionIndex);
+    if (!Number.isInteger(correctIndex) ||
+        correctIndex < 0 ||
+        correctIndex >= trivia.answers.length) {
+        log(`Invalid correctOptionIndex for trivia ${triviaId}: ${String(trivia.correctOptionIndex)} (answers length: ${trivia.answers.length})`);
+        throw {
+            code: 500,
+            message: 'Trivia configuration error: invalid correct answer index',
+        };
+    }
     const isCorrect = Number(answerIndex) === correctIndex;
     const answerText = trivia.answers[answerIndex];
     // 7. Create the trivia response record
@@ -369,7 +488,7 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
         pointsAwarded = trivia.points;
         // Get current user points
         const userDoc = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
-        const currentPoints = userDoc.totalPoints || 0;
+        const currentPoints = Number(userDoc.totalPoints) || 0;
         // Update user's total points
         await databases.updateDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId, {
             totalPoints: currentPoints + pointsAwarded,
@@ -396,10 +515,10 @@ async function dismissTrivia(databases, userId, triviaId, log) {
     catch {
         throw { code: 404, message: 'User not found' };
     }
-    if (!isTriviaTuesdayEastern()) {
+    if (!isTriviaAvailableNow()) {
         throw {
             code: 400,
-            message: 'Trivia is only available on Tuesday (Eastern Time)',
+            message: 'Trivia is not available right now',
         };
     }
     let trivia;
@@ -482,7 +601,9 @@ async function updateUserStatus(users, databases, userId, block, log) {
         }
         return {
             success: true,
-            message: block ? 'User successfully blocked' : 'User successfully unblocked',
+            message: block
+                ? 'User successfully blocked'
+                : 'User successfully unblocked',
         };
     }
     catch (err) {
@@ -502,17 +623,27 @@ async function createUser(users, databases, data, log) {
     log(`Creating user: ${data.email}`);
     try {
         // 1. Check if email already exists in Auth
-        const existingByEmail = await users.list([Query.equal('email', data.email)]);
+        const existingByEmail = await users.list([
+            Query.equal('email', data.email),
+        ]);
         if (existingByEmail.total > 0) {
-            throw { code: 409, message: 'A user with this email already exists. Please use a different email.' };
+            throw {
+                code: 409,
+                message: 'A user with this email already exists. Please use a different email.',
+            };
         }
         // 2. Check if phone already exists (when provided)
         if (data.phoneNumber?.trim()) {
             const phoneFormatted = `+1${data.phoneNumber.replace(/\D/g, '')}`;
             if (phoneFormatted.length >= 12) {
-                const existingByPhone = await users.list([Query.equal('phone', phoneFormatted)]);
+                const existingByPhone = await users.list([
+                    Query.equal('phone', phoneFormatted),
+                ]);
                 if (existingByPhone.total > 0) {
-                    throw { code: 409, message: 'A user with this phone number already exists. Please use a different email or phone.' };
+                    throw {
+                        code: 409,
+                        message: 'A user with this phone number already exists. Please use a different email or phone.',
+                    };
                 }
             }
         }
@@ -520,7 +651,10 @@ async function createUser(users, databases, data, log) {
         if (data.username?.trim()) {
             const existingByUsername = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('username', data.username.trim())]);
             if (existingByUsername.total > 0) {
-                throw { code: 409, message: 'Username already exists. Please choose a different username.' };
+                throw {
+                    code: 409,
+                    message: 'Username already exists. Please choose a different username.',
+                };
             }
         }
         // 4. Create Auth user (node-appwrite v14 uses positional params: userId, email, phone, password, name)
@@ -541,7 +675,13 @@ async function createUser(users, databases, data, log) {
             isBlocked: false,
             idAdult: true,
             referralCode,
-            ...(data.dob?.trim() ? { dob: data.dob.trim().length === 10 ? `${data.dob.trim()}T00:00:00.000Z` : data.dob.trim() } : {}),
+            ...(data.dob?.trim()
+                ? {
+                    dob: data.dob.trim().length === 10
+                        ? `${data.dob.trim()}T00:00:00.000Z`
+                        : data.dob.trim(),
+                }
+                : {}),
         };
         const profile = await databases.createDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, ID.unique(), profileData);
         log(`User profile created: ${profile.$id}`);
@@ -695,9 +835,15 @@ async function verifyEmailOTP(endpoint, projectId, userId, otp, log) {
         const text = await res.text();
         log(`OTP verification failed: ${res.status} ${text}`);
         if (res.status === 401 || res.status === 400 || res.status === 404) {
-            throw { code: 400, message: 'Invalid or expired code. Please request a new password reset.' };
+            throw {
+                code: 400,
+                message: 'Invalid or expired code. Please request a new password reset.',
+            };
         }
-        throw { code: 400, message: 'Invalid or expired code. Please request a new password reset.' };
+        throw {
+            code: 400,
+            message: 'Invalid or expired code. Please request a new password reset.',
+        };
     }
 }
 /**
@@ -742,7 +888,7 @@ async function resetPasswordAfterOTP(users, databases, endpoint, projectId, user
 // ============================================================================
 // MAIN HANDLER
 // ============================================================================
-export default async function handler({ req, res, log, error }) {
+export default async function handler({ req, res, log, error, }) {
     try {
         // Initialize Appwrite client
         const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT ||
@@ -766,6 +912,7 @@ export default async function handler({ req, res, log, error }) {
             .setKey(apiKey);
         const databases = new Databases(client);
         const users = new Users(client);
+        const appwriteFunctions = new Functions(client);
         // ========================================================================
         // PING ENDPOINT
         // ========================================================================
@@ -1047,11 +1194,38 @@ export default async function handler({ req, res, log, error }) {
             }
         }
         // ========================================================================
+        // APPLY REFERRAL ENDPOINT
+        // ========================================================================
+        if (req.path === '/apply-referral' && req.method === 'POST') {
+            log('Processing apply-referral request');
+            const body = req.body;
+            if (!body || !body.userId || !body.referralCode) {
+                return res.json({
+                    success: false,
+                    error: 'userId and referralCode are required',
+                }, 400);
+            }
+            try {
+                const result = await applyReferral(databases, appwriteFunctions, body, log);
+                return res.json(result);
+            }
+            catch (err) {
+                const typedErr = err;
+                if (typedErr.code && typedErr.message) {
+                    return res.json({
+                        success: false,
+                        error: typedErr.message,
+                    }, typedErr.code);
+                }
+                throw err;
+            }
+        }
+        // ========================================================================
         // DEFAULT RESPONSE
         // ========================================================================
         return res.json({
             success: false,
-            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, GET /ping',
+            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, POST /apply-referral, GET /ping',
         });
     }
     catch (err) {

@@ -581,17 +581,8 @@ async function sendPushNotificationToUsers(
       if (settled.status === 'fulfilled') {
         const result = settled.value as PushResult;
         lastResult = result;
-        const statusLower = String(result.status ?? '').toLowerCase();
-        const pushFailed = statusLower === 'failed' || statusLower === 'error';
-        if (pushFailed) {
-          failedCount += batch.length;
-          log(
-            `Push batch ${i + j + 1}: delivery failed messageId=${result.$id}, status=${result.status}, users=${batch.length}`
-          );
-        } else {
-          sentCount += batch.length;
-          log(`Push batch ${i + j + 1}: messageId=${result.$id}, status=${result.status}, users=${batch.length}`);
-        }
+        sentCount += batch.length;
+        log(`Push batch ${i + j + 1}: messageId=${result.$id}, status=${result.status}, users=${batch.length}`);
       } else {
         const errMsg = settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
         failedCount += batch.length;
@@ -867,6 +858,21 @@ async function checkAndSendEventReminders(
               }
             );
 
+            await appendNotificationToUserProfile(
+              databases,
+              user.$id,
+              {
+                id: ID.unique(),
+                type: 'Event Reminder',
+                title: `Event Reminder: ${event.name}`,
+                message: `Your saved event "${event.name}" starts in 24 hours! Location: ${event.address}, ${event.city}`,
+                isRead: false,
+                createdAt: new Date().toISOString(),
+                data: { eventId: event.$id, reminderType: '24h', type: 'Event Reminder' },
+              },
+              log
+            );
+
             // Mark as sent in the savedEvent object
             savedEvent.reminder24hSent = true;
             needsUpdate = true;
@@ -893,6 +899,21 @@ async function checkAndSendEventReminders(
                 reminderType: '1h',
                 type: 'Event Reminder',
               }
+            );
+
+            await appendNotificationToUserProfile(
+              databases,
+              user.$id,
+              {
+                id: ID.unique(),
+                type: 'Event Reminder',
+                title: `Event Reminder: ${event.name}`,
+                message: `Your saved event "${event.name}" starts in 1 hour! Location: ${event.address}, ${event.city}`,
+                isRead: false,
+                createdAt: new Date().toISOString(),
+                data: { eventId: event.$id, reminderType: '1h', type: 'Event Reminder' },
+              },
+              log
             );
 
             // Mark as sent in the savedEvent object
@@ -1086,25 +1107,28 @@ async function checkAndSendTriviaTuesday(
   const sentCount = result.sentCount ?? 0;
   if (sentCount > 0) {
     await setSettingValue(databases, 'triviaTuesdayLastSent', todayStr);
-    const triviaTitle = 'TRIVIA TUESDAY';
-    const triviaBody =
-      'Earn points by knowing fun facts about your favorite brands!';
-    const triviaCreatedAt = new Date().toISOString();
-    for (const u of allUsers) {
-      await appendNotificationToUserProfile(
-        databases,
-        u.$id,
-        {
-          id: ID.unique(),
-          type: 'Engagement',
-          title: triviaTitle,
-          message: triviaBody,
-          isRead: false,
-          createdAt: triviaCreatedAt,
-          data: { type: 'Engagement', campaign: 'triviaTuesday' },
-        },
-        log
-      );
+
+    for (const user of allUsers) {
+      if (!user.authID) continue;
+      try {
+        await appendNotificationToUserProfile(
+          databases,
+          user.$id,
+          {
+            id: ID.unique(),
+            type: 'Engagement',
+            title: 'TRIVIA TUESDAY',
+            message: 'Earn points by knowing fun facts about your favorite brands!',
+            isRead: false,
+            createdAt: new Date().toISOString(),
+            data: { type: 'Engagement' },
+          },
+          log
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(`Trivia Tuesday: failed to append in-app notification for user ${user.$id}: ${msg}`);
+      }
     }
   }
   log(`Trivia Tuesday: sent to ${sentCount} users`);
@@ -1215,7 +1239,7 @@ async function checkAndSendSamplingToday(
           message: `Sampling at ${storeName} starts at ${timeStr}! Click to learn more!`,
           isRead: false,
           createdAt: new Date().toISOString(),
-          data: { eventId: event.$id, type: 'Event Reminder', campaign: 'samplingToday' },
+          data: { eventId: event.$id, type: 'Event Reminder' },
         },
         log
       );
@@ -1453,7 +1477,7 @@ async function checkAndSendNearbyFavoriteSampling(
           message: `Heads up, ${brandName} has a sampling event coming up near you. Click to learn more!`,
           isRead: false,
           createdAt: new Date().toISOString(),
-          data: { eventId: event.$id, type: 'Promotional', campaign: 'nearbyFavorite' },
+          data: { eventId: event.$id, type: 'Promotional' },
         },
         log
       );
@@ -1543,6 +1567,21 @@ async function checkAndSendBirthdayNotifications(
       log(`Birthday: push delivery failed for user ${user.$id}, skipping yearly flag/points update`);
       continue;
     }
+
+    await appendNotificationToUserProfile(
+      databases,
+      user.$id,
+      {
+        id: ID.unique(),
+        type: 'Engagement',
+        title: 'HAPPY BIRTHDAY!',
+        message: `We wish you a very happy birthday, from all of us here at SampleFinder! As a gift, we've awarded you ${points} points.`,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        data: { type: 'Engagement' },
+      },
+      log
+    );
 
     const currentPoints = user.totalPoints ?? 0;
     try {
@@ -1634,6 +1673,21 @@ async function checkAndSendAnniversaryNotifications(
       log(`Anniversary: push delivery failed for user ${user.$id}, skipping yearly flag/points update`);
       continue;
     }
+
+    await appendNotificationToUserProfile(
+      databases,
+      user.$id,
+      {
+        id: ID.unique(),
+        type: 'Engagement',
+        title: 'HAPPY SAMPLING ANNIVERSARY!',
+        message: `Congratulations on reaching a full new year of sampling with SampleFinder! As a gift, we've awarded you ${points} points.`,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        data: { type: 'Engagement' },
+      },
+      log
+    );
 
     const currentPoints = user.totalPoints ?? 0;
     try {
@@ -1742,6 +1796,21 @@ async function checkAndSendInactivityNotifications(
         log(`Inactivity: push delivery failed for user ${profile.$id}, not updating inactivity marker`);
         continue;
       }
+
+      await appendNotificationToUserProfile(
+        databases,
+        profile.$id,
+        {
+          id: ID.unique(),
+          type: 'Engagement',
+          title: "YOU'VE BEEN MISSING SAMPLES!",
+          message: 'Enjoy experiencing new brands, earning points and winning prizes!',
+          isRead: false,
+          createdAt: new Date().toISOString(),
+          data: { type: 'Engagement' },
+        },
+        log
+      );
 
       try {
         await databases.updateDocument(
@@ -1869,8 +1938,8 @@ async function sendReferralPointsNotification(
   const normalizedPoints = typeof points === 'number' && points > 0 ? Math.floor(points) : undefined;
   const title = 'REFERRAL POINTS EARNED';
   const body = normalizedPoints
-    ? `You earned ${normalizedPoints} referral points. Keep sharing SampleFinder!`
-    : 'You earned referral points. Keep sharing SampleFinder!';
+    ? `A new user signed up using your referral code! You earned ${normalizedPoints} points. Thank you for sharing!`
+    : 'A new user signed up using your referral code! Thank you for sharing!';
 
   const profileResult = await databases.listDocuments(
     DATABASE_ID,
@@ -1952,6 +2021,80 @@ interface HandlerRequest {
   method: string;
   body?: unknown;
   headers: Record<string, string>;
+  /** Present on Appwrite Cloud; path segment of the full request URL */
+  url?: string;
+  /** Preferred on Appwrite Cloud (parsed JSON body) */
+  bodyJson?: unknown;
+  bodyText?: string;
+}
+
+function normalizeHttpMethod(method: string | undefined): string {
+  return (method ?? 'GET').toUpperCase();
+}
+
+function isPost(req: HandlerRequest): boolean {
+  return normalizeHttpMethod(req.method) === 'POST';
+}
+
+/**
+ * Match a route from Appwrite's req.path and/or req.url pathname.
+ * Cloud may pass a full pathname; xpath from executions should still match by suffix.
+ */
+function pathMatchesRoute(req: HandlerRequest, route: string): boolean {
+  const target = route.split('?')[0];
+  const normalizedTarget =
+    target.length > 1 && target.endsWith('/') ? target.slice(0, -1) : target;
+
+  const candidates: string[] = [];
+  if (typeof req.path === 'string') {
+    candidates.push(req.path.split('?')[0]);
+  }
+  try {
+    if (typeof req.url === 'string' && req.url.length > 0) {
+      candidates.push(new URL(req.url).pathname.split('?')[0]);
+    }
+  } catch {
+    // ignore malformed url
+  }
+
+  for (let raw of candidates) {
+    if (raw === undefined) continue;
+    const p = raw.length > 1 && raw.endsWith('/') ? raw.slice(0, -1) : raw;
+    if (p === normalizedTarget) return true;
+    if (
+      normalizedTarget !== '/' &&
+      p.endsWith(normalizedTarget) &&
+      (p.length === normalizedTarget.length || p[p.length - normalizedTarget.length - 1] === '/')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function scheduledRunPathsMatch(req: HandlerRequest): boolean {
+  if (pathMatchesRoute(req, '/check-event-reminders')) return true;
+  if (pathMatchesRoute(req, '/')) return true;
+  if (req.path === '') return true;
+  return false;
+}
+
+/** Appwrite recommends bodyJson / bodyText instead of legacy req.body */
+function parseJsonBodyFromReq(req: HandlerRequest): Record<string, unknown> {
+  const r = req as HandlerRequest & { bodyJson?: unknown; bodyText?: string };
+  if (r.bodyJson != null && typeof r.bodyJson === 'object' && !Array.isArray(r.bodyJson)) {
+    return r.bodyJson as Record<string, unknown>;
+  }
+  if (typeof r.bodyText === 'string' && r.bodyText.trim().length > 0) {
+    return JSON.parse(r.bodyText) as Record<string, unknown>;
+  }
+  if (typeof req.body === 'string' && req.body.trim().length > 0) {
+    return JSON.parse(req.body) as Record<string, unknown>;
+  }
+  if (req.body != null && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    return req.body as Record<string, unknown>;
+  }
+  throw new Error('Request body is required');
 }
 
 interface HandlerResponse {
@@ -1968,6 +2111,10 @@ interface HandlerContext {
 
 export default async function handler({ req, res, log, error }: HandlerContext) {
   try {
+    log(
+      `[handler] method=${String(req.method)} path=${String(req.path)} url=${String((req as HandlerRequest).url ?? '')}`
+    );
+
     // Initialize Appwrite client
     const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT || 'https://nyc.cloud.appwrite.io/v1';
     const projectId = process.env.APPWRITE_FUNCTION_PROJECT_ID || '691d4a54003b21bf0136';
@@ -2000,25 +2147,18 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     const appwriteUsers = new Users(client);
 
     // Handle ping endpoint
-    if (req.path === '/ping') {
+    if (pathMatchesRoute(req, '/ping')) {
       return res.text('Pong');
     }
 
     // Handle send notification endpoint
-    if (req.path === '/send-notification' && req.method === 'POST') {
+    if (pathMatchesRoute(req, '/send-notification') && isPost(req)) {
       log('Processing send-notification request');
 
       // Parse and validate request body
       let requestBody: SendNotificationRequest;
       try {
-        let body: Record<string, unknown>;
-        if (typeof req.body === 'string') {
-          body = JSON.parse(req.body) as Record<string, unknown>;
-        } else if (req.body && typeof req.body === 'object') {
-          body = req.body as Record<string, unknown>;
-        } else {
-          throw new Error('Request body is required');
-        }
+        const body = parseJsonBodyFromReq(req);
 
         if (!body.notificationId || typeof body.notificationId !== 'string') {
           throw new Error('notificationId is required and must be a string');
@@ -2057,19 +2197,12 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     }
 
     // Handle badge notification endpoint (triggered by admin portal)
-    if (req.path === '/send-badge-notification' && req.method === 'POST') {
+    if (pathMatchesRoute(req, '/send-badge-notification') && isPost(req)) {
       log('Processing send-badge-notification request');
 
       let requestBody: SendBadgeNotificationRequest;
       try {
-        let body: Record<string, unknown>;
-        if (typeof req.body === 'string') {
-          body = JSON.parse(req.body) as Record<string, unknown>;
-        } else if (req.body && typeof req.body === 'object') {
-          body = req.body as Record<string, unknown>;
-        } else {
-          throw new Error('Request body is required');
-        }
+        const body = parseJsonBodyFromReq(req);
         if (!body.userId || typeof body.userId !== 'string') {
           throw new Error('userId is required and must be a string');
         }
@@ -2099,19 +2232,12 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     }
 
     // Handle tier notification endpoint (triggered by admin portal)
-    if (req.path === '/send-tier-notification' && req.method === 'POST') {
+    if (pathMatchesRoute(req, '/send-tier-notification') && isPost(req)) {
       log('Processing send-tier-notification request');
 
       let requestBody: SendTierNotificationRequest;
       try {
-        let body: Record<string, unknown>;
-        if (typeof req.body === 'string') {
-          body = JSON.parse(req.body) as Record<string, unknown>;
-        } else if (req.body && typeof req.body === 'object') {
-          body = req.body as Record<string, unknown>;
-        } else {
-          throw new Error('Request body is required');
-        }
+        const body = parseJsonBodyFromReq(req);
         if (!body.userId || typeof body.userId !== 'string') {
           throw new Error('userId is required and must be a string');
         }
@@ -2147,19 +2273,12 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     }
 
     // Handle referral points notification endpoint (triggered by referral award flows)
-    if (req.path === '/send-referral-points-notification' && req.method === 'POST') {
+    if (pathMatchesRoute(req, '/send-referral-points-notification') && isPost(req)) {
       log('Processing send-referral-points-notification request');
 
       let requestBody: SendReferralPointsNotificationRequest;
       try {
-        let body: Record<string, unknown>;
-        if (typeof req.body === 'string') {
-          body = JSON.parse(req.body) as Record<string, unknown>;
-        } else if (req.body && typeof req.body === 'object') {
-          body = req.body as Record<string, unknown>;
-        } else {
-          throw new Error('Request body is required');
-        }
+        const body = parseJsonBodyFromReq(req);
         if (!body.userId || typeof body.userId !== 'string') {
           throw new Error('userId is required and must be a string');
         }
@@ -2189,16 +2308,177 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
       return res.json(result);
     }
 
-    if (req.path === '/send-user-push' && req.method === 'POST') {
+    // Simulate any notification type on-demand for testing (push + in-app, no side effects)
+    if (pathMatchesRoute(req, '/simulate-notification') && isPost(req)) {
+      log('Processing simulate-notification request');
+
+      const SIMULATION_CONFIGS: Record<
+        string,
+        { title: string; body: string; notifType: NotificationData['type']; data?: Record<string, string> }
+      > = {
+        trivia_tuesday: {
+          title: 'TRIVIA TUESDAY',
+          body: 'Earn points by knowing fun facts about your favorite brands!',
+          notifType: 'Engagement',
+        },
+        nearby_sampling: {
+          title: 'NEW SAMPLING EVENT NEAR YOU',
+          body: 'Heads up, [Sample Brand] has a sampling event coming up near you. Click to learn more!',
+          notifType: 'Promotional',
+        },
+        sampling_today: {
+          title: 'SAMPLING TODAY',
+          body: 'Sampling at [Sample Store] starts at 10:00 AM! Click to learn more!',
+          notifType: 'Event Reminder',
+          data: { eventId: 'simulated' },
+        },
+        event_reminder_24h: {
+          title: 'Event Reminder: [Sample Event]',
+          body: 'Your saved event starts in 24 hours!',
+          notifType: 'Event Reminder',
+          data: { eventId: 'simulated', reminderType: '24h' },
+        },
+        event_reminder_1h: {
+          title: 'Event Reminder: [Sample Event]',
+          body: 'Your saved event starts in 1 hour!',
+          notifType: 'Event Reminder',
+          data: { eventId: 'simulated', reminderType: '1h' },
+        },
+        referral_points: {
+          title: 'REFERRAL POINTS EARNED',
+          body: 'A new user signed up using your referral code! Thank you for sharing!',
+          notifType: 'Engagement',
+        },
+        inactivity: {
+          title: "YOU'VE BEEN MISSING SAMPLES!",
+          body: 'Enjoy experiencing new brands, earning points and winning prizes!',
+          notifType: 'Engagement',
+        },
+        birthday: {
+          title: 'HAPPY BIRTHDAY!',
+          body: 'We wish you a very happy birthday, from all of us here at SampleFinder! As a gift, we\'ve awarded you 100 points.',
+          notifType: 'Engagement',
+        },
+        anniversary: {
+          title: 'HAPPY SAMPLING ANNIVERSARY!',
+          body: 'Congratulations on reaching a full new year of sampling with SampleFinder! As a gift, we\'ve awarded you 200 points.',
+          notifType: 'Engagement',
+        },
+        tier_achievement: {
+          title: 'NEW TIER ACHIEVED!',
+          body: 'Congratulations, you\'ve reached a new tier! Keep earning points to level up!',
+          notifType: 'Engagement',
+        },
+        badge_achievement: {
+          title: 'BADGE EARNED!',
+          body: 'Congratulations, you\'ve earned a new badge!',
+          notifType: 'Engagement',
+        },
+      };
+
+      let email: string;
+      let simType: string;
+      try {
+        const body = parseJsonBodyFromReq(req);
+        if (!body.email || typeof body.email !== 'string') {
+          throw new Error('email is required and must be a string');
+        }
+        if (!body.type || typeof body.type !== 'string') {
+          throw new Error(
+            `type is required. Valid types: ${Object.keys(SIMULATION_CONFIGS).join(', ')}`
+          );
+        }
+        email = body.email;
+        simType = body.type;
+      } catch (validationError: unknown) {
+        const errorMessage =
+          validationError instanceof Error ? validationError.message : String(validationError);
+        error(`Validation error (simulate-notification): ${errorMessage}`);
+        return res.json({ success: false, error: errorMessage }, 400);
+      }
+
+      const validTypes = [...Object.keys(SIMULATION_CONFIGS), 'all'];
+      if (!validTypes.includes(simType)) {
+        const errorMessage = `Unknown type: ${simType}. Valid types: ${validTypes.join(', ')}`;
+        error(errorMessage);
+        return res.json({ success: false, error: errorMessage }, 400);
+      }
+
+      // Look up auth user by email, then find their profile by authID
+      let profile: UserProfile;
+      try {
+        const authResult = await appwriteUsers.list([
+          Query.equal('email', [email]),
+          Query.limit(1),
+        ]);
+        if (authResult.users.length === 0) {
+          return res.json({ success: false, error: `No user found with email: ${email}` }, 404);
+        }
+        const authUser = authResult.users[0];
+
+        const profileResult = await databases.listDocuments(
+          DATABASE_ID,
+          USER_PROFILES_TABLE_ID,
+          [Query.equal('authID', [authUser.$id]), Query.limit(1)]
+        );
+        if (profileResult.documents.length === 0) {
+          return res.json({ success: false, error: `No user profile found for email: ${email}` }, 404);
+        }
+        profile = profileResult.documents[0] as unknown as UserProfile;
+      } catch (fetchError: unknown) {
+        const errorMessage =
+          fetchError instanceof Error ? fetchError.message : String(fetchError);
+        error(`Failed to look up user by email: ${errorMessage}`);
+        return res.json({ success: false, error: `User lookup failed: ${errorMessage}` }, 500);
+      }
+
+      // If type is "all", send every notification type in sequence
+      const typesToSend = simType === 'all'
+        ? Object.keys(SIMULATION_CONFIGS)
+        : [simType];
+
+      const results: Array<{ type: string; success: boolean; sentCount: number; error?: string }> = [];
+
+      for (const currentType of typesToSend) {
+        const currentConfig = SIMULATION_CONFIGS[currentType];
+        try {
+          const result = await sendImmediateSystemNotificationToUser(
+            databases,
+            messaging,
+            profile,
+            currentConfig.title,
+            currentConfig.body,
+            currentConfig.notifType,
+            log,
+            { simulated: 'true', simulationType: currentType, ...(currentConfig.data ?? {}) }
+          );
+          results.push({ type: currentType, success: result.success, sentCount: result.sentCount });
+        } catch (sendError: unknown) {
+          const errorMessage =
+            sendError instanceof Error ? sendError.message : String(sendError);
+          log(`Simulate ${currentType} failed: ${errorMessage}`);
+          results.push({ type: currentType, success: false, sentCount: 0, error: errorMessage });
+        }
+      }
+
+      const totalSent = results.reduce((sum, r) => sum + r.sentCount, 0);
+      const allSuccess = results.every((r) => r.success);
+
+      return res.json({
+        success: allSuccess,
+        sentCount: totalSent,
+        simulated: true,
+        type: simType,
+        results,
+      });
+    }
+
+    if (pathMatchesRoute(req, '/send-user-push') && isPost(req)) {
       log('Processing send-user-push request');
 
       let requestBody: SendUserPushRequest;
       try {
-        if (!req.body || typeof req.body !== 'object') {
-          throw new Error('Request body is required');
-        }
-
-        const body = req.body as Record<string, unknown>;
+        const body = parseJsonBodyFromReq(req);
         const { userId, title, message, data } = body;
 
         if (!userId || typeof userId !== 'string') {
@@ -2264,16 +2544,12 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
     }
 
     // Handle batch push endpoint (used by mobile app)
-    if (req.path === '/send-batch-push' && req.method === 'POST') {
+    if (pathMatchesRoute(req, '/send-batch-push') && isPost(req)) {
       log('Processing send-batch-push request');
 
       let requestBody: SendBatchPushRequest;
       try {
-        if (!req.body || typeof req.body !== 'object') {
-          throw new Error('Request body is required');
-        }
-
-        const body = req.body as Record<string, unknown>;
+        const body = parseJsonBodyFromReq(req);
         const { userIds, title, message, data } = body;
 
         if (!Array.isArray(userIds) || userIds.length === 0) {
@@ -2348,10 +2624,7 @@ export default async function handler({ req, res, log, error }: HandlerContext) 
 
     // Handle scheduled execution: event reminders + due scheduled notifications
     // Triggered by: Appwrite cron (path / or empty) or manual GET /check-event-reminders
-    const isScheduledRun =
-      req.path === '/check-event-reminders' ||
-      req.path === '/' ||
-      req.path === '';
+    const isScheduledRun = scheduledRunPathsMatch(req);
     if (isScheduledRun) {
       log('Processing scheduled run: event reminders + scheduled notifications');
       const { hour: easternHour } = getTimePartsInTimezone(new Date(), EST_TIMEZONE);
