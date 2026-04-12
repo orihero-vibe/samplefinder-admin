@@ -2084,6 +2084,24 @@ export interface TierDocument extends Models.Document {
   [key: string]: unknown
 }
 
+/**
+ * Tier name for a point total: highest tier in `tiers` whose requiredPoints the user meets.
+ * Matches server-side “threshold” semantics when tier rows use the same requiredPoints as production.
+ */
+export function tierLevelForTotalPoints(tiers: TierDocument[], totalPoints: number): string {
+  if (tiers.length === 0) return ''
+  const pts = Number.isFinite(totalPoints) ? Math.max(0, totalPoints) : 0
+  const sorted = [...tiers].sort(
+    (a, b) => (Number(a.requiredPoints) || 0) - (Number(b.requiredPoints) || 0)
+  )
+  let chosen = sorted[0]
+  for (const t of sorted) {
+    const req = Number(t.requiredPoints) || 0
+    if (pts >= req) chosen = t
+  }
+  return String(chosen?.name ?? '').trim()
+}
+
 // Tiers service
 export const tiersService = {
   // List all tiers ordered by order field

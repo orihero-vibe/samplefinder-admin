@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 
 interface SearchAndFilterProps {
@@ -19,15 +19,17 @@ const SearchAndFilter = ({
   onSortOrderChange,
 }: SearchAndFilterProps) => {
   const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm || '')
+  const onSearchChangeRef = useRef(onSearchChange)
+  onSearchChangeRef.current = onSearchChange
 
-  // Debounce search input
+  // Debounce search input (callback ref avoids re-running on every parent render)
   useEffect(() => {
     const timer = setTimeout(() => {
-      onSearchChange(localSearchTerm)
+      onSearchChangeRef.current(localSearchTerm)
     }, 300) // 300ms debounce
 
     return () => clearTimeout(timer)
-  }, [localSearchTerm, onSearchChange])
+  }, [localSearchTerm])
 
   // Sync local search term with prop
   useEffect(() => {
