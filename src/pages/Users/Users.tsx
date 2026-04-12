@@ -14,7 +14,18 @@ import {
   EditUserModal,
   StatsCards,
 } from './components'
-import { appUsersService, triviaResponsesService, notificationsService, type AppUser, type UserFormData, statisticsService, type UsersStats, tiersService, type TierDocument } from '../../lib/services'
+import {
+  appUsersService,
+  triviaResponsesService,
+  notificationsService,
+  type AppUser,
+  type UserFormData,
+  statisticsService,
+  type UsersStats,
+  tiersService,
+  type TierDocument,
+  tierLevelForTotalPoints,
+} from '../../lib/services'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 
 const Users = () => {
@@ -665,6 +676,12 @@ const Users = () => {
               avatarURL = userData.image
             }
             
+            const totalPoints = Number(userData.userPoints) || 0
+            const resolvedTierLevel =
+              filterTierList.length > 0
+                ? tierLevelForTotalPoints(filterTierList, totalPoints)
+                : String(userData.tierLevel ?? '').trim()
+
             // Map the UI field names to actual database field names
             // Only include fields that exist in the database schema
             const updateData: Record<string, unknown> = {
@@ -672,15 +689,15 @@ const Users = () => {
               lastname: userData.lastName,
               zipCode: userData.zipCode,
               phoneNumber: userData.phoneNumber,
-              totalPoints: Number(userData.userPoints) || 0,
+              totalPoints,
               isAmbassador: userData.baBadge === 'Yes',
               totalEvents: Number(userData.checkIns) || 0,
               username: userData.username,
               isInfluencer: userData.influencerBadge === 'Yes',
               referralCode: userData.referralCode,
               totalReviews: Number(userData.reviews) || 0,
-              // Persist tier so admin edits stay in sync with app (tierLevel must exist on user_profiles)
-              tierLevel: userData.tierLevel ?? '',
+              // Tier follows totalPoints when tier metadata is loaded (manual point edits stay consistent)
+              tierLevel: resolvedTierLevel || (userData.tierLevel ?? ''),
               // Persist Trivias Won so admin edits stick (user_profiles must have integer attribute triviasWon)
               triviasWon: Number(userData.triviasWon) || 0,
               // Date of birth: send ISO string for datetime attribute (YYYY-MM-DD -> YYYY-MM-DDT00:00:00.000Z)
@@ -705,7 +722,12 @@ const Users = () => {
               (selectedUser.tierLevel != null && String(selectedUser.tierLevel).trim().length > 0)
                 ? String(selectedUser.tierLevel)
                 : null
-            const updatedTierRaw = userData.tierLevel != null ? String(userData.tierLevel).trim() : ''
+            const updatedTierRaw =
+              resolvedTierLevel.length > 0
+                ? resolvedTierLevel
+                : userData.tierLevel != null
+                  ? String(userData.tierLevel).trim()
+                  : ''
             const newTier = updatedTierRaw.length > 0 ? updatedTierRaw : null
 
             // Update user profile in database
