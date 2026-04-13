@@ -62,8 +62,6 @@ const SearchAndFilter = ({
           <option>All Types</option>
           <option>Notification</option>
           <option>Event Reminder</option>
-          <option>Promotional</option>
-          <option>Engagement</option>
         </select>
         <select
           value={sortBy}
