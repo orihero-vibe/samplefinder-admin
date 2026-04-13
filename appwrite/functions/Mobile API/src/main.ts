@@ -931,18 +931,22 @@ async function submitTriviaAnswer(
     );
     const currentPoints =
       Number((userDoc as Record<string, unknown>).totalPoints) || 0;
+    const currentTriviasWon =
+      Number((userDoc as Record<string, unknown>).triviasWon) || 0;
 
-    // Update user's total points
     await databases.updateDocument(
       DATABASE_ID,
       USER_PROFILES_TABLE_ID,
       userId,
       {
         totalPoints: currentPoints + pointsAwarded,
+        triviasWon: currentTriviasWon + 1,
       }
     );
 
-    log(`Awarded ${pointsAwarded} points to user ${userId}`);
+    log(
+      `Awarded ${pointsAwarded} points to user ${userId}; triviasWon ${currentTriviasWon} -> ${currentTriviasWon + 1}`
+    );
   }
 
   return {

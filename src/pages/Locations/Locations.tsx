@@ -168,10 +168,11 @@ const Locations = () => {
     }
   }
 
-  // Handle search change
+  // Ignore no-op search updates so debounced callbacks do not reset pagination when term unchanged
   const handleSearchChange = (value: string) => {
+    if (value === searchTerm) return
     setSearchTerm(value)
-    setCurrentPage(1) // Reset to page 1 when search changes
+    setCurrentPage(1)
   }
 
   // Handle sort by change
