@@ -78,17 +78,9 @@ const Users = () => {
       const digitsOnly = trimmedSearch.replace(/\D/g, '')
       const isPhoneSearch = trimmedSearch.length > 0 && digitsOnly && digitsOnly === trimmedSearch && digitsOnly.length >= 3
       
-      // Apply search using Query.contains (searches firstname, lastname, username)
-      // Note: email is not in user_profiles collection, it's in Auth system
-      // For email/phone search, we'll fetch a larger set and filter client-side
-      if (trimmedSearch && !isEmailSearch && !isPhoneSearch) {
-        // Search across firstname, lastname, and username using OR logic
-        queries.push(Query.or([
-          Query.contains('firstname', trimmedSearch),
-          Query.contains('lastname', trimmedSearch),
-          Query.contains('username', trimmedSearch),
-        ]))
-      }
+      // Note: email lives in the Auth system, not user_profiles, so ALL searches
+      // (including partial-email input without '@') must fetch a larger set and
+      // filter client-side to match against email as well as name/username.
       
       // Apply tier filter by canonical tierLevel field
       if (tierFilter !== 'All Tiers') {
@@ -151,10 +143,10 @@ const Users = () => {
         const endIndex = startIndex + pageSize
         filteredUsers = filteredUsers.slice(startIndex, endIndex)
       } else if (hasSearch) {
-        // Text search: ensure only users matching firstname, lastname, or username (case-insensitive) are shown
+        // Text search: match against firstname, lastname, username, AND email (case-insensitive)
         const lowerSearch = trimmedSearch.toLowerCase()
         filteredUsers = result.users.filter(user =>
-          [user.firstname, user.lastname, user.username].some(field =>
+          [user.firstname, user.lastname, user.username, user.email].some(field =>
             field != null && String(field).toLowerCase().includes(lowerSearch)
           )
         )
