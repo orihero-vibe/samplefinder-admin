@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { ConfirmationModal, DashboardLayout } from '../../components'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { clientsService, statisticsService, type ClientDocument, type ClientsStats } from '../../lib/services'
@@ -196,23 +196,24 @@ const ClientsBrands = () => {
     }
   }
 
-  // Handle search change
-  const handleSearchChange = (value: string) => {
+  // Handle search change — useCallback keeps a stable reference so SearchAndFilter's
+  // debounce useEffect doesn't re-fire on every parent re-render
+  const handleSearchChange = useCallback((value: string) => {
     setSearchTerm(value)
-    setCurrentPage(1) // Reset to page 1 when search changes
-  }
+    setCurrentPage(1)
+  }, [])
 
   // Handle sort by change
-  const handleSortByChange = (value: string) => {
+  const handleSortByChange = useCallback((value: string) => {
     setSortBy(value)
-    setCurrentPage(1) // Reset to page 1 when sort changes
-  }
+    setCurrentPage(1)
+  }, [])
 
   // Handle sort order change
-  const handleSortOrderChange = (order: 'asc' | 'desc') => {
+  const handleSortOrderChange = useCallback((order: 'asc' | 'desc') => {
     setSortOrder(order)
-    setCurrentPage(1) // Reset to page 1 when sort order changes
-  }
+    setCurrentPage(1)
+  }, [])
 
   // Fetch statistics
   const fetchStatistics = async () => {
