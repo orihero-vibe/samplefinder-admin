@@ -27,6 +27,7 @@ import {
   tierLevelForTotalPoints,
 } from '../../lib/services'
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
+import { storedDobToDateInputValue } from '../../lib/formUtils'
 
 const Users = () => {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -691,15 +692,11 @@ const Users = () => {
               phoneNumber: userData.phoneNumber,
               totalPoints,
               isAmbassador: userData.baBadge === 'Yes',
-              totalEvents: Number(userData.checkIns) || 0,
               username: userData.username,
               isInfluencer: userData.influencerBadge === 'Yes',
               referralCode: userData.referralCode,
-              totalReviews: Number(userData.reviews) || 0,
               // Tier follows totalPoints when tier metadata is loaded (manual point edits stay consistent)
               tierLevel: resolvedTierLevel || (userData.tierLevel ?? ''),
-              // Persist Trivias Won so admin edits stick (user_profiles must have integer attribute triviasWon)
-              triviasWon: Number(userData.triviasWon) || 0,
               // Date of birth: send ISO string for datetime attribute (YYYY-MM-DD -> YYYY-MM-DDT00:00:00.000Z)
               ...(userData.dob?.trim()
                 ? { dob: userData.dob.trim().length === 10 ? `${userData.dob.trim()}T00:00:00.000Z` : userData.dob.trim() }
@@ -855,7 +852,7 @@ const Users = () => {
             reviews: String(u.totalReviews ?? u.reviews ?? '0'),
             triviasWon: String(triviasWonDisplay),
             isBlocked: (u as { isBlocked?: boolean }).isBlocked || false,
-            dob: u.dob ? new Date(u.dob).toISOString().split('T')[0] : '',
+            dob: storedDobToDateInputValue(u.dob),
           }
         })()}
       />

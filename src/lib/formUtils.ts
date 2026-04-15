@@ -45,3 +45,26 @@ export function trimFormStrings<T>(data: T): T {
 
   return data
 }
+
+/**
+ * YYYY-MM-DD for `<input type="date">` from a stored DOB (ISO datetime or date).
+ * Prefer the calendar date from an ISO date prefix so we match list view / app semantics.
+ * Avoids `new Date(s).toISOString().split('T')[0]`, which uses UTC midnight and can show
+ * the previous calendar day when the backend stores local datetimes without a `Z` suffix.
+ */
+export function storedDobToDateInputValue(stored: string | undefined): string {
+  if (!stored?.trim()) return ''
+  const m = stored.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (m) {
+    const y = m[1]!.padStart(4, '0')
+    const mo = m[2]!.padStart(2, '0')
+    const d = m[3]!.padStart(2, '0')
+    return `${y}-${mo}-${d}`
+  }
+  const dt = new Date(stored)
+  if (Number.isNaN(dt.getTime())) return ''
+  const y = dt.getUTCFullYear()
+  const mo = String(dt.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(dt.getUTCDate()).padStart(2, '0')
+  return `${y}-${mo}-${day}`
+}
