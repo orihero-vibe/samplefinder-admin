@@ -5,6 +5,7 @@ import LocationAutocomplete from '../../../components/LocationAutocomplete'
 import { ImageCropper, UnsavedChangesModal } from '../../../components'
 import { trimFormStrings } from '../../../lib/formUtils'
 import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
+import { appwriteConfig } from '../../../lib/appwrite'
 import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
 import { useNotificationStore } from '../../../stores/notificationStore'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
@@ -147,50 +148,78 @@ const EditEventModal = ({
         })
       }
       
-      // Fetch default points from global settings if fields are empty
       const fetchDefaultsIfNeeded = async () => {
-        let resolvedLocationName = (initialData.locationName && String(initialData.locationName).trim()) || ''
-        if (!resolvedLocationName && initialData.address && initialData.city) {
-          try {
-            const searchTerm = initialData.address || initialData.city
-            const result = await locationsService.search(searchTerm)
-            const matchingLocation = result.documents.find(
-              (loc) =>
-                loc.address === initialData.address &&
-                loc.city === initialData.city &&
-                loc.state === initialData.state
-            )
-            if (matchingLocation) {
-              resolvedLocationName = matchingLocation.name
-            }
-          } catch (error) {
-            console.error('Error finding location:', error)
-          }
-        }
         const initialLocationId =
           initialData.locationId != null && String(initialData.locationId).trim() !== ''
             ? String(initialData.locationId).trim()
             : undefined
-        setLocationDisplayValue(resolvedLocationName)
+
+        let address = initialData.address || ''
+        let city = initialData.city || ''
+        let state = initialData.state || ''
+        let zipCode = initialData.zipCode || ''
+        let resolvedLocationName = (initialData.locationName && String(initialData.locationName).trim()) || ''
+
+        if (initialLocationId && appwriteConfig.eventsHasLocationIdAttribute) {
+          try {
+            const loc = await locationsService.getById(initialLocationId)
+            if (loc) {
+              address = loc.address || ''
+              city = loc.city || ''
+              state = loc.state || ''
+              zipCode = loc.zipCode || ''
+              setLocationDisplayValue(loc.name || '')
+            } else {
+              setLocationDisplayValue('')
+            }
+          } catch (e) {
+            console.error('Error loading location for edit:', e)
+            setLocationDisplayValue('')
+          }
+        } else {
+          if (!resolvedLocationName && initialData.address && initialData.city && !appwriteConfig.eventsHasLocationIdAttribute) {
+            try {
+              const searchTerm = initialData.address || initialData.city
+              const result = await locationsService.search(searchTerm)
+              const matchingLocation = result.documents.find(
+                (loc) =>
+                  loc.address === initialData.address &&
+                  loc.city === initialData.city &&
+                  loc.state === initialData.state
+              )
+              if (matchingLocation) {
+                resolvedLocationName = matchingLocation.name
+              }
+            } catch (error) {
+              console.error('Error finding location:', error)
+            }
+          }
+          setLocationDisplayValue(resolvedLocationName)
+        }
+
+        const locFields = { address, city, state, zipCode }
+        const legacyLat = appwriteConfig.eventsHasLocationIdAttribute ? '' : initialData.latitude || ''
+        const legacyLng = appwriteConfig.eventsHasLocationIdAttribute ? '' : initialData.longitude || ''
+        const legacyLocName = appwriteConfig.eventsHasLocationIdAttribute ? '' : resolvedLocationName
 
         const needsDefaults = !initialData.checkInPoints || !initialData.reviewPoints
-        
+
         if (needsDefaults) {
           try {
             const [defaultCheckInPoints, defaultReviewPoints] = await Promise.all([
               settingsService.getDefaultCheckInPoints(),
               settingsService.getDefaultReviewPoints(),
             ])
-            
+
             const formDataToSet = {
               eventName: initialData.eventName || '',
               eventDate: initialData.eventDate || '',
               startTime: initialData.startTime || '',
               endTime: initialData.endTime || '',
-              city: initialData.city || '',
-              address: initialData.address || '',
-              state: initialData.state || '',
-              zipCode: initialData.zipCode || '',
+              city: locFields.city,
+              address: locFields.address,
+              state: locFields.state,
+              zipCode: locFields.zipCode,
               category: initialData.category || '',
               products: initialData.products || [],
               discount: initialData.discount || '',
@@ -200,28 +229,26 @@ const EditEventModal = ({
               checkInPoints: initialData.checkInPoints || defaultCheckInPoints?.toString() || '',
               reviewPoints: initialData.reviewPoints || defaultReviewPoints?.toString() || '',
               eventInfo: initialData.eventInfo || '',
-              latitude: initialData.latitude || '',
-              longitude: initialData.longitude || '',
-              locationName: resolvedLocationName,
+              latitude: legacyLat,
+              longitude: legacyLng,
+              locationName: legacyLocName,
               locationId: initialLocationId,
               timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
-            
+
             setFormData(formDataToSet)
-            // Store the initial data for comparison
             initialDataRef.current = formDataToSet
           } catch (error) {
             console.error('Error fetching default points:', error)
-            // Fallback to initial data without defaults
             const formDataToSet = {
               eventName: initialData.eventName || '',
               eventDate: initialData.eventDate || '',
               startTime: initialData.startTime || '',
               endTime: initialData.endTime || '',
-              city: initialData.city || '',
-              address: initialData.address || '',
-              state: initialData.state || '',
-              zipCode: initialData.zipCode || '',
+              city: locFields.city,
+              address: locFields.address,
+              state: locFields.state,
+              zipCode: locFields.zipCode,
               category: initialData.category || '',
               products: initialData.products || [],
               discount: initialData.discount || '',
@@ -231,28 +258,26 @@ const EditEventModal = ({
               checkInPoints: initialData.checkInPoints || '',
               reviewPoints: initialData.reviewPoints || '',
               eventInfo: initialData.eventInfo || '',
-              latitude: initialData.latitude || '',
-              longitude: initialData.longitude || '',
-              locationName: resolvedLocationName,
+              latitude: legacyLat,
+              longitude: legacyLng,
+              locationName: legacyLocName,
               locationId: initialLocationId,
               timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
             }
-            
+
             setFormData(formDataToSet)
-            // Store the initial data for comparison
             initialDataRef.current = formDataToSet
           }
         } else {
-          // Use initial data as-is
           const formDataToSet = {
             eventName: initialData.eventName || '',
             eventDate: initialData.eventDate || '',
             startTime: initialData.startTime || '',
             endTime: initialData.endTime || '',
-            city: initialData.city || '',
-            address: initialData.address || '',
-            state: initialData.state || '',
-            zipCode: initialData.zipCode || '',
+            city: locFields.city,
+            address: locFields.address,
+            state: locFields.state,
+            zipCode: locFields.zipCode,
             category: initialData.category || '',
             products: initialData.products || [],
             discount: initialData.discount || '',
@@ -262,15 +287,14 @@ const EditEventModal = ({
             checkInPoints: initialData.checkInPoints || '',
             reviewPoints: initialData.reviewPoints || '',
             eventInfo: initialData.eventInfo || '',
-            latitude: initialData.latitude || '',
-            longitude: initialData.longitude || '',
-            locationName: resolvedLocationName,
+            latitude: legacyLat,
+            longitude: legacyLng,
+            locationName: legacyLocName,
             locationId: initialLocationId,
             timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
           }
-          
+
           setFormData(formDataToSet)
-          // Store the initial data for comparison
           initialDataRef.current = formDataToSet
         }
       }
@@ -469,6 +493,21 @@ const EditEventModal = ({
           type: 'error',
           title: 'Invalid Products',
           message: `Invalid products selected: ${invalidProducts.join(', ')}. Please select only products related to the selected brand.`,
+        })
+        return
+      }
+    }
+
+    if (appwriteConfig.eventsHasLocationIdAttribute) {
+      const id =
+        trimmed.locationId != null && String(trimmed.locationId).trim() !== ''
+          ? String(trimmed.locationId).trim()
+          : ''
+      if (!id) {
+        addNotification({
+          type: 'error',
+          title: 'Location Required',
+          message: 'Select a location from the list.',
         })
         return
       }
@@ -851,51 +890,12 @@ const EditEventModal = ({
                 setFormData((prev) => ({ ...prev, locationId: undefined }))
               }}
               onLocationSelect={(location: LocationDocument) => {
-                // Extract coordinates - handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
-                let latitude = ''
-                let longitude = ''
-                
-                if (location.location) {
-                  let lat: number | undefined
-                  let lng: number | undefined
-                  
-                  if (Array.isArray(location.location) && location.location.length >= 2) {
-                    // Direct array format: [longitude, latitude]
-                    lng = location.location[0]
-                    lat = location.location[1]
-                  } else if (
-                    typeof location.location === 'object' &&
-                    location.location !== null &&
-                    'coordinates' in location.location &&
-                    Array.isArray((location.location as { coordinates: number[] }).coordinates) &&
-                    (location.location as { coordinates: number[] }).coordinates.length >= 2
-                  ) {
-                    // GeoJSON format: {coordinates: [longitude, latitude]}
-                    const coords = (location.location as { coordinates: number[] }).coordinates
-                    lng = coords[0]
-                    lat = coords[1]
-                  }
-                  
-                  // Validate coordinates are within valid ranges before using them
-                  if (lat !== undefined && lng !== undefined && !isNaN(lat) && !isNaN(lng)) {
-                    // Latitude: -90 to 90, Longitude: -180 to 180
-                    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                      latitude = lat.toString()
-                      longitude = lng.toString()
-                    }
-                  }
-                }
-                
-                // Populate all form fields from selected location
                 setFormData((prev) => ({
                   ...prev,
                   address: location.address || '',
                   city: location.city || '',
                   state: location.state || '',
                   zipCode: location.zipCode || '',
-                  latitude,
-                  longitude,
-                  locationName: location.name || '',
                   locationId: location.$id,
                 }))
               }}
@@ -904,9 +904,12 @@ const EditEventModal = ({
             />
           </div>
 
-          {/* Hidden inputs for validation */}
-          <input type="hidden" value={formData.latitude} required />
-          <input type="hidden" value={formData.longitude} required />
+          {!appwriteConfig.eventsHasLocationIdAttribute && (
+            <>
+              <input type="hidden" value={formData.latitude} required />
+              <input type="hidden" value={formData.longitude} required />
+            </>
+          )}
 
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
