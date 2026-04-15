@@ -130,9 +130,9 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             zipCode: initialData.zipCode || '',
             category: initialData.category || '',
             products: initialData.products || [],
-            discount: initialData.discount || '',
-            // Preserve existing discount image URL when duplicating so it is saved with the new event.
-            discountImage: initialData.discountImage || null,
+            // Do not copy discount text or barcode image from the source event — each event needs its own promo.
+            discount: '',
+            discountImage: null,
             // Always generate new check-in code for the duplicated event.
             checkInCode: checkInCode,
             brandName: initialData.brandName || '',
@@ -172,12 +172,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
           setFormData(newInitialData)
           initialDataRef.current = newInitialData
           
-          // Set discount image preview if initialData has an image URL
-          if (initialData?.discountImage && typeof initialData.discountImage === 'string') {
-            setDiscountImagePreview(initialData.discountImage)
-          } else {
-            setDiscountImagePreview(null)
-          }
+          // Duplicate flow does not copy discount/barcode; never preview the source event's image.
+          setDiscountImagePreview(null)
           
           // Set location display value: prefer locationName, else resolve via findLocationByName
           if (initialData?.locationName) {
