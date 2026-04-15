@@ -8,7 +8,14 @@ import {
   NotificationsTable,
   CreateNotificationModal,
 } from './components'
-import { statisticsService, notificationsService, normalizeNotificationFormData, type NotificationsStats, type NotificationDocument, type NotificationFormData } from '../../lib/services'
+import {
+  statisticsService,
+  notificationsService,
+  normalizeNotificationFormData,
+  type NotificationsStats,
+  type NotificationDocument,
+  type NotificationFormData,
+} from '../../lib/services'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useTimezoneStore } from '../../stores/timezoneStore'
 import { utcToAppTimeFormInputs } from '../../lib/dateUtils'
@@ -279,38 +286,72 @@ const Notifications = () => {
 
   // Handle save notification (create or update)
   const handleSaveNotification = async (notificationData: NotificationFormData) => {
+    const refreshPage = editingNotification ? currentPage : 1
     try {
       if (editingNotification) {
-        // Update existing notification (and send if "Send Immediately")
-        await notificationsService.update(editingNotification.id, notificationData, appTimezone)
-        
-        addNotification({
-          type: 'success',
-          title: 'Notification Updated',
-          message: notificationData.schedule === 'Send Immediately'
-            ? 'Notification has been sent successfully.'
-            : 'Notification has been updated and scheduled for 1:00 PM EST.',
-        })
-        
+        const result = await notificationsService.update(
+          editingNotification.id,
+          notificationData,
+          appTimezone
+        )
+
+        if (result.sendFailed) {
+          addNotification({
+            type: 'warning',
+            title: 'Notification saved; delivery failed',
+            message:
+              result.sendError ??
+              'The notification was updated in the database but could not be sent. Try again or check server logs.',
+          })
+        } else {
+          addNotification({
+            type: 'success',
+            title: 'Notification Updated',
+            message:
+              notificationData.schedule === 'Send Immediately'
+                ? 'Notification has been sent successfully.'
+                : 'Notification has been updated and scheduled for 1:00 PM EST.',
+          })
+        }
+
         setEditingNotification(null)
       } else {
-        // Create new notification
-        await notificationsService.create(notificationData, appTimezone)
-        
-        addNotification({
-          type: 'success',
-          title: 'Notification Created',
-          message: notificationData.schedule === 'Send Immediately' 
-            ? 'Notification has been sent successfully.' 
-            : 'Notification has been scheduled for 1:00 PM EST.',
-        })
-        
-        // Reset to page 1 after creating
+        const result = await notificationsService.create(notificationData, appTimezone)
+
+        if (result.sendFailed) {
+          addNotification({
+            type: 'warning',
+            title: 'Notification created; delivery failed',
+            message:
+              result.sendError ??
+              'The notification was saved but could not be sent. It may appear in the list as Draft; check logs or try sending again.',
+          })
+        } else {
+          addNotification({
+            type: 'success',
+            title: 'Notification Created',
+            message:
+              notificationData.schedule === 'Send Immediately'
+                ? 'Notification has been sent successfully.'
+                : 'Notification has been scheduled for 1:00 PM EST.',
+          })
+        }
+
         setCurrentPage(1)
       }
-      
-      // Refresh notifications and statistics
-      await Promise.all([fetchNotifications(editingNotification ? currentPage : 1), fetchStatistics()])
+
+      try {
+        await Promise.all([fetchNotifications(refreshPage), fetchStatistics()])
+      } catch (refreshError) {
+        console.error('Error refreshing notifications after save:', refreshError)
+        addNotification({
+          type: 'warning',
+          title: 'List may be out of date',
+          message:
+            'The notification was saved, but the list could not be refreshed. Reload the page to see the latest data.',
+        })
+      }
+
       setIsCreateModalOpen(false)
       setDuplicatingData(null)
     } catch (error: unknown) {
