@@ -1515,6 +1515,14 @@ export interface NotificationDocument extends Models.Document {
   [key: string]: unknown
 }
 
+/** Result of creating or updating a notification (DB write + optional immediate send). */
+export type NotificationSaveResult = {
+  document: NotificationDocument
+  /** True when the row was saved but the push function failed or returned an error. */
+  sendFailed?: boolean
+  sendError?: string
+}
+
 // Notification Form Data interface (admin only creates App Push notifications)
 export interface NotificationFormData {
   title: string
@@ -1598,7 +1606,7 @@ export const notificationsService = {
   create: async (
     data: NotificationFormData,
     _appTimezone?: string
-  ): Promise<NotificationDocument> => {
+  ): Promise<NotificationSaveResult> => {
     const { targetAudience } = normalizeNotificationPayload(data)
     const dbData: Record<string, unknown> = {
       title: data.title,
@@ -1641,12 +1649,18 @@ export const notificationsService = {
       dbData
     )
 
-    // If sending immediately, trigger send now.
+    // Send runs after the document exists; failures must not imply "create failed" or users retry and duplicate rows.
     if (data.schedule === 'Send Immediately') {
-      await notificationsService.sendNotification(notification.$id)
+      try {
+        await notificationsService.sendNotification(notification.$id)
+      } catch (e) {
+        const sendError = e instanceof Error ? e.message : String(e)
+        console.error('Error sending notification after create:', e)
+        return { document: notification, sendFailed: true, sendError }
+      }
     }
 
-    return notification
+    return { document: notification }
   },
 
   getById: (id: string) =>
@@ -1659,7 +1673,7 @@ export const notificationsService = {
     id: string,
     data: Partial<NotificationFormData>,
     _appTimezone?: string
-  ): Promise<NotificationDocument> => {
+  ): Promise<NotificationSaveResult> => {
     const { targetAudience } = normalizeNotificationPayload(data)
     // Only include actual database fields
     const dbData: Record<string, unknown> = {
@@ -1707,10 +1721,16 @@ export const notificationsService = {
     )
 
     if (data.schedule === 'Send Immediately') {
-      await notificationsService.sendNotification(id)
+      try {
+        await notificationsService.sendNotification(id)
+      } catch (e) {
+        const sendError = e instanceof Error ? e.message : String(e)
+        console.error('Error sending notification after update:', e)
+        return { document: updated, sendFailed: true, sendError }
+      }
     }
 
-    return updated
+    return { document: updated }
   },
 
   delete: (id: string) =>

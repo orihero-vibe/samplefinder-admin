@@ -117,7 +117,7 @@ const Dashboard = () => {
   })
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all') // 'all', 'active', 'hidden', 'archived'
-  const [sortBy, setSortBy] = useState<string>('date-asc') // 'date-asc', 'date-desc', 'name-asc', 'name-desc', 'brand-asc', 'brand-desc'
+  const [sortBy, setSortBy] = useState<string>('date-asc') // 'date-*', 'name-*', 'brand-*', 'location-*'
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
     type: ConfirmationType
@@ -263,6 +263,8 @@ const Dashboard = () => {
         // For brand sorting, we'll sort by date first, then handle brand sorting client-side
         // since brand is a relationship field
         queries.push(orderMethod('startTime'))
+      } else if (sortField === 'location') {
+        queries.push(orderMethod('locationName'))
       }
       
       // Determine if we're searching or filtering by derived status (Active / In Active)
@@ -319,13 +321,14 @@ const Dashboard = () => {
         return event
       })
 
-      // When searching, filter by term against event name, city, address, state, and brand name
+      // When searching, filter by term against event name, location name, city, address, state, and brand name
       if (isSearching) {
         const term = searchTerm.toLowerCase().trim()
         const matchingIds = new Set(
           result.documents
             .filter((doc) => {
               const name = (doc.name ?? '').toLowerCase()
+              const locationName = (doc.locationName ?? '').toLowerCase()
               const city = (doc.city ?? '').toLowerCase()
               const address = (doc.address ?? '').toLowerCase()
               const state = (doc.state ?? '').toLowerCase()
@@ -333,6 +336,7 @@ const Dashboard = () => {
               const brand = (client?.name ?? '').toLowerCase()
               return (
                 name.includes(term) ||
+                locationName.includes(term) ||
                 city.includes(term) ||
                 address.includes(term) ||
                 state.includes(term) ||

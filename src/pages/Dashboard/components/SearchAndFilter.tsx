@@ -60,7 +60,7 @@ const SearchAndFilter = ({
           />
           <input
             type="text"
-            placeholder="Search by event name, city, address, state, or brand"
+            placeholder="Search by event name, location name, city, address, state, or brand"
             value={localSearchTerm}
             onChange={(e) => setLocalSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
@@ -97,6 +97,8 @@ const SearchAndFilter = ({
           <option value="name-desc">Sort by: Name (Descending)</option>
           <option value="brand-asc">Sort by: Brand (Ascending)</option>
           <option value="brand-desc">Sort by: Brand (Descending)</option>
+          <option value="location-asc">Sort by: Location name (Ascending)</option>
+          <option value="location-desc">Sort by: Location name (Descending)</option>
         </select>
       </div>
     </div>

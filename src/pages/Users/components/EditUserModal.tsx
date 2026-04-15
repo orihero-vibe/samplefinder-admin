@@ -366,7 +366,7 @@ const EditUserModal = ({
     }
     
     // Only allow numbers for specific fields
-    if (['userPoints', 'checkIns', 'reviews', 'triviasWon', 'checkInReviewPoints'].includes(field)) {
+    if (['userPoints', 'checkInReviewPoints'].includes(field)) {
       const numericValue = value.replace(/\D/g, '')
       setFormData((prev) => ({ ...prev, [field]: numericValue }))
       return
@@ -729,18 +729,16 @@ const EditUserModal = ({
                 )}
               </div>
 
-              {/* Check Ins */}
+              {/* Check Ins (system-derived; not editable) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Check Ins <span className="text-red-500">*</span>
+                  Check Ins
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter Check Ins"
+                  readOnly
                   value={formData.checkIns}
-                  onChange={(e) => handleInputChange('checkIns', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
               </div>
 
@@ -934,33 +932,29 @@ const EditUserModal = ({
                 />
               </div>
 
-              {/* Reviews */}
+              {/* Reviews (system-derived; not editable) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Reviews <span className="text-red-500">*</span>
+                  Reviews
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter Reviews"
+                  readOnly
                   value={formData.reviews}
-                  onChange={(e) => handleInputChange('reviews', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
               </div>
 
-              {/* Trivias Won (editable; synced with user profile) */}
+              {/* Trivias Won (system-derived; not editable) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Trivias Won <span className="text-red-500">*</span>
+                  Trivias Won
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter Trivias Won"
+                  readOnly
                   value={formData.triviasWon}
-                  onChange={(e) => handleInputChange('triviasWon', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
               </div>
             </div>
