@@ -6,6 +6,7 @@ import LocationPicker from '../../../components/LocationPicker'
 import { ImageCropper, UnsavedChangesModal } from '../../../components'
 import { trimFormStrings } from '../../../lib/formUtils'
 import { generateUniqueCheckInCode } from '../../../lib/eventUtils'
+import { appwriteConfig } from '../../../lib/appwrite'
 import { settingsService, locationsService, type LocationDocument } from '../../../lib/services'
 import { useNotificationStore } from '../../../stores/notificationStore'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
@@ -119,99 +120,87 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
           ])
           
           // If initialData is provided (for duplicate), use it; otherwise use empty defaults
-          const newInitialData = initialData ? {
-            eventName: initialData.eventName || '',
-            eventDate: initialData.eventDate || '',
-            startTime: initialData.startTime || '',
-            endTime: initialData.endTime || '',
-            city: initialData.city || '',
-            address: initialData.address || '',
-            state: initialData.state || '',
-            zipCode: initialData.zipCode || '',
-            category: initialData.category || '',
-            products: initialData.products || [],
-            // Do not copy discount text or barcode image from the source event — each event needs its own promo.
-            discount: '',
-            discountImage: null,
-            // Always generate new check-in code for the duplicated event.
-            checkInCode: checkInCode,
-            brandName: initialData.brandName || '',
-            checkInPoints: initialData.checkInPoints || defaultCheckInPoints?.toString() || '',
-            reviewPoints: initialData.reviewPoints || defaultReviewPoints?.toString() || '',
-            eventInfo: initialData.eventInfo || '',
-            latitude: initialData.latitude || '',
-            longitude: initialData.longitude || '',
-            locationName: initialData.locationName || '',
-            locationId: initialData.locationId,
-            timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
-          } : {
-            eventName: '',
-            eventDate: '',
-            startTime: '',
-            endTime: '',
-            city: '',
-            address: '',
-            state: '',
-            zipCode: '',
-            category: '',
-            products: [],
-            discount: '',
-            discountImage: null,
-            checkInCode: checkInCode,
-            brandName: '',
-            checkInPoints: defaultCheckInPoints?.toString() || '',
-            reviewPoints: defaultReviewPoints?.toString() || '',
-            eventInfo: '',
-            latitude: '',
-            longitude: '',
-            locationName: '',
-            locationId: undefined,
-            timezone: DEFAULT_APP_TIMEZONE,
-          }
-          
-          setFormData(newInitialData)
-          initialDataRef.current = newInitialData
-          
-          // Duplicate flow does not copy discount/barcode; never preview the source event's image.
-          setDiscountImagePreview(null)
-          
-          // Set location display value: prefer locationName, else resolve via findLocationByName
-          if (initialData?.locationName) {
-            setLocationDisplayValue(initialData.locationName)
-          } else {
-            const findLocationByName = async () => {
-              if (initialData?.address && initialData?.city) {
-                try {
-                  const searchTerm = initialData.address || initialData.city
-                  const result = await locationsService.search(searchTerm)
-                  const matchingLocation = result.documents.find(
-                    (loc) =>
-                      loc.address === initialData?.address &&
-                      loc.city === initialData?.city &&
-                      loc.state === initialData?.state
-                  )
-                  if (matchingLocation) {
-                    setLocationDisplayValue(matchingLocation.name)
-                    setFormData((prev) => ({
-                      ...prev,
-                      locationName: matchingLocation.name,
-                      locationId: matchingLocation.$id,
-                    }))
-                  } else {
-                    setLocationDisplayValue(initialData.address || '')
-                  }
-                } catch (error) {
-                  console.error('Error finding location:', error)
-                  setLocationDisplayValue(initialData?.address || '')
+          let newInitialData: EventData = initialData
+            ? {
+                eventName: initialData.eventName || '',
+                eventDate: initialData.eventDate || '',
+                startTime: initialData.startTime || '',
+                endTime: initialData.endTime || '',
+                city: initialData.city || '',
+                address: initialData.address || '',
+                state: initialData.state || '',
+                zipCode: initialData.zipCode || '',
+                category: initialData.category || '',
+                products: initialData.products || [],
+                discount: '',
+                discountImage: null,
+                checkInCode: checkInCode,
+                brandName: initialData.brandName || '',
+                checkInPoints: initialData.checkInPoints || defaultCheckInPoints?.toString() || '',
+                reviewPoints: initialData.reviewPoints || defaultReviewPoints?.toString() || '',
+                eventInfo: initialData.eventInfo || '',
+                latitude: '',
+                longitude: '',
+                locationName: '',
+                locationId: initialData.locationId,
+                timezone: initialData.timezone || DEFAULT_APP_TIMEZONE,
+              }
+            : {
+                eventName: '',
+                eventDate: '',
+                startTime: '',
+                endTime: '',
+                city: '',
+                address: '',
+                state: '',
+                zipCode: '',
+                category: '',
+                products: [],
+                discount: '',
+                discountImage: null,
+                checkInCode: checkInCode,
+                brandName: '',
+                checkInPoints: defaultCheckInPoints?.toString() || '',
+                reviewPoints: defaultReviewPoints?.toString() || '',
+                eventInfo: '',
+                latitude: '',
+                longitude: '',
+                locationName: '',
+                locationId: undefined,
+                timezone: DEFAULT_APP_TIMEZONE,
+              }
+
+          if (initialData?.locationId && appwriteConfig.eventsHasLocationIdAttribute) {
+            try {
+              const loc = await locationsService.getById(String(initialData.locationId).trim())
+              if (loc) {
+                newInitialData = {
+                  ...newInitialData,
+                  address: loc.address || '',
+                  city: loc.city || '',
+                  state: loc.state || '',
+                  zipCode: loc.zipCode || '',
+                  locationId: loc.$id,
                 }
-              } else if (initialData?.address) {
-                setLocationDisplayValue(initialData.address)
+                setLocationDisplayValue(loc.name || '')
               } else {
                 setLocationDisplayValue('')
               }
+            } catch (e) {
+              console.error('Error loading location for duplicate:', e)
+              setLocationDisplayValue('')
             }
-            findLocationByName()
+          } else if (initialData?.locationName && !appwriteConfig.eventsHasLocationIdAttribute) {
+            newInitialData = { ...newInitialData, locationName: initialData.locationName }
+            setLocationDisplayValue(initialData.locationName)
+          } else {
+            setLocationDisplayValue('')
           }
+
+          setFormData(newInitialData)
+          initialDataRef.current = newInitialData
+
+          setDiscountImagePreview(null)
         } catch (error) {
           console.error('Error fetching default points:', error)
           // Set form with empty defaults if fetch fails
@@ -465,9 +454,26 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
       }
     }
 
+    if (appwriteConfig.eventsHasLocationIdAttribute) {
+      const willCreateNewLocation =
+        showAddLocationFields &&
+        Boolean(locationName.trim()) &&
+        Boolean(trimmed.address && trimmed.city && trimmed.state && trimmed.latitude && trimmed.longitude)
+      const hasSelectedLocation =
+        trimmed.locationId != null && String(trimmed.locationId).trim() !== ''
+      if (!willCreateNewLocation && !hasSelectedLocation) {
+        addNotification({
+          type: 'error',
+          title: 'Location Required',
+          message: 'Select a location from the list, or add a new location with map and address.',
+        })
+        return
+      }
+    }
+
     setIsSubmitting(true)
     try {
-      // If location name is filled, create location first
+      // If adding a new location row, create it first — event will use `locationId` only.
       let createdLocationId: string | undefined
       if (showAddLocationFields && locationName.trim() && trimmed.address && trimmed.city && trimmed.state && trimmed.latitude && trimmed.longitude) {
         const created = await locationsService.create({
@@ -482,10 +488,10 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
       }
 
       const payload =
-        showAddLocationFields && locationName.trim()
-          ? { ...trimmed, locationName: locationName.trim(), locationId: createdLocationId }
+        showAddLocationFields && locationName.trim() && createdLocationId
+          ? { ...trimmed, locationId: createdLocationId }
           : trimmed
-      
+
       await onSave(payload)
       // Close unsaved changes modal if it's open
       setShowUnsavedChangesModal(false)
@@ -864,51 +870,13 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                   setFormData((prev) => ({ ...prev, locationId: undefined }))
                 }}
                 onLocationSelect={(location: LocationDocument) => {
-                  // Extract coordinates - handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
-                  let latitude = ''
-                  let longitude = ''
-                  
-                  if (location.location) {
-                    let lat: number | undefined
-                    let lng: number | undefined
-                    
-                    if (Array.isArray(location.location) && location.location.length >= 2) {
-                      // Direct array format: [longitude, latitude]
-                      lng = location.location[0]
-                      lat = location.location[1]
-                    } else if (
-                      typeof location.location === 'object' &&
-                      location.location !== null &&
-                      'coordinates' in location.location &&
-                      Array.isArray((location.location as { coordinates: number[] }).coordinates) &&
-                      (location.location as { coordinates: number[] }).coordinates.length >= 2
-                    ) {
-                      // GeoJSON format: {coordinates: [longitude, latitude]}
-                      const coords = (location.location as { coordinates: number[] }).coordinates
-                      lng = coords[0]
-                      lat = coords[1]
-                    }
-                    
-                    // Validate coordinates are within valid ranges before using them
-                    if (lat !== undefined && lng !== undefined && !isNaN(lat) && !isNaN(lng)) {
-                      // Latitude: -90 to 90, Longitude: -180 to 180
-                      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                        latitude = lat.toString()
-                        longitude = lng.toString()
-                      }
-                    }
-                  }
-                  
-                  // Populate all form fields from selected location
+                  // Venue identity is `locationId` only; address/geo on the event are set on save from the Location document.
                   setFormData((prev) => ({
                     ...prev,
                     address: location.address || '',
                     city: location.city || '',
                     state: location.state || '',
                     zipCode: location.zipCode || '',
-                    latitude,
-                    longitude,
-                    locationName: location.name || '',
                     locationId: location.$id,
                   }))
                 }}
@@ -993,9 +961,14 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
             )}
           </div>
 
-          {/* Hidden inputs for validation */}
-          <input type="hidden" value={formData.latitude} required={showAddLocationFields} />
-          <input type="hidden" value={formData.longitude} required={showAddLocationFields} />
+          {appwriteConfig.eventsHasLocationIdAttribute ? (
+            <input type="hidden" name="locationId" value={formData.locationId ?? ''} />
+          ) : (
+            <>
+              <input type="hidden" value={formData.latitude} required={showAddLocationFields} />
+              <input type="hidden" value={formData.longitude} required={showAddLocationFields} />
+            </>
+          )}
 
           {/* Action Buttons */}
           <div className="flex gap-4 pt-4 border-t border-gray-200">

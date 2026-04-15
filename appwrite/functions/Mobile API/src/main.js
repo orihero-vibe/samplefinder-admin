@@ -141,6 +141,7 @@ async function applyReferral(databases, functions, data, log) {
 // ============================================================================
 const DATABASE_ID = '69217af50038b9005a61';
 const EVENTS_TABLE_ID = 'events';
+const LOCATIONS_TABLE_ID = 'locations';
 const CLIENTS_TABLE_ID = 'clients';
 const TRIVIA_TABLE_ID = 'trivia';
 const TRIVIA_RESPONSES_TABLE_ID = 'trivia_responses';
@@ -209,6 +210,107 @@ function validateEventsRequestBody(body) {
         pageSize,
     };
 }
+function parseLonLatFromGeoField(field) {
+    if (!field) {
+        return null;
+    }
+    if (Array.isArray(field) && field.length >= 2) {
+        const lon = Number(field[0]);
+        const lat = Number(field[1]);
+        if (!isNaN(lon) && !isNaN(lat)) {
+            return { lon, lat };
+        }
+    }
+    if (typeof field === 'object' &&
+        field !== null &&
+        'coordinates' in field &&
+        Array.isArray(field.coordinates) &&
+        field.coordinates.length >= 2) {
+        const coords = field.coordinates;
+        const lon = Number(coords[0]);
+        const lat = Number(coords[1]);
+        if (!isNaN(lon) && !isNaN(lat)) {
+            return { lon, lat };
+        }
+    }
+    return null;
+}
+/** Prefer coordinates from the linked Location row so colocated stores are not conflated. */
+function getEventCoordinatesForDistance(event, locationById) {
+    const lid = typeof event.locationId === 'string' ? event.locationId.trim() : '';
+    if (lid) {
+        const locRow = locationById.get(lid);
+        if (locRow) {
+            const fromLoc = parseLonLatFromGeoField(locRow.location);
+            if (fromLoc) {
+                return fromLoc;
+            }
+        }
+    }
+    return parseLonLatFromGeoField(event.location);
+}
+async function loadClientDataForEvent(databases, event, log) {
+    let clientData = null;
+    if (!event.client) {
+        return null;
+    }
+    try {
+        if (typeof event.client === 'string') {
+            const clientResponse = await databases.getDocument(DATABASE_ID, CLIENTS_TABLE_ID, event.client);
+            clientData = clientResponse;
+        }
+        else if (event.client && typeof event.client === 'object') {
+            const clientObj = event.client;
+            if (clientObj.$id || clientObj.name) {
+                clientData = clientObj;
+            }
+            else {
+                const clientId = (clientObj.id || clientObj.$id);
+                if (clientId && typeof clientId === 'string') {
+                    const clientResponse = await databases.getDocument(DATABASE_ID, CLIENTS_TABLE_ID, clientId);
+                    clientData = clientResponse;
+                }
+            }
+        }
+    }
+    catch (err) {
+        const clientInfo = typeof event.client === 'string'
+            ? event.client
+            : event.client?.$id ||
+                JSON.stringify(event.client).substring(0, 50);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        log(`Error fetching client ${clientInfo}: ${errorMessage}`);
+    }
+    return clientData;
+}
+/**
+ * Validate request body for events pinned to a specific Location id (map / store detail).
+ */
+function validateGetEventsForLocationIdBody(body) {
+    if (!body || typeof body !== 'object') {
+        throw new Error('Request body is required');
+    }
+    const bodyObj = body;
+    const locationId = typeof bodyObj.locationId === 'string' ? bodyObj.locationId.trim() : '';
+    if (!locationId) {
+        throw new Error('locationId must be a non-empty string');
+    }
+    const page = bodyObj.page !== undefined ? Number(bodyObj.page) : DEFAULT_PAGE;
+    const pageSize = bodyObj.pageSize !== undefined
+        ? Number(bodyObj.pageSize)
+        : DEFAULT_PAGE_SIZE;
+    if (page < 1 || !Number.isInteger(page)) {
+        throw new Error('page must be a positive integer');
+    }
+    if (pageSize < 1 || !Number.isInteger(pageSize) || pageSize > 100) {
+        throw new Error('pageSize must be a positive integer between 1 and 100');
+    }
+    return {
+        locationId,
+        page,
+        pageSize,
+    };
+}
 /**
  * Get events sorted by location
  */
@@ -229,70 +331,31 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
     // Fetch all matching events
     const eventsResponse = await databases.listDocuments(DATABASE_ID, EVENTS_TABLE_ID, queries);
     const events = eventsResponse.documents;
+    const locationIds = [
+        ...new Set(events
+            .map((e) => typeof e.locationId === 'string' ? e.locationId.trim() : '')
+            .filter(Boolean)),
+    ];
+    const locationById = new Map();
+    await Promise.all(locationIds.map(async (id) => {
+        try {
+            const doc = await databases.getDocument(DATABASE_ID, LOCATIONS_TABLE_ID, id);
+            locationById.set(id, doc);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`Could not load location ${id} for coordinate resolution: ${msg}`);
+        }
+    }));
     // Fetch client data for each event and calculate distances
     const eventsWithClients = [];
     for (const event of events) {
-        let clientData = null;
         let distance = Infinity;
-        // Calculate distance using event location
-        // Handle both array format [longitude, latitude] and GeoJSON format {coordinates: [longitude, latitude]}
-        if (event.location) {
-            let eventLon;
-            let eventLat;
-            if (Array.isArray(event.location) && event.location.length >= 2) {
-                // Direct array format: [longitude, latitude]
-                eventLon = event.location[0];
-                eventLat = event.location[1];
-            }
-            else if (typeof event.location === 'object' &&
-                event.location !== null &&
-                'coordinates' in event.location &&
-                Array.isArray(event.location.coordinates) &&
-                event.location.coordinates.length >= 2) {
-                // GeoJSON format: {coordinates: [longitude, latitude]}
-                const coords = event.location
-                    .coordinates;
-                eventLon = coords[0];
-                eventLat = coords[1];
-            }
-            if (eventLon !== undefined &&
-                eventLat !== undefined &&
-                !isNaN(eventLon) &&
-                !isNaN(eventLat)) {
-                distance = haversineDistance(userLat, userLon, eventLat, eventLon);
-            }
+        const coords = getEventCoordinatesForDistance(event, locationById);
+        if (coords) {
+            distance = haversineDistance(userLat, userLon, coords.lat, coords.lon);
         }
-        // Fetch client data if available
-        if (event.client) {
-            try {
-                // Handle relationship field - could be string ID or populated object
-                if (typeof event.client === 'string') {
-                    const clientResponse = await databases.getDocument(DATABASE_ID, CLIENTS_TABLE_ID, event.client);
-                    clientData = clientResponse;
-                }
-                else if (event.client && typeof event.client === 'object') {
-                    const clientObj = event.client;
-                    if (clientObj.$id || clientObj.name) {
-                        clientData = clientObj;
-                    }
-                    else {
-                        const clientId = (clientObj.id || clientObj.$id);
-                        if (clientId && typeof clientId === 'string') {
-                            const clientResponse = await databases.getDocument(DATABASE_ID, CLIENTS_TABLE_ID, clientId);
-                            clientData = clientResponse;
-                        }
-                    }
-                }
-            }
-            catch (err) {
-                const clientInfo = typeof event.client === 'string'
-                    ? event.client
-                    : event.client?.$id ||
-                        JSON.stringify(event.client).substring(0, 50);
-                const errorMessage = err instanceof Error ? err.message : String(err);
-                log(`Error fetching client ${clientInfo}: ${errorMessage}`);
-            }
-        }
+        const clientData = await loadClientDataForEvent(databases, event, log);
         eventsWithClients.push({
             ...event,
             client: clientData,
@@ -309,6 +372,50 @@ async function getEventsByLocation(databases, userLat, userLon, page, pageSize, 
     const startIndex = (page - 1) * pageSize;
     const endIndex = startIndex + pageSize;
     const paginatedEvents = validEvents.slice(startIndex, endIndex);
+    return {
+        events: paginatedEvents,
+        pagination: {
+            page,
+            pageSize,
+            total,
+            totalPages,
+        },
+    };
+}
+/**
+ * Upcoming events for a single Location (map pin / store). Uses `locationId` only — not
+ * lat/long proximity — so colocated stores do not share each other's events.
+ */
+async function getEventsForLocationId(databases, locationId, page, pageSize, log) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayISO = today.toISOString();
+    const queries = [
+        Query.equal('isArchived', false),
+        Query.equal('isHidden', false),
+        Query.greaterThanEqual('date', todayISO),
+        Query.equal('locationId', [locationId]),
+        Query.orderAsc('date'),
+        Query.select(['*', 'client.*']),
+        Query.limit(1000),
+    ];
+    const eventsResponse = await databases.listDocuments(DATABASE_ID, EVENTS_TABLE_ID, queries);
+    const events = eventsResponse.documents;
+    const eventsWithClients = [];
+    for (const event of events) {
+        const clientData = await loadClientDataForEvent(databases, event, log);
+        eventsWithClients.push({
+            ...event,
+            client: clientData,
+            distance: 0,
+        });
+    }
+    const total = eventsWithClients.length;
+    const totalPages = Math.ceil(total / pageSize);
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedEvents = eventsWithClients.slice(startIndex, endIndex);
+    log(`getEventsForLocationId: ${locationId} -> ${total} upcoming event(s), page ${page}`);
     return {
         events: paginatedEvents,
         pagination: {
@@ -959,6 +1066,29 @@ export default async function handler({ req, res, log, error, }) {
                 ...result,
             });
         }
+        // Upcoming events for one store / map pin (filters by events.locationId)
+        if (req.path === '/get-events-for-location-id' && req.method === 'POST') {
+            log('Processing get-events-for-location-id request');
+            let requestBody;
+            try {
+                requestBody = validateGetEventsForLocationIdBody(req.body);
+            }
+            catch (validationError) {
+                const errorMessage = validationError instanceof Error
+                    ? validationError.message
+                    : String(validationError);
+                error(`Validation error: ${errorMessage}`);
+                return res.json({
+                    success: false,
+                    error: errorMessage,
+                }, 400);
+            }
+            const result = await getEventsForLocationId(databases, requestBody.locationId, requestBody.page, requestBody.pageSize, log);
+            return res.json({
+                success: true,
+                ...result,
+            });
+        }
         // ========================================================================
         // TRIVIA ENDPOINTS
         // ========================================================================
@@ -1237,7 +1367,7 @@ export default async function handler({ req, res, log, error, }) {
         // ========================================================================
         return res.json({
             success: false,
-            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, POST /apply-referral, GET /ping',
+            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-events-for-location-id, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, POST /apply-referral, GET /ping',
         });
     }
     catch (err) {

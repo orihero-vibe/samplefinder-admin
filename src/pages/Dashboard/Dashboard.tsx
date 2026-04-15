@@ -146,6 +146,32 @@ const Dashboard = () => {
 
   // Convert known share links (e.g. Google Drive) into embeddable image URLs
   // so previews work in admin and consumer clients.
+  /**
+   * When an event is linked to a Location (`locationId`), address and map coordinates must come
+   * from that Location document so colocated stores do not share identical denormalized lat/long by mistake.
+   */
+  const applyResolvedLocationToEventPayload = async (
+    eventPayload: Record<string, unknown>,
+    resolvedLocationId: string
+  ): Promise<void> => {
+    if (!appwriteConfig.eventsHasLocationIdAttribute) return
+    try {
+      const loc = await locationsService.getById(resolvedLocationId)
+      if (!loc) return
+      eventPayload.locationId = loc.$id
+      eventPayload.locationName = loc.name ?? null
+      if (loc.location && Array.isArray(loc.location) && loc.location.length >= 2) {
+        eventPayload.location = loc.location
+      }
+      eventPayload.address = loc.address ?? ''
+      eventPayload.city = loc.city ?? ''
+      eventPayload.state = loc.state ?? ''
+      eventPayload.zipCode = loc.zipCode ?? ''
+    } catch (e) {
+      console.error('applyResolvedLocationToEventPayload:', e)
+    }
+  }
+
   const normalizeDiscountImageUrl = (value?: string | null): string => {
     const trimmed = value?.trim()
     if (!trimmed) return ''
@@ -935,6 +961,10 @@ const Dashboard = () => {
             eventPayload.locationName = locationDoc.name
           }
 
+          if (appwriteConfig.eventsHasLocationIdAttribute) {
+            eventPayload.locationId = locationDoc.$id
+          }
+
           if (discount) {
             eventPayload.discount = discount.trim()
           }
@@ -1057,14 +1087,6 @@ const Dashboard = () => {
         timezone: eventData.timezone,
       }
 
-      // Add location as [longitude, latitude] array if both are provided
-      if (eventData.longitude && eventData.latitude) {
-        eventPayload.location = [
-          parseFloat(eventData.longitude),
-          parseFloat(eventData.latitude)
-        ]
-      }
-
       // Optional fields
       if (categoryId) {
         eventPayload.categories = categoryId
@@ -1083,24 +1105,28 @@ const Dashboard = () => {
         eventPayload.discount = String(eventData.discount).trim()
       }
 
-      const trimmedLocationName =
-        eventData.locationName != null && String(eventData.locationName).trim() !== ''
-          ? String(eventData.locationName).trim()
-          : ''
-      if (trimmedLocationName) {
-        eventPayload.locationName = trimmedLocationName
-      }
-
       if (appwriteConfig.eventsHasLocationIdAttribute) {
         const trimmedLocationId =
           eventData.locationId != null && String(eventData.locationId).trim() !== ''
             ? String(eventData.locationId).trim()
             : ''
-        if (trimmedLocationId) {
-          eventPayload.locationId = trimmedLocationId
-        } else if (trimmedLocationName) {
-          const linked = await locationsService.findByName(trimmedLocationName)
-          if (linked) eventPayload.locationId = linked.$id
+        if (!trimmedLocationId) {
+          throw new Error('Please select an event location from the list (Location is required).')
+        }
+        await applyResolvedLocationToEventPayload(eventPayload, trimmedLocationId)
+      } else {
+        const trimmedLocationName =
+          eventData.locationName != null && String(eventData.locationName).trim() !== ''
+            ? String(eventData.locationName).trim()
+            : ''
+        if (trimmedLocationName) {
+          eventPayload.locationName = trimmedLocationName
+        }
+        if (eventData.longitude && eventData.latitude) {
+          eventPayload.location = [
+            parseFloat(eventData.longitude),
+            parseFloat(eventData.latitude),
+          ]
         }
       }
 
@@ -1199,14 +1225,6 @@ const Dashboard = () => {
         timezone: eventData.timezone ?? selectedEventDoc.timezone,
       }
 
-      // Add location as [longitude, latitude] array if both are provided
-      if (eventData.longitude && eventData.latitude) {
-        eventPayload.location = [
-          parseFloat(eventData.longitude),
-          parseFloat(eventData.latitude)
-        ]
-      }
-
       // Preserve existing status fields
       if (selectedEventDoc.isArchived !== undefined) {
         eventPayload.isArchived = selectedEventDoc.isArchived
@@ -1243,24 +1261,28 @@ const Dashboard = () => {
         eventPayload.discount = null
       }
 
-      const trimmedLocationName =
-        eventData.locationName != null && String(eventData.locationName).trim() !== ''
-          ? String(eventData.locationName).trim()
-          : ''
-      eventPayload.locationName = trimmedLocationName || null
-
       if (appwriteConfig.eventsHasLocationIdAttribute) {
         const trimmedLocationId =
           eventData.locationId != null && String(eventData.locationId).trim() !== ''
             ? String(eventData.locationId).trim()
             : ''
-        if (trimmedLocationId) {
-          eventPayload.locationId = trimmedLocationId
-        } else if (trimmedLocationName) {
-          const linked = await locationsService.findByName(trimmedLocationName)
-          eventPayload.locationId = linked?.$id ?? null
+        if (!trimmedLocationId) {
+          throw new Error('Please select an event location from the list (Location is required).')
+        }
+        await applyResolvedLocationToEventPayload(eventPayload, trimmedLocationId)
+      } else {
+        const trimmedLocationName =
+          eventData.locationName != null && String(eventData.locationName).trim() !== ''
+            ? String(eventData.locationName).trim()
+            : ''
+        eventPayload.locationName = trimmedLocationName || null
+        if (eventData.longitude && eventData.latitude) {
+          eventPayload.location = [
+            parseFloat(eventData.longitude),
+            parseFloat(eventData.latitude),
+          ]
         } else {
-          eventPayload.locationId = null
+          eventPayload.location = null
         }
       }
 
