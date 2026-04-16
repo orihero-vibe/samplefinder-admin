@@ -1763,22 +1763,30 @@ export const notificationsService = {
 
       if (execution.status === 'failed') {
         let errorMessage = 'Function execution failed'
-        
+
         if (execution.responseBody) {
           try {
-            const errorResponse = JSON.parse(execution.responseBody)
+            const errorResponse = JSON.parse(execution.responseBody) as { error?: string }
             if (errorResponse.error) {
               errorMessage = errorResponse.error
             }
           } catch {
             errorMessage = execution.responseBody
           }
+        } else if (
+          !execution.responseBody &&
+          typeof (execution as { duration?: number }).duration === 'number' &&
+          (execution as { duration: number }).duration >= 10
+        ) {
+          // Empty body + multi-second run often indicates a timeout before the handler could respond.
+          errorMessage =
+            'Notification function timed out or crashed (empty response). For large audiences, increase the function timeout in Appwrite and redeploy the latest Notification function.'
         }
-        
+
         if (execution.errors) {
           errorMessage += ` (Execution errors: ${execution.errors})`
         }
-        
+
         throw new Error(errorMessage)
       }
 

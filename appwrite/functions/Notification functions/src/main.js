@@ -114,16 +114,20 @@ async function getTargetUsers(databases, targetAudience, selectedUserIds, log, n
         if (targetAudience === 'Targeted' && selectedUserIds && selectedUserIds.length > 0) {
             log(`Fetching ${selectedUserIds.length} specifically selected users`);
             const users = [];
-            // Fetch each selected user by ID
-            for (const userId of selectedUserIds) {
-                try {
-                    const user = await databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId);
-                    users.push(user);
-                }
-                catch (error) {
-                    const errorMessage = error instanceof Error ? error.message : String(error);
-                    log(`Warning: Could not fetch user ${userId}: ${errorMessage}`);
-                    // Continue with other users even if one fails
+            const TARGET_FETCH_CONCURRENCY = 40;
+            for (let i = 0; i < selectedUserIds.length; i += TARGET_FETCH_CONCURRENCY) {
+                const chunk = selectedUserIds.slice(i, i + TARGET_FETCH_CONCURRENCY);
+                const settled = await Promise.allSettled(chunk.map((userId) => databases.getDocument(DATABASE_ID, USER_PROFILES_TABLE_ID, userId)));
+                for (let j = 0; j < settled.length; j++) {
+                    const r = settled[j];
+                    if (r.status === 'fulfilled') {
+                        users.push(r.value);
+                    }
+                    else {
+                        const userId = chunk[j];
+                        const errorMessage = r.reason instanceof Error ? r.reason.message : String(r.reason);
+                        log(`Warning: Could not fetch user ${userId}: ${errorMessage}`);
+                    }
                 }
             }
             log(`Successfully fetched ${users.length} of ${selectedUserIds.length} selected users`);
@@ -235,8 +239,9 @@ async function appendNotificationToUserProfiles(databases, userProfileIds, notif
         createdAt: now,
         data: { notificationId: notification.$id },
     };
-    for (const userId of userProfileIds) {
-        await appendNotificationToUserProfile(databases, userId, entry, log);
+    for (let i = 0; i < userProfileIds.length; i += PROFILE_APPEND_CONCURRENCY) {
+        const chunk = userProfileIds.slice(i, i + PROFILE_APPEND_CONCURRENCY);
+        await Promise.all(chunk.map((userId) => appendNotificationToUserProfile(databases, userId, entry, log)));
     }
 }
 /**
@@ -269,6 +274,23 @@ async function sendImmediateSystemNotificationToUser(databases, messaging, profi
 }
 const PUSH_BATCH_SIZE = 50;
 const PUSH_CONCURRENCY = 3;
+/** In-app profile updates run after push; parallelize to avoid serverless timeouts on large audiences. */
+const PROFILE_APPEND_CONCURRENCY = 24;
+/**
+ * Max time to wait for in-app profile fan-out before returning HTTP success anyway.
+ * Push + notification row are already updated; appends may still finish afterward.
+ * Override via NOTIFICATION_APPEND_DEADLINE_MS (milliseconds).
+ */
+function getAppendDeadlineMs() {
+    const raw = process.env.NOTIFICATION_APPEND_DEADLINE_MS;
+    if (raw != null && raw !== '') {
+        const n = Number(raw);
+        if (!Number.isNaN(n) && n >= 1000)
+            return n;
+    }
+    // Default keeps push + update + JSON response under common ~15s function limits.
+    return 9000;
+}
 /**
  * Send push notification using Appwrite Messaging.
  * Uses positional createPush (node-appwrite does not accept an object as the first argument).
@@ -389,9 +411,21 @@ async function sendNotification(databases, messaging, notificationId, log) {
             sentAt: now,
             recipients: recipientCount,
         });
-        // Append notification to each recipient's user profile for in-app list
+        // In-app list fan-out: many DB round-trips; can exceed the function HTTP timeout if we block on all users.
+        // Push and notifications row are already "Sent" — return a response before the platform kills the execution.
         const userProfileIds = users.map((u) => u.$id);
-        await appendNotificationToUserProfiles(databases, userProfileIds, notification, log);
+        const appendPromise = appendNotificationToUserProfiles(databases, userProfileIds, notification, log);
+        const deadlineMs = getAppendDeadlineMs();
+        try {
+            await Promise.race([
+                appendPromise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error(`In-app append still running after ${deadlineMs}ms (non-fatal; push already delivered)`)), deadlineMs)),
+            ]);
+        }
+        catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            log(`Warning: ${msg}`);
+        }
         log(`Notification sent successfully. Recipients: ${recipientCount}, Message ID: ${pushResult.$id}`);
         return {
             success: true,
@@ -1382,9 +1416,13 @@ export default async function handler({ req, res, log, error }) {
             log(`Sending notification: ${requestBody.notificationId}`);
             // Send notification using Appwrite Messaging
             const result = await sendNotification(databases, messaging, requestBody.notificationId, log);
-            log(`Notification sent. Recipients: ${result.recipients}${result.messageId ? `, Message ID: ${result.messageId}` : ''}`);
+            log(`Notification send handler finished. success=${result.success} recipients=${result.recipients}${result.messageId ? `, Message ID: ${result.messageId}` : ''}`);
+            // Always return JSON the admin client can parse (avoid ambiguous spreads).
             return res.json({
-                ...result,
+                success: result.success,
+                recipients: result.recipients,
+                messageId: result.messageId,
+                error: result.error,
             });
         }
         // Handle badge notification endpoint (triggered by admin portal)

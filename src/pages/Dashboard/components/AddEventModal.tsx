@@ -132,8 +132,8 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
                 zipCode: initialData.zipCode || '',
                 category: initialData.category || '',
                 products: initialData.products || [],
-                discount: '',
-                discountImage: null,
+                discount: initialData.discount || '',
+                discountImage: initialData.discountImage ?? null,
                 checkInCode: checkInCode,
                 brandName: initialData.brandName || '',
                 checkInPoints: initialData.checkInPoints || defaultCheckInPoints?.toString() || '',
@@ -200,7 +200,15 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
           setFormData(newInitialData)
           initialDataRef.current = newInitialData
 
-          setDiscountImagePreview(null)
+          if (
+            initialData &&
+            typeof initialData.discountImage === 'string' &&
+            initialData.discountImage
+          ) {
+            setDiscountImagePreview(initialData.discountImage)
+          } else {
+            setDiscountImagePreview(null)
+          }
         } catch (error) {
           console.error('Error fetching default points:', error)
           // Set form with empty defaults if fetch fails
