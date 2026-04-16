@@ -116,7 +116,7 @@ const Dashboard = () => {
     end: null,
   })
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all') // 'all', 'active', 'hidden', 'archived'
+  const [statusFilter, setStatusFilter] = useState<string>('all') // 'all', 'active', 'in_active', 'hidden', 'archived'
   const [sortBy, setSortBy] = useState<string>('date-asc') // 'date-*', 'name-*', 'brand-*', 'location-*'
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean
@@ -212,7 +212,7 @@ const Dashboard = () => {
     const formatTime = (timeStr?: string): string =>
       timeStr ? formatTimeInAppTimezone(timeStr, eventTimezone) : ''
 
-    // Derive status from isArchived, isHidden, and event date/time (Active = live, In Active = scheduled or completed)
+    // Derive status from isArchived, isHidden, and event date/time (Active = live, Inactive = scheduled or completed)
     const status = getEventStatus(doc)
 
     // Show YES if event has any discount text or discount image
@@ -293,11 +293,11 @@ const Dashboard = () => {
         queries.push(orderMethod('locationName'))
       }
       
-      // Determine if we're searching or filtering by derived status (Active / In Active)
+      // Determine if we're searching or filtering by derived status (Active / Inactive)
       const isSearching = searchTerm.trim().length > 0
       const needsClientSideStatusFilter = statusFilter === 'active' || statusFilter === 'in_active'
       
-      // When searching or filtering by Active/In Active, fetch more records for client-side filtering, then paginate
+      // When searching or filtering by Active/Inactive, fetch more records for client-side filtering, then paginate
       if (!isSearching && !needsClientSideStatusFilter) {
         queries.push(Query.limit(pageSize))
         queries.push(Query.offset((page - 1) * pageSize))
@@ -374,14 +374,14 @@ const Dashboard = () => {
         mappedEvents = mappedEvents.filter((e) => e.id && matchingIds.has(e.id))
       }
 
-      // Filter by derived status when Active or In Active is selected
+      // Filter by derived status when Active or Inactive is selected
       if (statusFilter === 'active') {
         mappedEvents = mappedEvents.filter((e) => e.status === 'Active')
       } else if (statusFilter === 'in_active') {
-        mappedEvents = mappedEvents.filter((e) => e.status === 'In Active')
+        mappedEvents = mappedEvents.filter((e) => e.status === 'Inactive')
       }
 
-      // Pagination: when searching or status filter (Active/In Active) use filtered count; otherwise use result.total
+      // Pagination: when searching or status filter (Active/Inactive) use filtered count; otherwise use result.total
       const total = isSearching || needsClientSideStatusFilter ? mappedEvents.length : result.total
       const totalPagesCount = Math.ceil(total / pageSize)
       setTotalEvents(total)
@@ -405,7 +405,7 @@ const Dashboard = () => {
         })
       }
 
-      // For search or Active/In Active filter: paginate the filtered list; otherwise we already have one page of docs
+      // For search or Active/Inactive filter: paginate the filtered list; otherwise we already have one page of docs
       const eventsToShow = isSearching || needsClientSideStatusFilter
         ? mappedEvents.slice((page - 1) * pageSize, page * pageSize)
         : mappedEvents

@@ -102,14 +102,14 @@ export function validateCheckInCode(code: string): boolean {
   return pattern.test(code)
 }
 
-/** Display status for an event (Archived/Hidden from DB; Active/In Active derived from date/time) */
-export type EventDisplayStatus = 'Archived' | 'Hidden' | 'Active' | 'In Active'
+/** Display status for an event (Archived/Hidden from DB; Active/Inactive derived from date/time) */
+export type EventDisplayStatus = 'Archived' | 'Hidden' | 'Active' | 'Inactive'
 
 /**
  * Derives display status from event document.
  * - Archived / Hidden come from DB flags.
  * - "Active" = event not yet ended (upcoming or live).
- * - "In Active" = event completed (past end time).
+ * - "Inactive" = event completed (past end time).
  */
 export function getEventStatus(doc: {
   startTime?: string
@@ -122,10 +122,10 @@ export function getEventStatus(doc: {
   const eventStart = doc.startTime ? new Date(doc.startTime) : null
   const eventEnd = doc.endTime ? new Date(doc.endTime) : null
   if (!eventStart || !eventEnd || isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
-    return 'In Active'
+    return 'Inactive'
   }
   if (doc.isHidden && now <= eventEnd) return 'Hidden'
-  if (now > eventEnd) return 'In Active' // completed
+  if (now > eventEnd) return 'Inactive' // completed
   return 'Active' // upcoming or live
 }
 

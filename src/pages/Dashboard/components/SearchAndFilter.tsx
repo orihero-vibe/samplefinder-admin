@@ -73,7 +73,7 @@ const SearchAndFilter = ({
         >
           <option value="all">All Status</option>
           <option value="active">Active</option>
-          <option value="in_active">In Active</option>
+          <option value="in_active">Inactive</option>
           <option value="hidden">Hidden</option>
           <option value="archived">Archived</option>
         </select>
