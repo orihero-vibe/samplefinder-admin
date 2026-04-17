@@ -60,13 +60,13 @@ const Reports = () => {
     fetchReportMetadata()
   }, [])
 
-  // Helper function to format date as DD/MM/YYYY
+  // Helper function to format date as MM/DD/YYYY
   const formatDate = (date: Date | null): string => {
     if (!date) return 'N/A'
-    const day = String(date.getDate()).padStart(2, '0')
     const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
     const year = date.getFullYear()
-    return `${day}/${month}/${year}`
+    return `${month}/${day}/${year}`
   }
 
   // Generate reports array with real data from database

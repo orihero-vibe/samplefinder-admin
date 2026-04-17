@@ -168,7 +168,7 @@ const formatDateOnly = (dateStr?: string): string => {
   return formatDate(dateStr, undefined)
 }
 
-// Helper function to format date for CSV upload (YYYY-MM-DD). Optional appTimezone (IANA) formats in that zone.
+// Helper function to format date for reports (MM/DD/YYYY). Optional appTimezone (IANA) formats in that zone.
 const formatDateForUpload = (dateStr?: string, appTimezone?: string): string => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
@@ -182,12 +182,12 @@ const formatDateForUpload = (dateStr?: string, appTimezone?: string): string => 
     })
     const parts = formatter.formatToParts(date)
     const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
-    return `${get('year')}-${get('month')}-${get('day')}`
+    return `${get('month')}/${get('day')}/${get('year')}`
   }
-  const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  const year = date.getFullYear()
+  return `${month}/${day}/${year}`
 }
 
 // Helper function to format time for display (12-hour with AM/PM). Optional appTimezone (IANA) formats in that zone.
