@@ -1466,8 +1466,8 @@ const Dashboard = () => {
   // Fetch brands/clients
   const fetchBrands = async () => {
     try {
-      const result = await clientsService.list()
-      setBrands(result.documents as Array<Models.Document & { name: string }>)
+      const allClients = await clientsService.listAll()
+      setBrands(allClients as Array<Models.Document & { name: string }>)
     } catch (err) {
       console.error('Error fetching brands:', err)
       // Don't show notification for brands fetch failure

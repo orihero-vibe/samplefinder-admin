@@ -284,6 +284,25 @@ export const clientsService = {
     DatabaseService.getById<ClientDocument>(appwriteConfig.collections.clients, id),
   list: (queries?: string[]) =>
     DatabaseService.list<ClientDocument>(appwriteConfig.collections.clients, queries),
+  listAll: async (): Promise<ClientDocument[]> => {
+    const PAGE_SIZE = 500
+    const allClients: ClientDocument[] = []
+    let offset = 0
+
+    for (;;) {
+      const page = await DatabaseService.list<ClientDocument>(
+        appwriteConfig.collections.clients,
+        [Query.limit(PAGE_SIZE), Query.offset(offset)]
+      )
+      allClients.push(...page.documents)
+      if (page.documents.length < PAGE_SIZE) {
+        break
+      }
+      offset += PAGE_SIZE
+    }
+
+    return allClients
+  },
   // OPTIMIZATION: Batch fetch multiple clients by IDs
   getByIds: async (ids: string[]): Promise<Map<string, ClientDocument>> => {
     const clientsMap = new Map<string, ClientDocument>()

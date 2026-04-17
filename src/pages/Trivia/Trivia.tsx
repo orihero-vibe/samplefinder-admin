@@ -66,9 +66,9 @@ const Trivia = () => {
   // Fetch clients map for displaying client names
   const fetchClients = async () => {
     try {
-      const result = await clientsService.list()
+      const result = await clientsService.listAll()
       const map = new Map<string, ClientDocument>()
-      result.documents.forEach((client) => {
+      result.forEach((client) => {
         map.set(client.$id, client)
       })
       setClientsMap(map)

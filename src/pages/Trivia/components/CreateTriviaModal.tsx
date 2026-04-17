@@ -58,8 +58,8 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     try {
       setIsLoadingBrands(true)
       setError(null)
-      const result = await clientsService.list()
-      setBrands(result.documents)
+      const result = await clientsService.listAll()
+      setBrands(result)
     } catch (err) {
       console.error('Error fetching brands:', err)
       setError('Failed to load brands. Please try again.')
