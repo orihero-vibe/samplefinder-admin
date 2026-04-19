@@ -1210,17 +1210,22 @@ async function checkAndSendInactivityNotifications(databases, messaging, users, 
 async function sendBadgeNotification(databases, messaging, userId, badgeType, log) {
     log(`Badge notification: sending ${badgeType} badge notification for auth user ${userId}`);
     const title = badgeType === 'ambassador'
-        ? 'BRAND AMBASSADOR BADGE EARNED!'
-        : 'INFLUENCER BADGE EARNED!';
+        ? 'NEW BADGE: CERTIFIED BRAND AMBASSADOR'
+        : 'NEW BADGE: CERTIFIED INFLUENCER';
     const body = badgeType === 'ambassador'
-        ? "Congratulations, you're an official SampleFinder Brand Ambassador!"
-        : 'Congratulations on earning your SampleFinder Influencer badge!';
+        ? 'Congratulations! You earned the Certified Brand Ambassador badge.'
+        : 'Congratulations! You earned the Certified Influencer badge.';
     const profileResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId), Query.limit(1)]);
     if (profileResult.documents.length === 0) {
         throw new Error('Badge notification target profile not found');
     }
     const profile = profileResult.documents[0];
-    return await sendImmediateSystemNotificationToUser(databases, messaging, profile, title, body, 'Engagement', log, { badgeType });
+    return await sendImmediateSystemNotificationToUser(databases, messaging, profile, title, body, 'badgeEarned', log, {
+        badgeType,
+        isSpecialBadge: 'true',
+        pointsEarned: '100',
+        screen: 'Profile',
+    });
 }
 /**
  * TIER CHANGED NOTIFICATION

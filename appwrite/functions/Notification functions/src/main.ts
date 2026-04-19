@@ -1891,6 +1891,11 @@ async function checkAndSendInactivityNotifications(
  * BADGE EARNED NOTIFICATION
  * Sends a push notification when an admin assigns ambassador or influencer badge.
  * Called via POST /send-badge-notification.
+ *
+ * Title/message/type intentionally match the client's `syncSpecialBadgeAwards` output
+ * so the mobile app treats this as the single source of truth for the badge notification
+ * (mobile push handler skips persisting `badgeEarned` pushes, and the client sync uses
+ * this unread notification instead of creating a duplicate in-app entry).
  */
 async function sendBadgeNotification(
   databases: Databases,
@@ -1903,12 +1908,12 @@ async function sendBadgeNotification(
 
   const title =
     badgeType === 'ambassador'
-      ? 'BRAND AMBASSADOR BADGE EARNED!'
-      : 'INFLUENCER BADGE EARNED!';
+      ? 'NEW BADGE: CERTIFIED BRAND AMBASSADOR'
+      : 'NEW BADGE: CERTIFIED INFLUENCER';
   const body =
     badgeType === 'ambassador'
-      ? "Congratulations, you're an official SampleFinder Brand Ambassador!"
-      : 'Congratulations on earning your SampleFinder Influencer badge!';
+      ? 'Congratulations! You earned the Certified Brand Ambassador badge.'
+      : 'Congratulations! You earned the Certified Influencer badge.';
 
   const profileResult = await databases.listDocuments(
     DATABASE_ID,
@@ -1926,9 +1931,14 @@ async function sendBadgeNotification(
     profile,
     title,
     body,
-    'Engagement',
+    'badgeEarned' as NotificationData['type'],
     log,
-    { badgeType }
+    {
+      badgeType,
+      isSpecialBadge: 'true',
+      pointsEarned: '100',
+      screen: 'Profile',
+    }
   );
 }
 
