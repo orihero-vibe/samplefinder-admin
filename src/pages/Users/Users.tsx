@@ -40,6 +40,7 @@ const Users = () => {
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [isDeleteLoading, setIsDeleteLoading] = useState(false)
   const [blockModalState, setBlockModalState] = useState<{
     isOpen: boolean
     user: AppUser | null
@@ -442,6 +443,7 @@ const Users = () => {
     if (!userToDelete?.$id || !userToDelete?.authID) return
 
     try {
+      setIsDeleteLoading(true)
       await appUsersService.delete(userToDelete.$id)
       // Check if we need to go back a page if current page becomes empty
       if (users.length === 1 && currentPage > 1) {
@@ -468,6 +470,8 @@ const Users = () => {
         title: 'Error',
         message: 'Failed to delete user. Please try again.',
       })
+    } finally {
+      setIsDeleteLoading(false)
     }
   }
 
@@ -608,6 +612,7 @@ const Users = () => {
             }
           }}
           onDeleteClick={(user) => {
+            setIsDeleteLoading(false)
             setUserToDelete(user as AppUser)
             setIsDeleteModalOpen(true)
           }}
@@ -811,7 +816,9 @@ const Users = () => {
         onAddToBlacklist={() => {
           setBlockModalState({ isOpen: true, user: selectedUser, isLoading: false })
         }}
+        isDeleteLoading={isDeleteLoading}
         onDelete={() => {
+          setIsDeleteLoading(false)
           setUserToDelete(selectedUser)
           setIsDeleteModalOpen(true)
         }}
@@ -867,12 +874,15 @@ const Users = () => {
       <ConfirmationModal
         isOpen={isDeleteModalOpen}
         onClose={() => {
-          setIsDeleteModalOpen(false)
-          setUserToDelete(null)
+          if (!isDeleteLoading) {
+            setIsDeleteModalOpen(false)
+            setUserToDelete(null)
+          }
         }}
         onConfirm={handleDeleteUser}
         type="delete"
         itemName="user"
+        isLoading={isDeleteLoading}
       />
     </DashboardLayout>
   )
