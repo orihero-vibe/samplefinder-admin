@@ -493,8 +493,7 @@ async function getActiveTrivia(databases, userId, log) {
     for (const trivia of activeTriviaResponse.documents) {
         const wasSkippedByUser = Array.isArray(trivia.skippedUsers) &&
             trivia.skippedUsers.includes(userId);
-        if (!answeredTriviaIds.has(trivia.$id) &&
-            !wasSkippedByUser) {
+        if (!answeredTriviaIds.has(trivia.$id) && !wasSkippedByUser) {
             unansweredTrivia.push({
                 $id: trivia.$id,
                 question: trivia.question,
@@ -814,8 +813,9 @@ async function createUser(users, databases, data, log) {
  * Delete user account from Appwrite Auth
  * This function should be called when a user wants to delete their account
  * It will:
- * 1. Delete the user from Appwrite Auth (which is only possible from server-side)
- * 2. This will also cascade delete all related data (sessions, tokens, etc.)
+ * 1. Delete the user from Appwrite Auth first (which is only possible from server-side)
+ * 2. Then delete the user profile from database (best effort)
+ * 3. This will also cascade delete all related auth data (sessions, tokens, etc.)
  */
 async function deleteUserAccount(users, databases, userId, log) {
     log(`Starting account deletion for user: ${userId}`);
@@ -828,7 +828,13 @@ async function deleteUserAccount(users, databases, userId, log) {
         catch {
             throw { code: 404, message: 'User not found in authentication system' };
         }
-        // 2. Find and delete user profile from database
+        // 2. Delete the user from Appwrite Auth FIRST
+        // This will automatically delete all sessions, tokens, and related auth data
+        // This is the most important step - if this fails, the user can still sign in
+        log(`Deleting user from Appwrite Auth: ${userId}`);
+        await users.delete(userId);
+        log(`User ${userId} successfully deleted from Appwrite Auth`);
+        // 3. Find and delete user profile from database (best effort - don't fail if this doesn't work)
         // Note: The user profile document ID is different from the auth user ID
         // We need to query by the 'authID' field to find the profile document
         try {
@@ -838,7 +844,7 @@ async function deleteUserAccount(users, databases, userId, log) {
             const profileQuery = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.equal('authID', userId)]);
             log(`Profile query completed. Total found: ${profileQuery.total}`);
             if (profileQuery.total === 0) {
-                log(`No user profile found with authID: ${userId} - continuing with auth deletion`);
+                log(`No user profile found with authID: ${userId} - auth deletion already completed successfully`);
             }
             else {
                 log(`Found ${profileQuery.total} profile(s) to delete`);
@@ -853,9 +859,9 @@ async function deleteUserAccount(users, databases, userId, log) {
             }
         }
         catch (profileError) {
-            // Log the full error for debugging
+            // Log the error but don't fail the entire operation since Auth user is already deleted
             const typedProfileError = profileError;
-            log(`Error during profile deletion process`);
+            log(`Warning: Error during profile deletion process (Auth user already deleted)`);
             log(`Error type: ${typedProfileError.constructor?.name || 'Unknown'}`);
             log(`Error message: ${typedProfileError.message || 'N/A'}`);
             log(`Error code: ${typedProfileError.code || 'N/A'}`);
@@ -866,17 +872,8 @@ async function deleteUserAccount(users, databases, userId, log) {
                 type: typedProfileError.type,
                 response: typedProfileError.response,
             })}`);
-            // For any error, throw it to prevent partial deletion
-            throw {
-                code: 500,
-                message: `Failed to delete user profile: ${typedProfileError.message || 'Unknown error'}`,
-            };
+            log(`Profile deletion failed but auth deletion succeeded - user cannot sign in anymore`);
         }
-        // 3. Delete the user from Appwrite Auth
-        // This will automatically delete all sessions, tokens, and related auth data
-        log(`Deleting user from Appwrite Auth: ${userId}`);
-        await users.delete(userId);
-        log(`User ${userId} successfully deleted from Appwrite Auth`);
         return {
             success: true,
             message: 'Account successfully deleted',
