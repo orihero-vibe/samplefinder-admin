@@ -464,8 +464,18 @@ const EditUserModal = ({
       const isPhoneDuplicate =
         normalized.includes('phone number already exists') ||
         (normalized.includes('phone') && normalized.includes('already exists'))
+      const isUsernameDuplicate =
+        normalized.includes('username already exists') ||
+        (normalized.includes('username') && normalized.includes('already exists'))
       if (isPhoneDuplicate) {
         setPhoneError(message)
+      }
+      if (isUsernameDuplicate) {
+        setUsernameValidation({
+          isChecking: false,
+          isAvailable: false,
+          message,
+        })
       }
     } finally {
       setIsSubmitting(false)

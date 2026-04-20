@@ -804,11 +804,15 @@ const Users = () => {
             const isPhoneDuplicate =
               normalized.includes('phone number already exists') ||
               (normalized.includes('phone') && normalized.includes('already exists'))
+            const isUsernameDuplicate =
+              normalized.includes('username already exists') ||
+              (normalized.includes('username') && normalized.includes('already exists'))
+            const shouldUseBackendMessage = isPhoneDuplicate || isUsernameDuplicate
 
             addNotification({
               type: 'error',
               title: 'Error',
-              message: isPhoneDuplicate && extractedMessage ? extractedMessage : 'Failed to update user. Please try again.',
+              message: shouldUseBackendMessage && extractedMessage ? extractedMessage : 'Failed to update user. Please try again.',
             })
             throw new Error(extractedMessage ?? 'Failed to update user. Please try again.')
           }
