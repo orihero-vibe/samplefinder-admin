@@ -807,6 +807,42 @@ async function createUser(users, databases, data, log) {
     }
 }
 // ============================================================================
+// PUBLIC SIGNUP AVAILABILITY CHECK
+// ============================================================================
+const getPhoneDigits = (value) => value.replace(/\D/g, '');
+async function checkUsernamePhoneAvailability(_users, databases, data, log) {
+    const result = {};
+    const rawUsername = typeof data.username === 'string' ? data.username.trim() : '';
+    const rawPhone = typeof data.phoneNumber === 'string' ? data.phoneNumber.trim() : '';
+    if (!rawUsername && !rawPhone) {
+        throw { code: 400, message: 'username or phoneNumber is required' };
+    }
+    if (rawUsername) {
+        const usernameLower = rawUsername.toLowerCase();
+        const usernameResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.limit(1000)]);
+        result.usernameExists = usernameResult.documents.some((doc) => {
+            const docUsername = typeof doc.username === 'string' ? doc.username.toLowerCase() : '';
+            return docUsername === usernameLower;
+        });
+    }
+    if (rawPhone) {
+        const targetDigits = getPhoneDigits(rawPhone);
+        if (!targetDigits) {
+            result.phoneExists = false;
+        }
+        else {
+            // Use profiles table because mobile signup creates Auth user without phone.
+            const phoneResult = await databases.listDocuments(DATABASE_ID, USER_PROFILES_TABLE_ID, [Query.limit(1000)]);
+            result.phoneExists = phoneResult.documents.some((doc) => {
+                const profilePhone = typeof doc.phoneNumber === 'string' ? doc.phoneNumber : '';
+                return getPhoneDigits(profilePhone) === targetDigits;
+            });
+        }
+    }
+    log(`[check-username-phone-availability] usernameChecked=${Boolean(rawUsername)} phoneChecked=${Boolean(rawPhone)}`);
+    return result;
+}
+// ============================================================================
 // ACCOUNT DELETION FUNCTION
 // ============================================================================
 /**
@@ -1232,6 +1268,28 @@ export default async function handler({ req, res, log, error, }) {
                 throw err;
             }
         }
+        if (req.path === '/check-username-phone-availability' &&
+            req.method === 'POST') {
+            log('Processing check-username-phone-availability request');
+            const body = (req.body || {});
+            try {
+                const result = await checkUsernamePhoneAvailability(users, databases, body, log);
+                return res.json({
+                    success: true,
+                    ...result,
+                });
+            }
+            catch (err) {
+                const typedErr = err;
+                if (typedErr.code && typedErr.message) {
+                    return res.json({
+                        success: false,
+                        error: typedErr.message,
+                    }, typedErr.code);
+                }
+                throw err;
+            }
+        }
         // ========================================================================
         // USER STATUS MANAGEMENT
         // ========================================================================
@@ -1355,7 +1413,7 @@ export default async function handler({ req, res, log, error, }) {
         // ========================================================================
         return res.json({
             success: false,
-            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-events-for-location-id, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, POST /apply-referral, GET /ping',
+            error: 'Invalid endpoint. Available endpoints: POST /get-events-by-location, POST /get-events-for-location-id, POST /get-active-trivia, POST /submit-answer, POST /dismiss-trivia, POST /create-user, POST /check-username-phone-availability, POST /delete-account, POST /update-user-status, POST /get-user-by-email, POST /reset-password-after-otp, POST /apply-referral, GET /ping',
         });
     }
     catch (err) {
