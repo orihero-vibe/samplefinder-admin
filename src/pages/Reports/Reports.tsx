@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { DashboardLayout, ShimmerPage } from '../../components'
 import type { DownloadFormat } from '../../components'
-import { ReportsHeader, SearchAndFilter, ReportsList } from './components'
+import { ReportsHeader, DateRangeFilter, ReportsList } from './components'
 import { exportService, getCurrentMonthRange, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useTimezoneStore } from '../../stores/timezoneStore'
@@ -25,7 +25,6 @@ interface ReportMetadata {
 const Reports = () => {
   const location = useLocation()
   const [isLoading, setIsLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>(() => {
     const state = location.state as { dateRange?: { start: Date; end: Date } } | undefined
@@ -115,15 +114,8 @@ const Reports = () => {
     },
   ]
 
-  // Filter reports by search query only
-  // NOTE: Date range is NOT used to filter visible reports
-  // The date range only controls what data is included when exporting reports
-  const filteredReports = reports.filter((report) => {
-    return report.name.toLowerCase().includes(searchQuery.toLowerCase())
-  })
-
   // Calculate pagination
-  const totalReports = filteredReports.length
+  const totalReports = reports.length
   const totalPages = Math.ceil(totalReports / pageSize)
   
   // Handle edge case: if current page exceeds total pages, reset to page 1
@@ -137,7 +129,7 @@ const Reports = () => {
   
   const startIndex = (currentPage - 1) * pageSize
   const endIndex = startIndex + pageSize
-  const paginatedReports = filteredReports.slice(startIndex, endIndex)
+  const paginatedReports = reports.slice(startIndex, endIndex)
 
   // Handle page change
   const handlePageChange = (page: number) => {
@@ -146,11 +138,6 @@ const Reports = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
-
-  // Reset to page 1 when search changes
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [searchQuery])
 
   // Map reportId to ReportType
   const getReportType = (reportId: string): ReportType => {
@@ -218,9 +205,7 @@ const Reports = () => {
     <DashboardLayout>
       <div className="p-8">
         <ReportsHeader />
-        <SearchAndFilter
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+        <DateRangeFilter
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
         />

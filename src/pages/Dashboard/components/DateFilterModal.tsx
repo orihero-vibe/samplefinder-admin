@@ -50,8 +50,9 @@ const DateFilterModal = ({
 
     const days: (Date | null)[] = []
 
-    // Add previous month's trailing days
-    const prevMonth = new Date(year, month - 1, 0)
+    // Add previous month's trailing days.
+    // month, 0 gives the last day of the previous month.
+    const prevMonth = new Date(year, month, 0)
     const prevMonthDays = prevMonth.getDate()
     for (let i = adjustedStartingDay - 1; i >= 0; i--) {
       days.push(new Date(year, month - 1, prevMonthDays - i))
