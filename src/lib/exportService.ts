@@ -1075,7 +1075,7 @@ export const exportService = {
         margin: { left: 10, right: 10 },
         columnStyles,
         styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-        headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold', halign: 'left' },
+        headStyles: { fillColor: [145, 1, 104], textColor: 255, fontStyle: 'bold', halign: 'left' },
         bodyStyles: { valign: 'top' },
         alternateRowStyles: { fillColor: [249, 250, 251] },
       })
@@ -1235,7 +1235,7 @@ export const exportService = {
           overflow: 'linebreak',
         },
         headStyles: {
-          fillColor: [59, 130, 246], // Blue-500
+          fillColor: [145, 1, 104], // Brand Purple - Bright (#910168)
           textColor: 255,
           fontStyle: 'bold',
           halign: 'left',
