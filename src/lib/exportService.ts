@@ -58,9 +58,9 @@ const dashboardColumns: ReportColumn[] = [
   { header: 'Brand', key: 'brand' },
   { header: 'Start Time', key: 'startTime' },
   { header: 'End Time', key: 'endTime' },
+  { header: 'Time Zone', key: 'timeZone' },
   { header: 'Product Type', key: 'products' },
   { header: 'Discount?', key: 'discount' },
-  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // Event List columns - order matches report spec
@@ -70,11 +70,12 @@ const eventListColumns: ReportColumn[] = [
   { header: 'Event Date', key: 'eventDate' },
   { header: 'Start Time', key: 'startTime' },
   { header: 'End Time', key: 'endTime' },
+  { header: 'Time Zone', key: 'timeZone' },
+  { header: 'Location', key: 'location' },
   { header: 'Address', key: 'address' },
   { header: 'City', key: 'city' },
   { header: 'State', key: 'state' },
   { header: 'Zip', key: 'zip' },
-  { header: 'Location', key: 'location' },
   { header: 'Product Type', key: 'productType' },
   { header: 'Products', key: 'products' },
   { header: 'Event Info', key: 'eventInfo' },
@@ -83,7 +84,6 @@ const eventListColumns: ReportColumn[] = [
   { header: 'Check-In Code', key: 'checkInCode' },
   { header: 'Check-in Points', key: 'checkInPoints' },
   { header: 'Review Points', key: 'reviewPoints' },
-  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // Clients & Brands columns
@@ -102,10 +102,12 @@ const appUsersColumns: ReportColumn[] = [
   { header: 'Last Name', key: 'lastName' },
   { header: 'Username', key: 'username' },
   { header: 'Email', key: 'email' },
+  { header: 'Phone Number', key: 'phoneNumber' },
   { header: 'DOB', key: 'dob' },
   { header: 'Sign-Up Date', key: 'signUpDate' },
   { header: 'Last Login Date', key: 'lastLoginDate' },
   { header: 'Referral Code', key: 'referralCode' },
+  { header: '# of Referrals', key: 'referralsCount' },
   { header: 'User Points', key: 'userPoints' },
   { header: 'Check-in/Review Pts', key: 'checkInReviewPoints' },
   { header: 'BA Badge (Yes/No)', key: 'baBadge' },
@@ -125,6 +127,9 @@ const pointsEarnedColumns: ReportColumn[] = [
   { header: 'Tier Level', key: 'tierLevel' },
   { header: 'User Points', key: 'userPoints' },
   { header: 'Check-in/Review Pts', key: 'checkInReviewPoints' },
+  { header: 'Check-Ins', key: 'checkIns' },
+  { header: 'Reviews', key: 'reviews' },
+  { header: 'Trivias Won', key: 'triviasWon' },
 ]
 
 // Helper function to format date for display (MM/DD/YYYY). Optional appTimezone (IANA) formats in that zone.
@@ -281,7 +286,7 @@ const wrapTextForPdf = (text: string, maxCharsPerLine = 35): string => {
 // Column keys that hold display dates (MM/DD/YYYY or YYYY-MM-DD) for sort order in exports
 const SORT_DATE_COLUMN_KEYS = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'eventDate', 'signupDate'])
 // Numeric columns that sort descending in export so order matches Preview Reports UI
-const SORT_DESCENDING_NUMERIC_KEYS = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites', 'checkInPoints', 'reviewPoints'])
+const SORT_DESCENDING_NUMERIC_KEYS = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites', 'checkInPoints', 'reviewPoints', 'referralsCount'])
 
 const parseSortableDate = (value: string | number): number => {
   if (value === '' || value === undefined || value === null) return NaN
@@ -430,6 +435,17 @@ async function fetchAllAppUsers(
     offset += REPORT_USERS_PAGE_SIZE
   } while (chunk.length === REPORT_USERS_PAGE_SIZE)
   return all
+}
+
+function buildReferralsCountByCode(users: AppUser[]): Map<string, number> {
+  const countByCode = new Map<string, number>()
+  for (const user of users) {
+    const usedCodeRaw = (user as Record<string, unknown>).usedReferralCode
+    const usedCode = typeof usedCodeRaw === 'string' ? usedCodeRaw.trim() : ''
+    if (!usedCode) continue
+    countByCode.set(usedCode, (countByCode.get(usedCode) ?? 0) + 1)
+  }
+  return countByCode
 }
 
 /** Build a map of user ID -> count of trivia wins (correct answers). Fetches all trivia and responses in batches. */
@@ -799,6 +815,7 @@ export const exportService = {
       fetchCheckInReviewPointsByUser(), // all-time check-in pts + review pts per user
       fetchTriviasWonCountByUser(),
     ])
+    const referralsCountByCode = buildReferralsCountByCode(usersResult)
 
     const rows = usersResult.map((user: AppUser) => {
       const userRecord = user as Record<string, unknown>
@@ -822,6 +839,8 @@ export const exportService = {
         0
       // Trivias Won = actual count from trivia_responses (correct answers), fallback to stored value
       const triviasWon = (userId ? triviasWonByUser.get(userId) : undefined) ?? (userRecord.triviasWon as number) ?? 0
+      const referralCode = (userRecord.referralCode as string) || ''
+      const referralsCount = referralCode ? (referralsCountByCode.get(referralCode) ?? 0) : 0
 
       // Determine tier level based on totalPoints if not explicitly set
       let tierLevel = (userRecord.tierLevel as string) || ''
@@ -838,10 +857,12 @@ export const exportService = {
         lastName: user.lastName || '',
         username: (userRecord.username as string) || '',
         email: user.email || '',
+        phoneNumber: (userRecord.phoneNumber as string) || '',
         dob: formatDateOnly(userRecord.dob as string | undefined),
         signUpDate: formatDate(user.$createdAt, appTimezone),
         lastLoginDate: formatDate(user.lastLoginDate, appTimezone),
-        referralCode: (userRecord.referralCode as string) || '',
+        referralCode,
+        referralsCount: referralsCount.toString(),
         userPoints: totalPoints.toString(),
         checkInReviewPoints: checkInReviewPoints.toString(),
         baBadge: isAmbassador ? 'Yes' : 'No',
@@ -872,9 +893,10 @@ export const exportService = {
     appTimezone?: string
   ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
     const pointsDateRange = useDateRangeForPoints ? dateRange : undefined
-    const [usersResult, checkInReviewPointsByUser] = await Promise.all([
+    const [usersResult, checkInReviewPointsByUser, triviasWonByUser] = await Promise.all([
       fetchAllAppUsers(),
       fetchCheckInReviewPointsByUser(pointsDateRange),
+      fetchTriviasWonCountByUser(),
     ])
 
     const rows = usersResult.map((user: AppUser) => {
@@ -888,6 +910,9 @@ export const exportService = {
         (userId ? checkInReviewPointsByUser.get(userId) : undefined) ??
         (userRecord.checkInReviewPoints as number) ??
         0
+      const totalReviews = (userRecord.totalReviews as number) ?? (userRecord.reviews as number) ?? 0
+      const totalEvents = (userRecord.totalEvents as number) ?? (userRecord.checkIns as number) ?? 0
+      const triviasWon = (userId ? triviasWonByUser.get(userId) : undefined) ?? (userRecord.triviasWon as number) ?? 0
 
       // Tier Level from user_profiles; fallback from totalPoints if not set
       let tierLevel = (userRecord.tierLevel as string) || ''
@@ -908,6 +933,9 @@ export const exportService = {
         tierLevel,
         userPoints: totalPoints.toString(),
         checkInReviewPoints: checkInReviewPoints.toString(),
+        checkIns: totalEvents.toString(),
+        reviews: totalReviews.toString(),
+        triviasWon: triviasWon.toString(),
       }
     })
 
