@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Icon } from '@iconify/react'
 import { DashboardLayout, ShimmerPage } from '../../components'
 import type { DownloadFormat } from '../../components'
-import { ReportsHeader, SearchAndFilter, ReportsList } from './components'
+import { ReportsHeader, DateRangeFilter, ReportsList } from './components'
 import { exportService, getCurrentMonthRange, getEffectiveDateRange, type ReportType } from '../../lib/exportService'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useTimezoneStore } from '../../stores/timezoneStore'
@@ -24,8 +25,8 @@ interface ReportMetadata {
 
 const Reports = () => {
   const location = useLocation()
+  const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>(() => {
     const state = location.state as { dateRange?: { start: Date; end: Date } } | undefined
@@ -113,17 +114,22 @@ const Reports = () => {
       icon: 'mdi:chart-line',
       lastGenerated: formatDate(reportMetadata?.reviews ?? null),
     },
+    {
+      id: '8',
+      name: 'Event Recap',
+      icon: 'mdi:account-details',
+      lastGenerated: formatDate(reportMetadata?.reviews ?? reportMetadata?.events ?? null),
+    },
+    {
+      id: '9',
+      name: 'Trivia Report',
+      icon: 'mdi:help-circle-outline',
+      lastGenerated: formatDate(reportMetadata?.events ?? null),
+    },
   ]
 
-  // Filter reports by search query only
-  // NOTE: Date range is NOT used to filter visible reports
-  // The date range only controls what data is included when exporting reports
-  const filteredReports = reports.filter((report) => {
-    return report.name.toLowerCase().includes(searchQuery.toLowerCase())
-  })
-
   // Calculate pagination
-  const totalReports = filteredReports.length
+  const totalReports = reports.length
   const totalPages = Math.ceil(totalReports / pageSize)
   
   // Handle edge case: if current page exceeds total pages, reset to page 1
@@ -137,7 +143,7 @@ const Reports = () => {
   
   const startIndex = (currentPage - 1) * pageSize
   const endIndex = startIndex + pageSize
-  const paginatedReports = filteredReports.slice(startIndex, endIndex)
+  const paginatedReports = reports.slice(startIndex, endIndex)
 
   // Handle page change
   const handlePageChange = (page: number) => {
@@ -146,11 +152,6 @@ const Reports = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
-
-  // Reset to page 1 when search changes
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [searchQuery])
 
   // Map reportId to ReportType
   const getReportType = (reportId: string): ReportType => {
@@ -162,6 +163,8 @@ const Reports = () => {
       '5': 'app-users',
       '6': 'points-earned-all',
       '7': 'points-earned-date-range',
+      '8': 'event-recap',
+      '9': 'trivia-report',
     }
     return reportTypeMap[reportId] || 'dashboard-all'
   }
@@ -218,9 +221,28 @@ const Reports = () => {
     <DashboardLayout>
       <div className="p-8">
         <ReportsHeader />
-        <SearchAndFilter
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+        
+        {/* Report Builder Link */}
+        <div className="mb-6 bg-gradient-to-r from-purple-100 to-purple-50 border border-purple-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Icon icon="mdi:file-chart" className="text-purple-600 text-2xl" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Custom Report Builder</h3>
+                <p className="text-sm text-gray-600">Create custom reports with your selected columns</p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/reports/builder')}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+            >
+              <Icon icon="mdi:arrow-right" className="text-xl" />
+              Open Report Builder
+            </button>
+          </div>
+        </div>
+
+        <DateRangeFilter
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
         />
