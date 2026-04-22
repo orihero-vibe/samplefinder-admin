@@ -112,6 +112,18 @@ const Reports = () => {
       icon: 'mdi:chart-line',
       lastGenerated: formatDate(reportMetadata?.reviews ?? null),
     },
+    {
+      id: '8',
+      name: 'Event Recap',
+      icon: 'mdi:account-details',
+      lastGenerated: formatDate(reportMetadata?.reviews ?? reportMetadata?.events ?? null),
+    },
+    {
+      id: '9',
+      name: 'Trivia Report',
+      icon: 'mdi:help-circle-outline',
+      lastGenerated: formatDate(reportMetadata?.events ?? null),
+    },
   ]
 
   // Calculate pagination
@@ -149,6 +161,8 @@ const Reports = () => {
       '5': 'app-users',
       '6': 'points-earned-all',
       '7': 'points-earned-date-range',
+      '8': 'event-recap',
+      '9': 'trivia-report',
     }
     return reportTypeMap[reportId] || 'dashboard-all'
   }

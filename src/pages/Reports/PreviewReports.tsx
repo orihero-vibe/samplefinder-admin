@@ -10,7 +10,7 @@ import { useTimezoneStore } from '../../stores/timezoneStore'
 const REPORT_PAGE_SIZE = 50
 
 // Column keys that should wrap long text (e.g. Brand Description, Event Info) to avoid overflow
-const WRAP_COLUMN_KEYS = new Set(['brandDescription', 'eventInfo'])
+const WRAP_COLUMN_KEYS = new Set(['brandDescription', 'eventInfo', 'reviewFeedback', 'question'])
 
 const PreviewReports = () => {
   const navigate = useNavigate()
@@ -52,6 +52,8 @@ const PreviewReports = () => {
       '5': 'app-users',
       '6': 'points-earned-all',
       '7': 'points-earned-date-range',
+      '8': 'event-recap',
+      '9': 'trivia-report',
     }
     return reportTypeMap[reportId || '1'] || 'dashboard-all'
   }
@@ -66,6 +68,8 @@ const PreviewReports = () => {
       '5': 'App Users (All)',
       '6': 'Points Earned (All)',
       '7': 'Points Earned (Date Range)',
+      '8': 'Event Recap',
+      '9': 'Trivia Report',
     }
     return reportNames[reportId || '1'] || 'Dashboard (All)'
   }
@@ -158,11 +162,15 @@ const PreviewReports = () => {
   }
 
   // Column keys that hold display dates (MM/DD/YYYY) and should be sorted chronologically
-  const dateColumnKeys = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'signupDate'])
+  const dateColumnKeys = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'signupDate', 'eventDate', 'triviaDate'])
   // Ensure Clients & Brands default sort key exists in that report's columns
-  const defaultSortKeyByReport: Record<string, string> = { '4': 'signupDate' }
+  const defaultSortKeyByReport: Record<string, string> = { 
+    '4': 'signupDate',
+    '8': 'eventDate',
+    '9': 'triviaDate'
+  }
   // Numeric columns that should sort descending (e.g. points, counts) so higher values appear first
-  const descendingNumericKeys = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites'])
+  const descendingNumericKeys = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites', 'reviewStars', 'totalResponses', 'totalCorrect', 'totalPointsAwarded'])
 
   const parseSortableDate = (value: string | number): number => {
     if (value === '' || value === undefined || value === null) return NaN

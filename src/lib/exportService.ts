@@ -44,6 +44,8 @@ export type ReportType =
   | 'app-users'
   | 'points-earned-all'
   | 'points-earned-date-range'
+  | 'event-recap'
+  | 'trivia-report'
 
 export interface ReportColumn {
   header: string
@@ -130,6 +132,45 @@ const pointsEarnedColumns: ReportColumn[] = [
   { header: 'Check-Ins', key: 'checkIns' },
   { header: 'Reviews', key: 'reviews' },
   { header: 'Trivias Won', key: 'triviasWon' },
+]
+
+// Event Recap columns
+const eventRecapColumns: ReportColumn[] = [
+  { header: 'Event Name', key: 'eventName' },
+  { header: 'Check-In Code', key: 'checkInCode' },
+  { header: 'Brand Name', key: 'brandName' },
+  { header: 'Event Date', key: 'eventDate' },
+  { header: 'Product Type', key: 'productType' },
+  { header: 'First Name', key: 'firstName' },
+  { header: 'Last Name', key: 'lastName' },
+  { header: 'Username', key: 'username' },
+  { header: 'Check-In', key: 'checkIn' },
+  { header: 'Review', key: 'hasReview' },
+  { header: 'Review: # of Stars', key: 'reviewStars' },
+  { header: 'Review: What did they like', key: 'reviewLiked' },
+  { header: 'Review: Did they buy', key: 'reviewPurchased' },
+  { header: 'Review: Feedback Detail Text', key: 'reviewFeedback' },
+]
+
+// Trivia Report columns
+const triviaReportColumns: ReportColumn[] = [
+  { header: 'Trivia Date', key: 'triviaDate' },
+  { header: 'Trivia Question', key: 'question' },
+  { header: 'Trivia Answer 1', key: 'answer1' },
+  { header: 'Trivia Answer 2', key: 'answer2' },
+  { header: 'Trivia Answer 3', key: 'answer3' },
+  { header: 'Trivia Answer 4', key: 'answer4' },
+  { header: 'Total Responses', key: 'totalResponses' },
+  { header: 'Total Correct Responses', key: 'totalCorrect' },
+  { header: 'Trivia Answer 1 # Correct Responses', key: 'answer1Count' },
+  { header: 'Trivia Answer 2 # Correct Responses', key: 'answer2Count' },
+  { header: 'Trivia Answer 3 # Correct Responses', key: 'answer3Count' },
+  { header: 'Trivia Answer 4 # Correct Responses', key: 'answer4Count' },
+  { header: 'Trivia Answer 1 % Correct Responses', key: 'answer1Percent' },
+  { header: 'Trivia Answer 2 % Correct Responses', key: 'answer2Percent' },
+  { header: 'Trivia Answer 3 % Correct Responses', key: 'answer3Percent' },
+  { header: 'Trivia Answer 4 % Correct Responses', key: 'answer4Percent' },
+  { header: 'Total Points Awarded', key: 'totalPointsAwarded' },
 ]
 
 // Helper function to format date for display (MM/DD/YYYY). Optional appTimezone (IANA) formats in that zone.
@@ -521,6 +562,12 @@ export const exportService = {
         return await this.generatePointsEarnedReport(dateRange, false, appTimezone)
       case 'points-earned-date-range':
         return await this.generatePointsEarnedReport(dateRange, true, appTimezone)
+      
+      case 'event-recap':
+        return await this.generateEventRecapReport(dateRange, appTimezone)
+      
+      case 'trivia-report':
+        return await this.generateTriviaReport(dateRange, appTimezone)
 
       default:
         throw new Error(`Unknown report type: ${reportType}`)
@@ -877,6 +924,350 @@ export const exportService = {
 
     return {
       columns: appUsersColumns,
+      rows,
+    }
+  },
+
+  /**
+   * Generate Event Recap report
+   * Shows detailed event participation data including check-ins and reviews
+   * Optimized version with batch fetching
+   */
+  async generateEventRecapReport(
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
+  ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+    const queries: string[] = [Query.orderDesc('date')]
+    
+    // Apply date range filter if provided
+    if (dateRange?.start) {
+      queries.push(Query.greaterThanEqual('date', dateRange.start.toISOString()))
+    }
+    if (dateRange?.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999)
+      queries.push(Query.lessThanEqual('date', endDate.toISOString()))
+    }
+
+    // Fetch all events in range
+    const allEvents: EventDocument[] = []
+    let offset = 0
+    let chunk: EventDocument[]
+    do {
+      const pageResult = await eventsService.list([
+        ...queries,
+        Query.limit(REPORT_LIST_PAGE_SIZE),
+        Query.offset(offset),
+      ])
+      chunk = (pageResult.documents ?? []) as EventDocument[]
+      allEvents.push(...chunk)
+      offset += REPORT_LIST_PAGE_SIZE
+    } while (chunk.length === REPORT_LIST_PAGE_SIZE)
+
+    if (allEvents.length === 0) {
+      return { columns: eventRecapColumns, rows: [] }
+    }
+
+    // Batch fetch all related data
+    const eventIds = allEvents.map(e => e.$id)
+    const clientIds = [...new Set(allEvents.filter(e => e.client).map(e => e.client!))]
+    const categoryIds = [...new Set(allEvents.filter(e => e.categories).map(e => e.categories!))]
+    
+    // Fetch all clients and categories in batches
+    const clientsMap = new Map<string, string>()
+    const categoriesMap = new Map<string, string>()
+    
+    // Batch fetch clients (max 25 at a time due to Appwrite limits)
+    for (let i = 0; i < clientIds.length; i += 25) {
+      const batch = clientIds.slice(i, i + 25)
+      try {
+        const result = await clientsService.list([Query.equal('$id', batch)])
+        for (const client of result.documents ?? []) {
+          clientsMap.set(client.$id, client.name || '')
+        }
+      } catch (err) {
+        console.error('Error batch fetching clients:', err)
+      }
+    }
+
+    // Batch fetch categories
+    for (let i = 0; i < categoryIds.length; i += 25) {
+      const batch = categoryIds.slice(i, i + 25)
+      try {
+        const result = await categoriesService.list([Query.equal('$id', batch)])
+        for (const category of result.documents ?? []) {
+          categoriesMap.set(category.$id, category.title || '')
+        }
+      } catch (err) {
+        console.error('Error batch fetching categories:', err)
+      }
+    }
+
+    // Fetch ALL reviews for ALL events in a single pass
+    const allReviews: ReviewDocument[] = []
+    const reviewsByEventId = new Map<string, ReviewDocument[]>()
+    
+    // Initialize map with empty arrays
+    eventIds.forEach(id => reviewsByEventId.set(id, []))
+    
+    // Fetch reviews for all events at once (in batches if needed)
+    for (let i = 0; i < eventIds.length; i += 10) {
+      const eventBatch = eventIds.slice(i, i + 10)
+      let reviewOffset = 0
+      let reviewChunk: ReviewDocument[]
+      
+      do {
+        const result = await reviewsService.list([
+          Query.equal('event', eventBatch),
+          Query.limit(500),
+          Query.offset(reviewOffset),
+        ])
+        reviewChunk = result.documents ?? []
+        allReviews.push(...reviewChunk)
+        reviewOffset += 500
+      } while (reviewChunk.length === 500)
+    }
+    
+    // Group reviews by event
+    for (const review of allReviews) {
+      const eventId = review.event as string
+      if (eventId && reviewsByEventId.has(eventId)) {
+        reviewsByEventId.get(eventId)!.push(review)
+      }
+    }
+
+    // Collect all unique user IDs from reviews
+    const userIds = [...new Set(allReviews.filter(r => r.user).map(r => r.user as string))]
+    
+    // Batch fetch all users
+    const usersMap = new Map<string, { firstName: string; lastName: string; username: string }>()
+    for (let i = 0; i < userIds.length; i += 25) {
+      const batch = userIds.slice(i, i + 25)
+      try {
+        const result = await appUsersService.list([Query.equal('$id', batch)])
+        for (const user of result) {
+          const userRecord = user as Record<string, unknown>
+          usersMap.set((user as { $id?: string }).$id!, {
+            firstName: user.firstname || '',
+            lastName: user.lastname || '',
+            username: userRecord.username as string || ''
+          })
+        }
+      } catch (err) {
+        console.error('Error batch fetching users:', err)
+      }
+    }
+
+    // Build rows using cached data
+    const rows: Record<string, string | number>[] = []
+    
+    for (const event of allEvents) {
+      const eventTimezone = getEventDisplayTimezone(event, appTimezone)
+      const brandName = event.client ? (clientsMap.get(event.client) || '') : ''
+      const productType = event.categories ? (categoriesMap.get(event.categories) || '') : ''
+      const eventReviews = reviewsByEventId.get(event.$id) || []
+
+      if (eventReviews.length === 0) {
+        // No reviews for this event
+        rows.push({
+          eventName: event.name || '',
+          checkInCode: event.checkInCode || '',
+          brandName,
+          eventDate: formatDateForUpload(event.startTime || event.date, eventTimezone),
+          productType,
+          firstName: '',
+          lastName: '',
+          username: '',
+          checkIn: 'No',
+          hasReview: 'No',
+          reviewStars: '',
+          reviewLiked: '',
+          reviewPurchased: '',
+          reviewFeedback: '',
+        })
+      } else {
+        // Create a row for each review
+        for (const review of eventReviews) {
+          const userData = review.user ? usersMap.get(review.user as string) : undefined
+          
+          // Format "liked" field
+          const liked = review.liked
+          const likedItems: string[] = Array.isArray(liked)
+            ? (liked as string[]).map((s) => String(s).trim()).filter(Boolean)
+            : liked != null
+              ? String(liked).split(',').map((s) => s.trim()).filter(Boolean)
+              : []
+          const likedDisplay = likedItems.length > 0
+            ? likedItems.map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(', ')
+            : ''
+
+          rows.push({
+            eventName: event.name || '',
+            checkInCode: event.checkInCode || '',
+            brandName,
+            eventDate: formatDateForUpload(event.startTime || event.date, eventTimezone),
+            productType,
+            firstName: userData?.firstName || '',
+            lastName: userData?.lastName || '',
+            username: userData?.username || '',
+            checkIn: 'Yes',
+            hasReview: 'Yes',
+            reviewStars: review.rating?.toString() || '0',
+            reviewLiked: likedDisplay,
+            reviewPurchased: review.hasPurchased ? 'Yes' : 'No',
+            reviewFeedback: review.review || '',
+          })
+        }
+      }
+    }
+
+    return {
+      columns: eventRecapColumns,
+      rows,
+    }
+  },
+
+  /**
+   * Generate Trivia Report
+   * Shows trivia questions performance analytics
+   * Optimized version with batch fetching
+   */
+  async generateTriviaReport(
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
+  ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+    const queries: string[] = [Query.orderDesc('startDate')]
+    
+    // Apply date range filter if provided
+    if (dateRange?.start) {
+      queries.push(Query.greaterThanEqual('startDate', dateRange.start.toISOString()))
+    }
+    if (dateRange?.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999)
+      queries.push(Query.lessThanEqual('startDate', endDate.toISOString()))
+    }
+
+    // Fetch all trivia questions in range
+    const allTrivia: TriviaDocument[] = []
+    let offset = 0
+    let chunk: TriviaDocument[]
+    do {
+      const result = await triviaService.list([
+        ...queries,
+        Query.limit(REPORT_LIST_PAGE_SIZE),
+        Query.offset(offset),
+      ])
+      chunk = (result.documents ?? []) as TriviaDocument[]
+      allTrivia.push(...chunk)
+      offset += REPORT_LIST_PAGE_SIZE
+    } while (chunk.length === REPORT_LIST_PAGE_SIZE)
+
+    if (allTrivia.length === 0) {
+      return { columns: triviaReportColumns, rows: [] }
+    }
+
+    const triviaIds = allTrivia.map(t => t.$id)
+    
+    // Fetch ALL responses for ALL trivia in batches
+    const allResponses: TriviaResponseDocument[] = []
+    const responsesByTriviaId = new Map<string, TriviaResponseDocument[]>()
+    
+    // Initialize map with empty arrays
+    triviaIds.forEach(id => responsesByTriviaId.set(id, []))
+    
+    // Batch fetch responses (fetch multiple trivia IDs at once)
+    for (let i = 0; i < triviaIds.length; i += 10) {
+      const triviaBatch = triviaIds.slice(i, i + 10)
+      let responseOffset = 0
+      let responseChunk: TriviaResponseDocument[]
+      
+      do {
+        const result = await triviaResponsesService.list([
+          Query.equal('trivia', triviaBatch),
+          Query.limit(500),
+          Query.offset(responseOffset),
+        ])
+        responseChunk = (result.documents ?? []) as TriviaResponseDocument[]
+        allResponses.push(...responseChunk)
+        responseOffset += 500
+      } while (responseChunk.length === 500)
+    }
+    
+    // Group responses by trivia ID
+    for (const response of allResponses) {
+      const triviaId = typeof response.trivia === 'string' 
+        ? response.trivia 
+        : (response.trivia as unknown as { $id?: string })?.$id
+      
+      if (triviaId && responsesByTriviaId.has(triviaId)) {
+        responsesByTriviaId.get(triviaId)!.push(response)
+      }
+    }
+
+    // Build rows using cached data
+    const rows: Record<string, string | number>[] = []
+
+    for (const trivia of allTrivia) {
+      // Get all answers with defaults for missing ones
+      const answers = trivia.answers || []
+      const answer1 = answers[0] || ''
+      const answer2 = answers[1] || ''
+      const answer3 = answers[2] || ''
+      const answer4 = answers[3] || ''
+
+      // Get responses for this trivia from cache
+      const triviaResponses = responsesByTriviaId.get(trivia.$id) || []
+
+      // Calculate statistics
+      const totalResponses = triviaResponses.length
+      const correctIndex = trivia.correctOptionIndex
+      let totalCorrect = 0
+      const answerCounts = [0, 0, 0, 0]
+
+      for (const response of triviaResponses) {
+        const selectedIndex = Number(response.answerIndex)
+        if (selectedIndex >= 0 && selectedIndex < 4) {
+          answerCounts[selectedIndex]++
+          if (selectedIndex === correctIndex) {
+            totalCorrect++
+          }
+        }
+      }
+
+      // Calculate percentages
+      const calculatePercent = (count: number): string => {
+        if (totalResponses === 0) return '0%'
+        return `${Math.round((count / totalResponses) * 100)}%`
+      }
+
+      // Calculate total points awarded (correct answers × points per trivia)
+      const pointsPerTrivia = trivia.points || 0
+      const totalPointsAwarded = totalCorrect * pointsPerTrivia
+
+      rows.push({
+        triviaDate: formatDateForUpload(trivia.startDate, appTimezone),
+        question: trivia.question || '',
+        answer1,
+        answer2,
+        answer3,
+        answer4,
+        totalResponses: totalResponses.toString(),
+        totalCorrect: totalCorrect.toString(),
+        answer1Count: answerCounts[0].toString(),
+        answer2Count: answerCounts[1].toString(),
+        answer3Count: answerCounts[2].toString(),
+        answer4Count: answerCounts[3].toString(),
+        answer1Percent: calculatePercent(answerCounts[0]),
+        answer2Percent: calculatePercent(answerCounts[1]),
+        answer3Percent: calculatePercent(answerCounts[2]),
+        answer4Percent: calculatePercent(answerCounts[3]),
+        totalPointsAwarded: totalPointsAwarded.toString(),
+      })
+    }
+
+    return {
+      columns: triviaReportColumns,
       rows,
     }
   },
@@ -1291,6 +1682,10 @@ export const exportService = {
         return 'Points Earned Report'
       case 'points-earned-date-range':
         return 'Points Earned Report (Date Range)'
+      case 'event-recap':
+        return 'Event Recap Report'
+      case 'trivia-report':
+        return 'Trivia Report'
       default:
         return 'Report'
     }
