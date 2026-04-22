@@ -4,6 +4,7 @@ import { Query } from './appwrite'
 import { getAppTimezoneShortLabel } from './dateUtils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { getColumnsByKeys, type EntityType } from './reportBuilderConfig'
 
 /**
  * Normalize date range for filtering: single date => that full day; range => start through end of end day.
@@ -46,6 +47,7 @@ export type ReportType =
   | 'points-earned-date-range'
   | 'event-recap'
   | 'trivia-report'
+  | 'custom'
 
 export interface ReportColumn {
   header: string
@@ -568,6 +570,10 @@ export const exportService = {
       
       case 'trivia-report':
         return await this.generateTriviaReport(dateRange, appTimezone)
+      
+      case 'custom':
+        // Custom reports should use generateCustomReport directly
+        return { columns: [], rows: [] }
 
       default:
         throw new Error(`Unknown report type: ${reportType}`)
@@ -1273,6 +1279,510 @@ export const exportService = {
   },
 
   /**
+   * Generate Custom Report with selected columns
+   * Dynamically fetches and combines data based on selected columns
+   */
+  async generateCustomReport(
+    entityType: EntityType,
+    selectedColumnKeys: string[],
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
+  ): Promise<{ columns: ReportColumn[]; rows: Record<string, string | number>[] }> {
+    const selectedColumns = getColumnsByKeys(selectedColumnKeys)
+    const columns: ReportColumn[] = selectedColumns.map(col => ({
+      header: col.header,
+      key: col.key,
+    }))
+
+    // Determine which data sources we need
+    const needsEvents = selectedColumns.some(col => col.dataSource.includes('events'))
+    const needsUsers = selectedColumns.some(col => col.dataSource.includes('users'))
+    const needsClients = selectedColumns.some(col => col.dataSource.includes('clients'))
+    const needsReviews = selectedColumns.some(col => col.dataSource.includes('reviews'))
+    const needsTrivia = selectedColumns.some(col => col.dataSource.includes('trivia'))
+    const needsLocations = selectedColumns.some(col => col.dataSource.includes('locations'))
+
+    const rows: Record<string, string | number>[] = []
+
+    // Handle different entity types
+    if (entityType === 'events' || (entityType === 'all' && needsEvents)) {
+      const eventRows = await this.fetchEventDataForCustomReport(
+        selectedColumnKeys,
+        dateRange,
+        appTimezone,
+        { needsClients, needsReviews, needsLocations }
+      )
+      rows.push(...eventRows)
+    }
+
+    if (entityType === 'users' || (entityType === 'all' && needsUsers)) {
+      const userRows = await this.fetchUserDataForCustomReport(
+        selectedColumnKeys,
+        dateRange,
+        appTimezone
+      )
+      rows.push(...userRows)
+    }
+
+    if (entityType === 'clients' || (entityType === 'all' && needsClients && !needsEvents)) {
+      const clientRows = await this.fetchClientDataForCustomReport(
+        selectedColumnKeys,
+        dateRange,
+        appTimezone
+      )
+      rows.push(...clientRows)
+    }
+
+    if (entityType === 'reviews' || (entityType === 'all' && needsReviews && !needsEvents)) {
+      const reviewRows = await this.fetchReviewDataForCustomReport(
+        selectedColumnKeys,
+        dateRange,
+        appTimezone
+      )
+      rows.push(...reviewRows)
+    }
+
+    if (entityType === 'trivia' || (entityType === 'all' && needsTrivia)) {
+      const triviaRows = await this.fetchTriviaDataForCustomReport(
+        selectedColumnKeys,
+        dateRange,
+        appTimezone
+      )
+      rows.push(...triviaRows)
+    }
+
+    return { columns, rows }
+  },
+
+  // Helper method for fetching event data for custom reports
+  async fetchEventDataForCustomReport(
+    columnKeys: string[],
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string,
+    options?: { needsClients?: boolean; needsReviews?: boolean; needsLocations?: boolean }
+  ): Promise<Record<string, string | number>[]> {
+    const queries: string[] = [Query.orderDesc('date')]
+    if (dateRange?.start) {
+      queries.push(Query.greaterThanEqual('date', dateRange.start.toISOString()))
+    }
+    if (dateRange?.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999)
+      queries.push(Query.lessThanEqual('date', endDate.toISOString()))
+    }
+
+    // Fetch events
+    const allEvents: EventDocument[] = []
+    let offset = 0
+    let chunk: EventDocument[]
+    do {
+      const result = await eventsService.list([
+        ...queries,
+        Query.limit(REPORT_LIST_PAGE_SIZE),
+        Query.offset(offset),
+      ])
+      chunk = (result.documents ?? []) as EventDocument[]
+      allEvents.push(...chunk)
+      offset += REPORT_LIST_PAGE_SIZE
+    } while (chunk.length === REPORT_LIST_PAGE_SIZE)
+
+    if (allEvents.length === 0) return []
+
+    // Prepare caches
+    const clientsMap = new Map<string, ClientDocument>()
+    const categoriesMap = new Map<string, string>()
+
+    // Batch fetch related data if needed
+    if (options?.needsClients && columnKeys.some(k => k === 'brandName' || k === 'clientName')) {
+      const clientIds = [...new Set(allEvents.filter(e => e.client).map(e => e.client!))]
+      for (let i = 0; i < clientIds.length; i += 25) {
+        const batch = clientIds.slice(i, i + 25)
+        try {
+          const result = await clientsService.list([Query.equal('$id', batch)])
+          for (const client of result.documents ?? []) {
+            clientsMap.set(client.$id, client)
+          }
+        } catch (err) {
+          console.error('Error fetching clients:', err)
+        }
+      }
+    }
+
+    if (columnKeys.includes('productType')) {
+      const categoryIds = [...new Set(allEvents.filter(e => e.categories).map(e => e.categories!))]
+      for (let i = 0; i < categoryIds.length; i += 25) {
+        const batch = categoryIds.slice(i, i + 25)
+        try {
+          const result = await categoriesService.list([Query.equal('$id', batch)])
+          for (const category of result.documents ?? []) {
+            categoriesMap.set(category.$id, category.title || '')
+          }
+        } catch (err) {
+          console.error('Error fetching categories:', err)
+        }
+      }
+    }
+
+    // Build rows
+    const rows: Record<string, string | number>[] = []
+    for (const event of allEvents) {
+      const eventTimezone = getEventDisplayTimezone(event, appTimezone)
+      const row: Record<string, string | number> = {}
+
+      columnKeys.forEach(key => {
+        switch (key) {
+          case 'eventName':
+            row[key] = event.name || ''
+            break
+          case 'eventDate':
+            row[key] = formatDateForUpload(event.startTime || event.date, eventTimezone)
+            break
+          case 'startTime':
+            row[key] = formatTimeForUpload(event.startTime, eventTimezone)
+            break
+          case 'endTime':
+            row[key] = formatTimeForUpload(event.endTime, eventTimezone)
+            break
+          case 'checkInCode':
+            row[key] = event.checkInCode || ''
+            break
+          case 'checkInPoints':
+            row[key] = event.checkInPoints || 0
+            break
+          case 'reviewPoints':
+            row[key] = event.reviewPoints || 0
+            break
+          case 'brandName':
+          case 'clientName':
+            const client = event.client ? clientsMap.get(event.client) : undefined
+            row[key] = client?.name || ''
+            break
+          case 'productType':
+            row[key] = event.categories ? (categoriesMap.get(event.categories) || '') : ''
+            break
+          case 'products':
+            row[key] = formatProducts(normalizeEventProducts(event))
+            break
+          case 'address':
+            row[key] = event.address || ''
+            break
+          case 'city':
+            row[key] = event.city || ''
+            break
+          case 'state':
+            row[key] = event.state || ''
+            break
+          case 'zip':
+            row[key] = event.zipCode || ''
+            break
+          case 'location':
+            row[key] = event.locationName || ''
+            break
+          case 'eventInfo':
+            row[key] = event.eventInfo || ''
+            break
+          case 'discount':
+            row[key] = (event.discount || event.discountImageURL) ? 'Yes' : 'No'
+            break
+          case 'discountText':
+            row[key] = event.discount || ''
+            break
+          case 'discountImageFile':
+            row[key] = event.discountImageURL ? 'Yes' : 'No'
+            break
+          case 'timeZone':
+            row[key] = eventTimezone ? getAppTimezoneShortLabel(eventTimezone) : ''
+            break
+        }
+      })
+
+      rows.push(row)
+    }
+
+    return rows
+  },
+
+  // Helper method for fetching user data for custom reports
+  async fetchUserDataForCustomReport(
+    columnKeys: string[],
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
+  ): Promise<Record<string, string | number>[]> {
+    const users = await fetchAllAppUsers(dateRange)
+    const referralsCountByCode = buildReferralsCountByCode(users)
+    const checkInReviewPointsByUser = await fetchCheckInReviewPointsByUser()
+    const triviasWonByUser = await fetchTriviasWonCountByUser()
+
+    return users.map(user => {
+      const userRecord = user as Record<string, unknown>
+      const userId = (user as { $id?: string }).$id
+      const row: Record<string, string | number> = {}
+
+      columnKeys.forEach(key => {
+        switch (key) {
+          case 'firstName':
+            row[key] = user.firstname || ''
+            break
+          case 'lastName':
+            row[key] = user.lastname || ''
+            break
+          case 'username':
+            row[key] = (userRecord.username as string) || ''
+            break
+          case 'email':
+            row[key] = user.email || ''
+            break
+          case 'phoneNumber':
+            row[key] = (userRecord.phoneNumber as string) || ''
+            break
+          case 'dob':
+            row[key] = formatDateOnly(userRecord.dob as string | undefined)
+            break
+          case 'signUpDate':
+            row[key] = formatDate(user.$createdAt, appTimezone)
+            break
+          case 'lastLoginDate':
+            row[key] = formatDate(user.lastLoginDate, appTimezone)
+            break
+          case 'referralCode':
+            row[key] = (userRecord.referralCode as string) || ''
+            break
+          case 'referralsCount':
+            const code = (userRecord.referralCode as string) || ''
+            row[key] = code ? (referralsCountByCode.get(code) ?? 0) : 0
+            break
+          case 'userPoints':
+            row[key] = (userRecord.totalPoints as number) ?? 0
+            break
+          case 'checkInReviewPoints':
+            row[key] = userId ? (checkInReviewPointsByUser.get(userId) ?? 0) : 0
+            break
+          case 'baBadge':
+            row[key] = (userRecord.isAmbassador as boolean) ? 'Yes' : 'No'
+            break
+          case 'influencerBadge':
+            row[key] = (userRecord.isInfluencer as boolean) ? 'Yes' : 'No'
+            break
+          case 'tierLevel':
+            row[key] = (userRecord.tierLevel as string) || 'NewbieSampler'
+            break
+          case 'checkIns':
+            row[key] = (userRecord.totalEvents as number) ?? 0
+            break
+          case 'reviews':
+            row[key] = (userRecord.totalReviews as number) ?? 0
+            break
+          case 'triviasWon':
+            row[key] = userId ? (triviasWonByUser.get(userId) ?? 0) : 0
+            break
+          case 'timeZone':
+            row[key] = appTimezone ? getAppTimezoneShortLabel(appTimezone) : ''
+            break
+        }
+      })
+
+      return row
+    })
+  },
+
+  // Helper method for fetching client data for custom reports
+  async fetchClientDataForCustomReport(
+    columnKeys: string[],
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
+  ): Promise<Record<string, string | number>[]> {
+    const queries: string[] = [Query.orderDesc('$createdAt')]
+    if (dateRange?.start) {
+      queries.push(Query.greaterThanEqual('$createdAt', dateRange.start.toISOString()))
+    }
+    if (dateRange?.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999)
+      queries.push(Query.lessThanEqual('$createdAt', endDate.toISOString()))
+    }
+
+    const result = await clientsService.list(queries)
+    const clients = (result?.documents ?? []) as ClientDocument[]
+    
+    const clientIds = clients.map(c => c.$id)
+    const statsMap = clientIds.length > 0
+      ? await clientsService.getClientsStats(clientIds)
+      : new Map()
+
+    return clients.map(client => {
+      const row: Record<string, string | number> = {}
+      const stats = statsMap.get(client.$id)
+
+      columnKeys.forEach(key => {
+        switch (key) {
+          case 'clientName':
+          case 'brandName':
+            row[key] = client.name || ''
+            break
+          case 'logoFile':
+            row[key] = client.logoURL ? 'Yes' : 'No'
+            break
+          case 'signUpDate':
+            row[key] = formatDate(client.$createdAt, appTimezone)
+            break
+          case 'productType':
+            row[key] = formatProducts(client.productType)
+            break
+          case 'favorites':
+            row[key] = stats?.totalFavorites ?? 0
+            break
+          case 'timeZone':
+            row[key] = appTimezone ? getAppTimezoneShortLabel(appTimezone) : ''
+            break
+        }
+      })
+
+      return row
+    })
+  },
+
+  // Helper method for fetching review data for custom reports
+  async fetchReviewDataForCustomReport(
+    columnKeys: string[],
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
+  ): Promise<Record<string, string | number>[]> {
+    const queries: string[] = [Query.orderDesc('$createdAt')]
+    if (dateRange?.start) {
+      queries.push(Query.greaterThanEqual('$createdAt', dateRange.start.toISOString()))
+    }
+    if (dateRange?.end) {
+      const endDate = new Date(dateRange.end)
+      endDate.setHours(23, 59, 59, 999)
+      queries.push(Query.lessThanEqual('$createdAt', endDate.toISOString()))
+    }
+
+    const allReviews: ReviewDocument[] = []
+    let offset = 0
+    let chunk: ReviewDocument[]
+    do {
+      const result = await reviewsService.list([
+        ...queries,
+        Query.limit(REPORT_LIST_PAGE_SIZE),
+        Query.offset(offset),
+      ])
+      chunk = result.documents ?? []
+      allReviews.push(...chunk)
+      offset += REPORT_LIST_PAGE_SIZE
+    } while (chunk.length === REPORT_LIST_PAGE_SIZE)
+
+    // Batch fetch related data
+    const userIds = [...new Set(allReviews.filter(r => r.user).map(r => r.user as string))]
+    const eventIds = [...new Set(allReviews.filter(r => r.event).map(r => r.event as string))]
+    
+    const usersMap = new Map<string, AppUser>()
+    const eventsMap = new Map<string, EventDocument>()
+
+    // Fetch users
+    for (let i = 0; i < userIds.length; i += 25) {
+      const batch = userIds.slice(i, i + 25)
+      try {
+        const users = await appUsersService.list([Query.equal('$id', batch)])
+        for (const user of users) {
+          usersMap.set((user as { $id?: string }).$id!, user)
+        }
+      } catch (err) {
+        console.error('Error fetching users:', err)
+      }
+    }
+
+    // Fetch events
+    for (let i = 0; i < eventIds.length; i += 25) {
+      const batch = eventIds.slice(i, i + 25)
+      try {
+        const result = await eventsService.list([Query.equal('$id', batch)])
+        for (const event of (result.documents ?? []) as EventDocument[]) {
+          eventsMap.set(event.$id, event)
+        }
+      } catch (err) {
+        console.error('Error fetching events:', err)
+      }
+    }
+
+    return allReviews.map(review => {
+      const row: Record<string, string | number> = {}
+      const user = review.user ? usersMap.get(review.user as string) : undefined
+      const event = review.event ? eventsMap.get(review.event as string) : undefined
+
+      columnKeys.forEach(key => {
+        switch (key) {
+          case 'checkIn':
+            row[key] = 'Yes'
+            break
+          case 'hasReview':
+            row[key] = 'Yes'
+            break
+          case 'reviewStars':
+            row[key] = review.rating || 0
+            break
+          case 'reviewLiked':
+            const liked = review.liked
+            const likedItems: string[] = Array.isArray(liked)
+              ? (liked as string[])
+              : liked ? String(liked).split(',').map(s => s.trim()) : []
+            row[key] = likedItems.join(', ')
+            break
+          case 'reviewPurchased':
+            row[key] = review.hasPurchased ? 'Yes' : 'No'
+            break
+          case 'reviewFeedback':
+            row[key] = review.review || ''
+            break
+          case 'reviewedAt':
+            row[key] = formatDate(review.$createdAt, appTimezone)
+            break
+          case 'pointsEarned':
+            row[key] = review.pointsEarned || 0
+            break
+          case 'firstName':
+            row[key] = user?.firstname || ''
+            break
+          case 'lastName':
+            row[key] = user?.lastname || ''
+            break
+          case 'username':
+            row[key] = (user as any)?.username || ''
+            break
+          case 'eventName':
+            row[key] = event?.name || ''
+            break
+          case 'eventDate':
+            row[key] = event ? formatDateForUpload(event.startTime || event.date, appTimezone) : ''
+            break
+        }
+      })
+
+      return row
+    })
+  },
+
+  // Helper method for fetching trivia data for custom reports
+  async fetchTriviaDataForCustomReport(
+    columnKeys: string[],
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
+  ): Promise<Record<string, string | number>[]> {
+    // Reuse existing trivia report logic
+    const { rows } = await this.generateTriviaReport(dateRange, appTimezone)
+    
+    // Filter to only requested columns
+    return rows.map(row => {
+      const filteredRow: Record<string, string | number> = {}
+      columnKeys.forEach(key => {
+        if (row[key] !== undefined) {
+          filteredRow[key] = row[key]
+        }
+      })
+      return filteredRow
+    })
+  },
+
+  /**
    * Generate Points Earned report
    * Fetches all users (paginated) so report total matches actual user count.
    * Check-in/Review Pts = events points + reviews points (check-in points from events + pointsEarned from reviews).
@@ -1663,6 +2173,74 @@ export const exportService = {
   },
 
   /**
+   * Export custom report directly to PDF
+   * Uses already generated data instead of regenerating
+   */
+  async exportCustomReportToPDF(
+    columns: ReportColumn[],
+    rows: Record<string, string | number>[],
+    filename: string,
+    title: string,
+    dateRange?: { start: Date | null; end: Date | null },
+    appTimezone?: string
+  ): Promise<void> {
+    try {
+      const doc = new jsPDF({ orientation: 'landscape' })
+      
+      // Add title and metadata
+      doc.setFontSize(16)
+      doc.text(title, 14, 15)
+      
+      // Add date range if provided
+      if (dateRange?.start || dateRange?.end) {
+        doc.setFontSize(10)
+        let dateText = ''
+        if (dateRange.start && dateRange.end) {
+          const startStr = dateRange.start.toLocaleDateString()
+          const endStr = dateRange.end.toLocaleDateString()
+          dateText = `Date Range: ${startStr} - ${endStr}`
+        } else if (dateRange.start) {
+          dateText = `From: ${dateRange.start.toLocaleDateString()}`
+        } else if (dateRange.end) {
+          dateText = `To: ${dateRange.end.toLocaleDateString()}`
+        }
+        doc.text(dateText, 14, 22)
+      }
+      
+      // Add timezone if provided
+      if (appTimezone) {
+        doc.setFontSize(8)
+        doc.text(`Timezone: ${getAppTimezoneShortLabel(appTimezone)}`, 14, 28)
+      }
+      
+      // Prepare data for table
+      const headers = columns.map(col => col.header)
+      const data = rows.map(row => 
+        columns.map(col => {
+          const value = col.getValue ? col.getValue(row) : row[col.key]
+          return value?.toString() || ''
+        })
+      )
+      
+      // Add table with autoTable
+      autoTable(doc, {
+        head: [headers],
+        body: data,
+        startY: 35,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [147, 51, 234] }, // Purple color
+      })
+      
+      // Save the PDF
+      doc.save(filename)
+    } catch (error) {
+      console.error('Error generating custom PDF:', error)
+      throw error
+    }
+  },
+
+  /**
    * Get report title based on report type
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1686,6 +2264,8 @@ export const exportService = {
         return 'Event Recap Report'
       case 'trivia-report':
         return 'Trivia Report'
+      case 'custom':
+        return 'Custom Report'
       default:
         return 'Report'
     }

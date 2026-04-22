@@ -11,6 +11,7 @@ import Users from './pages/Users/Users'
 import Categories from './pages/Categories/Categories'
 import Reports from './pages/Reports/Reports'
 import PreviewReports from './pages/Reports/PreviewReports'
+import ReportBuilder from './pages/Reports/ReportBuilder'
 import Notifications from './pages/Notifications/Notifications'
 import Trivia from './pages/Trivia/Trivia'
 import TriviaDetails from './pages/Trivia/TriviaDetails'
@@ -88,6 +89,14 @@ function App() {
           element={
             <ProtectedRoute>
               <PreviewReports />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports/builder"
+          element={
+            <ProtectedRoute>
+              <ReportBuilder />
             </ProtectedRoute>
           }
         />

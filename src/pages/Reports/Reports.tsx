@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Icon } from '@iconify/react'
 import { DashboardLayout, ShimmerPage } from '../../components'
 import type { DownloadFormat } from '../../components'
 import { ReportsHeader, DateRangeFilter, ReportsList } from './components'
@@ -24,6 +25,7 @@ interface ReportMetadata {
 
 const Reports = () => {
   const location = useLocation()
+  const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(true)
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>(() => {
@@ -219,6 +221,27 @@ const Reports = () => {
     <DashboardLayout>
       <div className="p-8">
         <ReportsHeader />
+        
+        {/* Report Builder Link */}
+        <div className="mb-6 bg-gradient-to-r from-purple-100 to-purple-50 border border-purple-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Icon icon="mdi:file-chart" className="text-purple-600 text-2xl" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Custom Report Builder</h3>
+                <p className="text-sm text-gray-600">Create custom reports with your selected columns</p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/reports/builder')}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+            >
+              <Icon icon="mdi:arrow-right" className="text-xl" />
+              Open Report Builder
+            </button>
+          </div>
+        </div>
+
         <DateRangeFilter
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
