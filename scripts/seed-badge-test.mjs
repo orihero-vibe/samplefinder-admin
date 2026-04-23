@@ -34,7 +34,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ─── env loading ─────────────────────────────────────────────────────────────
 
 function loadEnv() {
-  const envPath = join(__dirname, '.env');
+  const envPath = join(__dirname, '../.env');
   if (!existsSync(envPath)) return;
   const raw = readFileSync(envPath, 'utf8');
   for (const line of raw.split('\n')) {

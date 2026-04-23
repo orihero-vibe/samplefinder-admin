@@ -1,8 +1,22 @@
 import { Icon } from '@iconify/react'
+import { useNavigate } from 'react-router-dom'
 
 const ReportBuilderHeader = () => {
+  const navigate = useNavigate()
+
   return (
     <div className="mb-8">
+      <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
+        <button
+          onClick={() => navigate('/reports')}
+          className="hover:text-gray-900 transition-colors"
+        >
+          Reports
+        </button>
+        <Icon icon="mdi:chevron-right" className="w-4 h-4" />
+        <span className="text-gray-900">Report Builder</span>
+      </div>
+
       <div className="flex items-center gap-3 mb-3">
         <div className="p-3 bg-purple-100 rounded-lg">
           <Icon icon="mdi:file-chart" className="text-purple-600 text-2xl" />

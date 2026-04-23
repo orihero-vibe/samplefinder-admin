@@ -28,7 +28,9 @@ const MultiSelectDropdown = ({
 }: MultiSelectDropdownProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [openUpward, setOpenUpward] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -41,6 +43,36 @@ const MultiSelectDropdown = ({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Flip menu above trigger when there's not enough space below
+  useEffect(() => {
+    if (!isOpen) return
+
+    const updateMenuDirection = () => {
+      if (!dropdownRef.current || !menuRef.current) return
+
+      const triggerRect = dropdownRef.current.getBoundingClientRect()
+      const menuHeight = menuRef.current.getBoundingClientRect().height
+      const spacing = 8 // matches Tailwind mt-2/mb-2 spacing
+      const viewportHeight = window.innerHeight
+      const spaceBelow = viewportHeight - triggerRect.bottom
+      const spaceAbove = triggerRect.top
+      const needsOpenUpward = spaceBelow < menuHeight + spacing && spaceAbove > spaceBelow
+
+      setOpenUpward(needsOpenUpward)
+    }
+
+    // Wait for menu to render before measuring
+    const rafId = window.requestAnimationFrame(updateMenuDirection)
+    window.addEventListener('resize', updateMenuDirection)
+    window.addEventListener('scroll', updateMenuDirection, true)
+
+    return () => {
+      window.cancelAnimationFrame(rafId)
+      window.removeEventListener('resize', updateMenuDirection)
+      window.removeEventListener('scroll', updateMenuDirection, true)
+    }
+  }, [isOpen, maxHeight, options.length, selectedValues.length, searchTerm])
 
   // Filter options based on search term
   const filteredOptions = options.filter(option =>
@@ -101,7 +133,12 @@ const MultiSelectDropdown = ({
 
       {/* Dropdown menu */}
       {isOpen && (
-        <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg">
+        <div
+          ref={menuRef}
+          className={`absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg ${
+            openUpward ? 'bottom-full mb-2' : 'top-full mt-2'
+          }`}
+        >
           {/* Search input */}
           <div className="p-3 border-b border-gray-200">
             <div className="relative">
