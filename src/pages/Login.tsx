@@ -52,7 +52,7 @@ const Login = () => {
 
     try {
       // login() will set isLoading: true in the store
-      await login(email, password)
+      await login(email, password, rememberMe)
       // Success - isLoading will be set to false by the store
       // Keep isSubmitting true until navigation (component will unmount)
       addNotification({

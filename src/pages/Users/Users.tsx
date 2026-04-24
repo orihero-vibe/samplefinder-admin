@@ -675,10 +675,15 @@ const Users = () => {
             }
             
             const totalPoints = Number(userData.userPoints) || 0
+            const previousTier =
+              (selectedUser.tierLevel != null && String(selectedUser.tierLevel).trim().length > 0)
+                ? String(selectedUser.tierLevel)
+                : null
+            const previousTierString = previousTier ?? ''
             const resolvedTierLevel =
               filterTierList.length > 0
                 ? tierLevelForTotalPoints(filterTierList, totalPoints)
-                : String(userData.tierLevel ?? '').trim()
+                : previousTierString
 
             // Map the UI field names to actual database field names
             // Only include fields that exist in the database schema
@@ -692,8 +697,8 @@ const Users = () => {
               username: userData.username,
               isInfluencer: userData.influencerBadge === 'Yes',
               referralCode: userData.referralCode,
-              // Tier follows totalPoints when tier metadata is loaded (manual point edits stay consistent)
-              tierLevel: resolvedTierLevel || (userData.tierLevel ?? ''),
+              // Tier follows totalPoints when tier metadata is loaded; otherwise keep the stored value
+              tierLevel: resolvedTierLevel || previousTierString,
               // Date of birth: send ISO string for datetime attribute (YYYY-MM-DD -> YYYY-MM-DDT00:00:00.000Z)
               ...(userData.dob?.trim()
                 ? { dob: userData.dob.trim().length === 10 ? `${userData.dob.trim()}T00:00:00.000Z` : userData.dob.trim() }
@@ -711,17 +716,11 @@ const Users = () => {
             const nowAmbassador = updateData.isAmbassador as boolean
             const nowInfluencer = updateData.isInfluencer as boolean
 
-            // Detect tier change before updating (tierLevel is the canonical tier source for the app)
-            const previousTier =
-              (selectedUser.tierLevel != null && String(selectedUser.tierLevel).trim().length > 0)
-                ? String(selectedUser.tierLevel)
-                : null
+            // Detect tier change for notifications (tier is derived from points when tier list is available)
             const updatedTierRaw =
               resolvedTierLevel.length > 0
                 ? resolvedTierLevel
-                : userData.tierLevel != null
-                  ? String(userData.tierLevel).trim()
-                  : ''
+                : previousTierString
             const newTier = updatedTierRaw.length > 0 ? updatedTierRaw : null
 
             // Update user profile in database
@@ -845,7 +844,6 @@ const Users = () => {
             signUpDate: u.$createdAt ? new Date(u.$createdAt).toISOString().split('T')[0] : '',
             password: '**********',
             checkIns: String(u.totalEvents ?? u.checkIns ?? '0'),
-            tierLevel: String(u.tierLevel ?? ''),
             username: String(u.username ?? ''),
             email: u.email,
             checkInReviewPoints: String(u.checkInReviewPoints ?? '0'),
