@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
-import { tiersService, type TierDocument, appUsersService } from '../../../lib/services'
+import { appUsersService } from '../../../lib/services'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '../../../components'
 import { Query } from '../../../lib/appwrite'
@@ -17,7 +17,6 @@ interface UserData {
   signUpDate?: string
   password?: string
   checkIns?: string
-  tierLevel?: string
   username?: string
   email?: string
   checkInReviewPoints?: string
@@ -62,7 +61,6 @@ const EditUserModal = ({
     signUpDate: '',
     password: '',
     checkIns: '',
-    tierLevel: '',
     username: '',
     email: '',
     checkInReviewPoints: '',
@@ -77,8 +75,6 @@ const EditUserModal = ({
 
   const [showPassword, setShowPassword] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [tiers, setTiers] = useState<TierDocument[]>([])
-  const [isLoadingTiers, setIsLoadingTiers] = useState(false)
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [usernameValidation, setUsernameValidation] = useState<{
@@ -146,7 +142,6 @@ const EditUserModal = ({
       signUpDate: initialData.signUpDate || '',
       password: initialData.password || '',
       checkIns: initialData.checkIns || '',
-      tierLevel: initialData.tierLevel || '', // Keep tierLevel from initialData
       username: initialData.username || '',
       email: initialData.email || '',
       checkInReviewPoints: initialData.checkInReviewPoints || '',
@@ -185,13 +180,6 @@ const EditUserModal = ({
       } else {
         setImagePreview(null)
       }
-    } else {
-      // Modal is open for the same user; preserve form state (including unsaved edits).
-      // We only refresh fields that are safe to update without resetting the whole form.
-      setFormData((prev) => ({
-        ...prev,
-        tierLevel: newFormData.tierLevel,
-      }))
     }
 
     // Track modal open/close and user identity
@@ -209,40 +197,6 @@ const EditUserModal = ({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData?.isBlocked, isOpen])
-
-  // Fetch tiers when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      const fetchTiers = async () => {
-        setIsLoadingTiers(true)
-        try {
-          const tiersList = await tiersService.list()
-          setTiers(tiersList)
-          
-          // After tiers are loaded, sync tierLevel from initialData so dropdown shows correct selection
-          const profileTier = (initialData?.tierLevel ?? '').trim()
-          if (profileTier && tiersList.length > 0) {
-            const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, '')
-            const normalizedProfile = normalize(profileTier)
-            const matchingTier = tiersList.find(
-              (tier) => normalize(tier.name) === normalizedProfile
-            )
-            if (matchingTier) {
-              setFormData((prev) => ({
-                ...prev,
-                tierLevel: matchingTier.name,
-              }))
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching tiers:', error)
-        } finally {
-          setIsLoadingTiers(false)
-        }
-      }
-      fetchTiers()
-    }
-  }, [isOpen, initialData])
 
   // Check username availability with debounce (exclude current user)
   const checkUsernameAvailability = async (username: string) => {
@@ -752,41 +706,6 @@ const EditUserModal = ({
                   value={formData.checkIns}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
-              </div>
-
-              {/* Tier Level */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tier Level <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <select
-                    value={formData.tierLevel || ''}
-                    onChange={(e) => handleInputChange('tierLevel', e.target.value)}
-                    required
-                    disabled={isLoadingTiers}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  >
-                    {isLoadingTiers ? (
-                      <option value="">Loading tiers...</option>
-                    ) : tiers.length === 0 ? (
-                      <option value="">No tiers available</option>
-                    ) : (
-                      <>
-                        {!formData.tierLevel && <option value="">Select a tier</option>}
-                        {tiers.map((tier) => (
-                          <option key={tier.$id} value={tier.name}>
-                            {tier.name}
-                          </option>
-                        ))}
-                      </>
-                    )}
-                  </select>
-                  <Icon
-                    icon="mdi:chevron-down"
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
-                  />
-                </div>
               </div>
             </div>
 
