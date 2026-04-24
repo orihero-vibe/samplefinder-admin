@@ -27,26 +27,26 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
 
   if (!isOpen) return null
 
-  // Required columns in alphabetical order
+  // Required columns in dashboard order (Start Time -> End Time -> Timezone)
   const requiredColumns = [
     'Brand Name',
     'Category',
     'Date',
+    'Start Time',
     'End Time',
+    'Timezone',
     'Event Info',
     'Event Name',
     'Location',
     'Points',
     'Products',
     'Review Points',
-    'Start Time',
   ]
   
   // Optional columns (alphabetical)
   const optionalColumns = [
     'Discount',
     'Discount Image URL',
-    'Timezone',
   ]
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -106,17 +106,17 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
       '[REPLACE WITH EXISTING BRAND]',      // Brand Name - Must exist in your database
       '[REPLACE WITH EXISTING CATEGORY]',   // Category - Must exist in your database
       '2026-01-25',                         // Date (YYYY-MM-DD format)
+      '09:00',                              // Start Time (HH:MM)
       '17:00',                              // End Time (HH:MM)
+      'ET',                                 // Timezone (ET/CT/PT... or IANA like America/New_York)
       'Event description goes here',       // Event Info
       'My Event Name',                      // Event Name - Replace with your event name
       'Main Street Store',                 // Location - MUST match an existing Location in admin
       '100',                                // Points (Check In Points)
       'Beer, Wine',                         // Products (comma-separated)
       '50',                                 // Review Points
-      '09:00',                              // Start Time (HH:MM)
       '10%',                                // Discount (optional)
       'https://example.com/image.jpg',      // Discount Image URL (optional)
-      'ET',                                 // Timezone (optional, ET/CT/PT... or IANA like America/New_York)
     ]
     // Properly escape CSV values (wrap in quotes if contains comma, quote, or newline)
     const escapeCSV = (value: string) => {
@@ -244,7 +244,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
               <li>Address and coordinates are taken from the Location record, not from the CSV</li>
               <li><strong>Date</strong> format: YYYY-MM-DD (e.g., 2026-01-25)</li>
               <li><strong>Time</strong> format: HH:MM (e.g., 09:00, 17:00)</li>
-              <li><strong>Timezone</strong> (optional): app code (NT, ET, CT, MT, PT, AKT, HAT) or supported IANA timezone (e.g., America/New_York); blank uses current app timezone</li>
+              <li><strong>Timezone</strong>: app code (NT, ET, CT, MT, PT, AKT, HAT) or supported IANA timezone (e.g., America/New_York);</li>
               <li>If <strong>Start Time</strong>, <strong>End Time</strong>, <strong>Event Info</strong>, <strong>Points</strong>, or <strong>Review Points</strong> are left empty, defaults are applied: Start 00:00, End 23:59, Event info text, 10 and 50 points</li>
               <li>Download the template and replace sample values with your actual data</li>
             </ul>
