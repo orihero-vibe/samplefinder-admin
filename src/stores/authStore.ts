@@ -14,7 +14,7 @@ interface AuthState {
   isLoading: boolean
   isAuthenticated: boolean
   error: string | null
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>
   logout: () => Promise<void>
   register: (email: string, password: string, name?: string) => Promise<void>
   getCurrentUser: () => Promise<void>
@@ -30,7 +30,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   error: null,
 
-  login: async (email: string, password: string) => {
+  login: async (email: string, password: string, rememberMe = false) => {
     // Trim email and password to remove any whitespace (move outside try block for catch access)
     const trimmedEmail = email.trim()
     const trimmedPassword = password.trim()
@@ -191,6 +191,18 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
       
       // Step 5: Success - user is authenticated and authorized
+      // Store remember me preference with timestamp
+      if (rememberMe) {
+        localStorage.setItem('authRememberMe', JSON.stringify({
+          timestamp: Date.now(),
+          duration: 30 * 24 * 60 * 60 * 1000 // 30 days in milliseconds
+        }))
+      } else {
+        // For non-remember me sessions, set a shorter duration (e.g., browser session)
+        localStorage.removeItem('authRememberMe')
+        sessionStorage.setItem('authSession', 'active')
+      }
+      
       set({ 
         user, 
         userProfile,
@@ -319,6 +331,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     try {
       await account.deleteSession({ sessionId: 'current' })
+      // Clear remember me preference and session storage
+      localStorage.removeItem('authRememberMe')
+      sessionStorage.removeItem('authSession')
       set({ 
         user: null, 
         userProfile: null,
@@ -372,6 +387,45 @@ export const useAuthStore = create<AuthState>((set) => ({
   getCurrentUser: async () => {
     try {
       set({ isLoading: true })
+      
+      // Check remember me preference and session validity
+      const rememberMeData = localStorage.getItem('authRememberMe')
+      const sessionActive = sessionStorage.getItem('authSession')
+      
+      if (!rememberMeData && !sessionActive) {
+        // No remember me preference and no active session - not authenticated
+        set({ 
+          user: null, 
+          userProfile: null,
+          isAuthenticated: false, 
+          isLoading: false 
+        })
+        return
+      }
+      
+      if (rememberMeData) {
+        try {
+          const { timestamp, duration } = JSON.parse(rememberMeData)
+          const now = Date.now()
+          
+          if (now - timestamp > duration) {
+            // Remember me session has expired
+            localStorage.removeItem('authRememberMe')
+            await account.deleteSession({ sessionId: 'current' }).catch(() => {})
+            set({ 
+              user: null, 
+              userProfile: null,
+              isAuthenticated: false, 
+              isLoading: false 
+            })
+            return
+          }
+        } catch {
+          // Invalid remember me data, remove it
+          localStorage.removeItem('authRememberMe')
+        }
+      }
+      
       const user = await account.get()
       
       // Find user profile by authID
