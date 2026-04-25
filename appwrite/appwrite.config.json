@@ -369,6 +369,15 @@
                     "encrypt": false
                 },
                 {
+                    "key": "usedReferralCode",
+                    "type": "string",
+                    "required": false,
+                    "array": false,
+                    "size": 100,
+                    "default": null,
+                    "encrypt": false
+                },
+                {
                     "key": "notifications",
                     "type": "string",
                     "required": false,
