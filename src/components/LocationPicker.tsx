@@ -45,14 +45,20 @@ interface LocationPickerProps {
 // Component to handle map clicks and update position
 function LocationMarker({ 
   position, 
-  setPosition 
+  setPosition,
+  onManualMove
 }: { 
   position: [number, number] | null
-  setPosition: (pos: [number, number]) => void 
+  setPosition: (pos: [number, number]) => void
+  onManualMove?: (pos: [number, number]) => void 
 }) {
   useMapEvents({
     click(e) {
-      setPosition([e.latlng.lat, e.latlng.lng])
+      const newPos: [number, number] = [e.latlng.lat, e.latlng.lng]
+      setPosition(newPos)
+      if (onManualMove) {
+        onManualMove(newPos)
+      }
     },
   })
 
@@ -95,6 +101,8 @@ const LocationPicker = ({
 }: LocationPickerProps) => {
   const [position, setPosition] = useState<[number, number] | null>(null)
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false)
+  const [addressMismatchWarning, setAddressMismatchWarning] = useState<string | null>(null)
+  const [originalAddressCoords, setOriginalAddressCoords] = useState<[number, number] | null>(null)
   const mapRef = useRef<L.Map | null>(null)
 
   // Default center - use world center (no geolocation)
@@ -279,6 +287,41 @@ const LocationPicker = ({
     }
   }, [latitude, longitude])
 
+  // Calculate distance between two coordinates in miles
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 3959 // Radius of the Earth in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180
+    const dLon = (lon2 - lon1) * Math.PI / 180
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+    return R * c
+  }
+
+  // Handle manual map click
+  const handleManualMapMove = (newPosition: [number, number]) => {
+    if (originalAddressCoords) {
+      const distance = calculateDistance(
+        originalAddressCoords[0],
+        originalAddressCoords[1],
+        newPosition[0],
+        newPosition[1]
+      )
+      
+      if (distance > 0.5) { // More than 0.5 miles from original
+        setAddressMismatchWarning(
+          `⚠️ Pin moved ${distance.toFixed(1)} miles from the geocoded address. ` +
+          `This may indicate the address was not accurately geocoded. ` +
+          `Please verify the pin location matches the actual address.`
+        )
+      } else {
+        setAddressMismatchWarning(null)
+      }
+    }
+  }
+
   // Update parent when position changes
   const handlePositionChange = async (newPosition: [number, number], skipReverseGeocode = false) => {
     setPosition(newPosition)
@@ -317,13 +360,21 @@ const LocationPicker = ({
           </label>
           <AddressAutocomplete
             value={address || ''}
-            onChange={(value) => onAddressChange?.(value)}
+            onChange={(value) => {
+              onAddressChange?.(value)
+              // Clear warning when address changes
+              setAddressMismatchWarning(null)
+            }}
             onAddressSelect={(components) => {
               if (components.latitude && components.longitude) {
                 const lat = parseFloat(components.latitude)
                 const lng = parseFloat(components.longitude)
                 if (!isNaN(lat) && !isNaN(lng)) {
                   const newPosition: [number, number] = [lat, lng]
+                  // Store original geocoded coordinates for comparison
+                  setOriginalAddressCoords(newPosition)
+                  setAddressMismatchWarning(null)
+                  
                   // Skip reverse geocoding since we already have address data from autocomplete
                   handlePositionChange(newPosition, true)
                   
@@ -410,10 +461,27 @@ const LocationPicker = ({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <LocationMarker position={position} setPosition={handlePositionChange} />
+          <LocationMarker 
+            position={position} 
+            setPosition={handlePositionChange}
+            onManualMove={(pos) => {
+              handleManualMapMove(pos)
+              handlePositionChange(pos)
+            }}
+          />
           <MapUpdater position={position} defaultCenter={defaultCenter} />
         </MapContainer>
       </div>
+
+      {/* Address Mismatch Warning */}
+      {addressMismatchWarning && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+          <div className="flex items-start gap-2">
+            <Icon icon="mdi:alert" className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-yellow-800">{addressMismatchWarning}</p>
+          </div>
+        </div>
+      )}
 
       {/* Coordinates Display */}
       {position && (
@@ -438,10 +506,32 @@ const LocationPicker = ({
 
       {/* Instructions */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-        <p className="text-sm text-gray-700">
-          <Icon icon="mdi:information" className="inline w-4 h-4 mr-1" />
-          Click anywhere on the map to set the event location, or search for an address above.
-        </p>
+        <div className="flex items-start justify-between">
+          <p className="text-sm text-gray-700">
+            <Icon icon="mdi:information" className="inline w-4 h-4 mr-1" />
+            Click anywhere on the map to set the event location, or search for an address above.
+          </p>
+          {position && address && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (position) {
+                  const addressComponents = await reverseGeocode(position[0], position[1])
+                  if (addressComponents) {
+                    console.log('Verification check:')
+                    console.log('Expected address:', address)
+                    console.log('Actual location address:', addressComponents.address)
+                    console.log('Distance check needed between these addresses')
+                  }
+                }
+              }}
+              className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+            >
+              <Icon icon="mdi:map-check" className="inline w-3 h-3 mr-1" />
+              Verify Location
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

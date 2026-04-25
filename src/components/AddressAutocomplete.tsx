@@ -214,8 +214,23 @@ const AddressAutocomplete = ({
     }
 
     if (place.geometry?.location) {
-      components.latitude = place.geometry.location.lat().toString()
-      components.longitude = place.geometry.location.lng().toString()
+      const lat = place.geometry.location.lat()
+      const lng = place.geometry.location.lng()
+      
+      // Validate coordinates are within valid ranges
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        console.error('Invalid coordinates from Google Places:', { lat, lng })
+      }
+      
+      components.latitude = lat.toString()
+      components.longitude = lng.toString()
+      
+      // Log for debugging
+      console.log('Google Places coordinates:', {
+        lat,
+        lng,
+        address: place.formatted_address
+      })
     }
 
     let streetNumber = ''

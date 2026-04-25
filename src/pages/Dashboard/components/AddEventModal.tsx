@@ -484,15 +484,57 @@ const AddEventModal = ({ isOpen, onClose, onSave, categories = [], brands = [], 
       // If adding a new location row, create it first — event will use `locationId` only.
       let createdLocationId: string | undefined
       if (showAddLocationFields && locationName.trim() && trimmed.address && trimmed.city && trimmed.state && trimmed.latitude && trimmed.longitude) {
+        const lat = parseFloat(trimmed.latitude)
+        const lng = parseFloat(trimmed.longitude)
+        
+        // Validate coordinates
+        if (isNaN(lat) || isNaN(lng)) {
+          addNotification({
+            type: 'error',
+            title: 'Invalid Coordinates',
+            message: 'Invalid coordinates. Please select a location on the map.',
+          })
+          setIsSubmitting(false)
+          return
+        }
+        
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          addNotification({
+            type: 'error',
+            title: 'Invalid Range',
+            message: 'Coordinates are out of valid range. Please verify the location.',
+          })
+          setIsSubmitting(false)
+          return
+        }
+        
+        // Warn if coordinates are 0,0 (null island)
+        if (lat === 0 && lng === 0) {
+          addNotification({
+            type: 'error',
+            title: 'Invalid Location',
+            message: 'Location appears to be at null coordinates (0,0). Please select the correct location.',
+          })
+          setIsSubmitting(false)
+          return
+        }
+        
         const created = await locationsService.create({
           name: locationName.trim(),
           address: trimmed.address,
           city: trimmed.city,
           state: trimmed.state,
           zipCode: trimmed.zipCode || '',
-          location: [parseFloat(trimmed.longitude), parseFloat(trimmed.latitude)],
+          location: [lng, lat], // [longitude, latitude] - GeoJSON format
         })
         createdLocationId = created.$id
+        
+        console.log('Created location with coordinates:', {
+          name: locationName.trim(),
+          lat,
+          lng,
+          location: [lng, lat]
+        })
       }
 
       const payload =

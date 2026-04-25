@@ -1123,10 +1123,23 @@ const Dashboard = () => {
           eventPayload.locationName = trimmedLocationName
         }
         if (eventData.longitude && eventData.latitude) {
-          eventPayload.location = [
-            parseFloat(eventData.longitude),
-            parseFloat(eventData.latitude),
-          ]
+          const lat = parseFloat(eventData.latitude)
+          const lng = parseFloat(eventData.longitude)
+          
+          // Validate coordinates before saving
+          if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+            eventPayload.location = [lng, lat] // [longitude, latitude] - GeoJSON format
+            
+            // Log for debugging
+            console.log('Saving event with coordinates:', {
+              lat,
+              lng,
+              location: [lng, lat]
+            })
+          } else {
+            console.error('Invalid coordinates for event:', { lat, lng })
+            eventPayload.location = null
+          }
         }
       }
 
@@ -1277,10 +1290,23 @@ const Dashboard = () => {
             : ''
         eventPayload.locationName = trimmedLocationName || null
         if (eventData.longitude && eventData.latitude) {
-          eventPayload.location = [
-            parseFloat(eventData.longitude),
-            parseFloat(eventData.latitude),
-          ]
+          const lat = parseFloat(eventData.latitude)
+          const lng = parseFloat(eventData.longitude)
+          
+          // Validate coordinates before saving
+          if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+            eventPayload.location = [lng, lat] // [longitude, latitude] - GeoJSON format
+            
+            // Log for debugging
+            console.log('Saving event with coordinates:', {
+              lat,
+              lng,
+              location: [lng, lat]
+            })
+          } else {
+            console.error('Invalid coordinates for event:', { lat, lng })
+            eventPayload.location = null
+          }
         } else {
           eventPayload.location = null
         }
