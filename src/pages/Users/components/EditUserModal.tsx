@@ -13,6 +13,7 @@ interface UserData {
   zipCode?: string
   phoneNumber?: string
   userPoints?: string
+  tierLevel?: string
   baBadge?: string
   signUpDate?: string
   password?: string
@@ -57,6 +58,7 @@ const EditUserModal = ({
     zipCode: '',
     phoneNumber: '',
     userPoints: '',
+    tierLevel: '',
     baBadge: '',
     signUpDate: '',
     password: '',
@@ -138,6 +140,7 @@ const EditUserModal = ({
       zipCode: initialData.zipCode || '',
       phoneNumber: initialData.phoneNumber || '',
       userPoints: initialData.userPoints || '',
+      tierLevel: initialData.tierLevel || '',
       baBadge: initialData.baBadge || '',
       signUpDate: initialData.signUpDate || '',
       password: initialData.password || '',
@@ -704,6 +707,19 @@ const EditUserModal = ({
                   type="text"
                   readOnly
                   value={formData.checkIns}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
+                />
+              </div>
+
+              {/* Tier Level (system-derived; not editable) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tier Level
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={formData.tierLevel || ''}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
               </div>

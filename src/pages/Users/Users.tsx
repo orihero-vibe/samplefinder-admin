@@ -846,6 +846,7 @@ const Users = () => {
             checkIns: String(u.totalEvents ?? u.checkIns ?? '0'),
             username: String(u.username ?? ''),
             email: u.email,
+            tierLevel: String(u.tierLevel ?? ''),
             checkInReviewPoints: String(u.checkInReviewPoints ?? '0'),
             influencerBadge: (u.isInfluencer ?? u.influencerBadge) ? 'Yes' : 'No',
             lastLogin: u.$updatedAt ? new Date(u.$updatedAt).toISOString().split('T')[0] : '',
