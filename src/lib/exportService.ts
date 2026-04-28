@@ -97,7 +97,6 @@ const clientsBrandsColumns: ReportColumn[] = [
   { header: 'Signup Date', key: 'signupDate' },
   { header: 'Product Type', key: 'productType' },
   { header: '# of Favorites', key: 'favorites' },
-  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // App Users columns
@@ -120,7 +119,6 @@ const appUsersColumns: ReportColumn[] = [
   { header: 'Check-Ins', key: 'checkIns' },
   { header: 'Reviews', key: 'reviews' },
   { header: 'Trivias Won', key: 'triviasWon' },
-  { header: 'Time Zone', key: 'timeZone' },
 ]
 
 // Points Earned (All) columns
@@ -845,7 +843,6 @@ export const exportService = {
         signupDate: formatDate(client.$createdAt, appTimezone),
         productType: formatProducts(client.productType),
         favorites: String(totalFavorites),
-        timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
       }
     })
 
@@ -924,7 +921,6 @@ export const exportService = {
         checkIns: totalEvents.toString(),
         reviews: totalReviews.toString(),
         triviasWon: triviasWon.toString(),
-        timeZone: appTimezone ? getAppTimezoneShortLabel(appTimezone) : '',
       }
     })
 
@@ -1575,9 +1571,6 @@ export const exportService = {
           case 'triviasWon':
             row[key] = userId ? (triviasWonByUser.get(userId) ?? 0) : 0
             break
-          case 'timeZone':
-            row[key] = appTimezone ? getAppTimezoneShortLabel(appTimezone) : ''
-            break
         }
       })
 
@@ -1630,9 +1623,6 @@ export const exportService = {
             break
           case 'favorites':
             row[key] = stats?.totalFavorites ?? 0
-            break
-          case 'timeZone':
-            row[key] = appTimezone ? getAppTimezoneShortLabel(appTimezone) : ''
             break
         }
       })

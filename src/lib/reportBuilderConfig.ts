@@ -32,7 +32,7 @@ export const REPORT_COLUMNS: ColumnDefinition[] = [
   { key: 'city', header: 'City', category: 'Location', dataSource: ['events', 'locations'] },
   { key: 'state', header: 'State', category: 'Location', dataSource: ['events', 'locations'] },
   { key: 'zip', header: 'Zip Code', category: 'Location', dataSource: ['events', 'locations'] },
-  { key: 'timeZone', header: 'Time Zone', category: 'Location', dataSource: ['events', 'users', 'clients'] },
+  { key: 'timeZone', header: 'Time Zone', category: 'Location', dataSource: ['events'] },
   
   // Client/Brand columns
   { key: 'brandName', header: 'Brand Name', category: 'Clients', dataSource: ['events', 'clients', 'reviews'] },
