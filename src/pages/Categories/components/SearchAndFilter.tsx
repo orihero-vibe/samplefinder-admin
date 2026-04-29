@@ -22,8 +22,7 @@ const SearchAndFilter = ({
       createdAt: 'Created Date',
       title: 'Category Title',
     }
-    const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
-    return `${sortLabels[sortBy] || 'Created Date'} ${orderIcon}`
+    return sortLabels[sortBy] || 'Created Date'
   }
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
