@@ -76,18 +76,24 @@ function isTuesdayEastern(date) {
  * Appwrite defaults to 25 docs per request; this ensures we get every matching document.
  */
 async function listAllDocuments(databases, databaseId, collectionId, queries = []) {
-    let offset = 0;
+    // Cursor-based pagination: stable when the collection is being modified during the
+    // fetch (signups, profile updates). Offset-based pagination would otherwise duplicate
+    // some rows and skip others when ordering shifts across page boundaries — that
+    // produced the "User A got 5 notifications, User B got 3" bug.
     const all = [];
+    let cursorAfter = null;
     while (true) {
-        const response = await databases.listDocuments(databaseId, collectionId, [
-            ...queries,
-            Query.limit(PAGE_SIZE),
-            Query.offset(offset),
-        ]);
+        const pageQueries = [...queries, Query.limit(PAGE_SIZE)];
+        if (cursorAfter) {
+            pageQueries.push(Query.cursorAfter(cursorAfter));
+        }
+        const response = await databases.listDocuments(databaseId, collectionId, pageQueries);
+        if (response.documents.length === 0)
+            break;
         all.push(...response.documents);
+        cursorAfter = response.documents[response.documents.length - 1].$id;
         if (response.documents.length < PAGE_SIZE)
             break;
-        offset += PAGE_SIZE;
     }
     return all;
 }
@@ -185,7 +191,20 @@ async function getTargetUsers(databases, targetAudience, selectedUserIds, log, n
                 return [];
             }
         }
-        const users = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, queries));
+        const rawUsers = (await listAllDocuments(databases, DATABASE_ID, USER_PROFILES_TABLE_ID, queries));
+        // Defense in depth: dedup by profile $id so any upstream duplicate (e.g. legacy
+        // pagination, retried fetch) cannot produce duplicate push or in-app entries.
+        const seen = new Set();
+        const users = [];
+        for (const u of rawUsers) {
+            if (u && typeof u.$id === 'string' && !seen.has(u.$id)) {
+                seen.add(u.$id);
+                users.push(u);
+            }
+        }
+        if (users.length !== rawUsers.length) {
+            log(`Deduplicated user list: ${rawUsers.length} raw -> ${users.length} unique`);
+        }
         log(`Found ${users.length} target users for audience: ${targetAudience}`);
         return users;
     }
@@ -374,10 +393,12 @@ async function sendNotification(databases, messaging, notificationId, log) {
                 recipients: 0,
             };
         }
-        // Extract user auth IDs for push notification
-        const userAuthIds = users
-            .map(user => user.authID)
-            .filter(id => id && typeof id === 'string');
+        // Extract user auth IDs for push notification.
+        // Dedup so that if two user_profiles rows share an authID (data-integrity edge case)
+        // the user still gets the push exactly once.
+        const userAuthIds = Array.from(new Set(users
+            .map((user) => user.authID)
+            .filter((id) => typeof id === 'string' && id.length > 0)));
         if (userAuthIds.length === 0) {
             log(`ERROR: Found ${users.length} user profile(s) but none have a valid authID. Push cannot be sent.`);
             return {
@@ -1206,6 +1227,11 @@ async function checkAndSendInactivityNotifications(databases, messaging, users, 
  * BADGE EARNED NOTIFICATION
  * Sends a push notification when an admin assigns ambassador or influencer badge.
  * Called via POST /send-badge-notification.
+ *
+ * Title/message/type intentionally match the client's `syncSpecialBadgeAwards` output
+ * so the mobile app treats this as the single source of truth for the badge notification
+ * (mobile push handler skips persisting `badgeEarned` pushes, and the client sync uses
+ * this unread notification instead of creating a duplicate in-app entry).
  */
 async function sendBadgeNotification(databases, messaging, userId, badgeType, log) {
     log(`Badge notification: sending ${badgeType} badge notification for auth user ${userId}`);
