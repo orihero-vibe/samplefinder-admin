@@ -27,6 +27,18 @@ interface GoogleAutocompleteService {
   ) => void
 }
 
+// Place name (main_text) suitable for an establishment selection — e.g.
+// "Lincoln Financial Field" or "Giant".
+type AddressComponents = {
+  address: string
+  city: string
+  state: string
+  zipCode: string
+  latitude: string
+  longitude: string
+  name?: string
+}
+
 interface GooglePlacesService {
   getDetails: (
     request: { placeId: string; fields: string[] },
@@ -47,15 +59,7 @@ interface GooglePlaceResult {
     }
   }
   formatted_address?: string
-}
-
-interface AddressComponents {
-  address: string
-  city: string
-  state: string
-  zipCode: string
-  latitude: string
-  longitude: string
+  name?: string
 }
 
 interface AddressAutocompleteProps {
@@ -65,6 +69,11 @@ interface AddressAutocompleteProps {
   placeholder?: string
   required?: boolean
   className?: string
+  // After a prediction is selected, what should the input's value become?
+  // 'address' (default) — the parsed street address (existing behavior).
+  // 'name' — the place's main_text (e.g., "Giant", "Lincoln Financial Field").
+  // Use 'name' when this autocomplete is driving a Location Name / Store Name field.
+  valueOnSelect?: 'address' | 'name'
 }
 
 interface Prediction {
@@ -105,9 +114,10 @@ const AddressAutocomplete = ({
   value,
   onChange,
   onAddressSelect,
-  placeholder = 'Enter address or zip code...',
+  placeholder = 'Enter address, place, or zip code...',
   required = false,
   className = '',
+  valueOnSelect = 'address',
 }: AddressAutocompleteProps) => {
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [isOpen, setIsOpen] = useState(false)
@@ -164,10 +174,13 @@ const AddressAutocomplete = ({
     }
 
     setIsLoading(true)
+    // Omit `types` so predictions include both addresses AND establishments
+    // (e.g. "Giant Aston PA", "Lincoln Financial Field"). Restricting to
+    // ['geocode'] would hide business/place results, which the customer
+    // explicitly wants for SAM-518.
     autocompleteServiceRef.current.getPlacePredictions(
       {
         input,
-        types: ['geocode'],
       },
       (results: Prediction[] | null, status: string) => {
         setIsLoading(false)
@@ -313,37 +326,35 @@ const AddressAutocomplete = ({
     placesServiceRef.current.getDetails(
       {
         placeId: prediction.place_id,
-        fields: ['address_components', 'geometry', 'formatted_address'],
+        fields: ['address_components', 'geometry', 'formatted_address', 'name'],
       },
       (place: GooglePlaceResult | null, status: string) => {
         setIsLoading(false)
         if (status === window.google?.maps?.places?.PlacesServiceStatus?.OK && place) {
           const components = parseAddressComponents(place)
-          
+
           // Use the original prediction text if parsed address is a Plus Code or empty
           let displayAddress = components.address
           if (!displayAddress || isPlusCode(displayAddress)) {
             // Use the full description from prediction (e.g., "North Hollywood, CA 91607, USA")
             displayAddress = prediction.description.split(',')[0]
           }
-          
-          const finalComponents = {
+
+          // Place / establishment name — falls back to prediction main_text.
+          const placeName = place.name || prediction.structured_formatting.main_text
+
+          const finalComponents: AddressComponents = {
             ...components,
             address: displayAddress,
+            name: placeName,
           }
-          
-          console.log('=== Address Autocomplete Selection ===')
-          console.log('Selected prediction:', prediction.description)
-          console.log('Parsed components:', finalComponents)
-          console.log('Latitude:', finalComponents.latitude)
-          console.log('Longitude:', finalComponents.longitude)
-          console.log('Address:', finalComponents.address)
-          console.log('City:', finalComponents.city)
-          console.log('State:', finalComponents.state)
-          console.log('Zip Code:', finalComponents.zipCode)
-          console.log('=====================================')
-          
-          onChange(displayAddress)
+
+          // Drive the input value based on caller intent. Address fields
+          // want the street address; Location Name / Store Name fields
+          // want the establishment name.
+          const nextValue = valueOnSelect === 'name' ? placeName : displayAddress
+
+          onChange(nextValue)
           onAddressSelect(finalComponents)
         }
         setIsOpen(false)
