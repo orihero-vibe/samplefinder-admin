@@ -29,6 +29,16 @@ import {
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { storedDobToDateInputValue } from '../../lib/formUtils'
 
+// Build a human-readable label for confirmation modals (e.g. "user
+// John Smith", "user @jsmith", "user jsmith@example.com"). Returns
+// 'user' as a fallback when no identifier is available.
+const describeUser = (user: { firstName?: string; lastName?: string; username?: string; email?: string } | null | undefined): string => {
+  if (!user) return 'user'
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim()
+  const label = fullName || user.username || user.email
+  return label ? `user "${label}"` : 'user'
+}
+
 const Users = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { addNotification } = useNotificationStore()
@@ -421,7 +431,7 @@ const Users = () => {
     try {
       await appUsersService.create(userData)
       setCurrentPage(1)
-      await fetchUsers(1) // Refresh list - reset to page 1
+      await Promise.all([fetchUsers(1), fetchStatistics()])
       setIsAddUserModalOpen(false)
       addNotification({
         type: 'success',
@@ -448,9 +458,9 @@ const Users = () => {
       // Check if we need to go back a page if current page becomes empty
       if (users.length === 1 && currentPage > 1) {
         setCurrentPage(currentPage - 1)
-        await fetchUsers(currentPage - 1)
+        await Promise.all([fetchUsers(currentPage - 1), fetchStatistics()])
       } else {
-        await fetchUsers(currentPage) // Refresh list
+        await Promise.all([fetchUsers(currentPage), fetchStatistics()])
       }
       setIsDeleteModalOpen(false)
       setUserToDelete(null)
@@ -592,6 +602,8 @@ const Users = () => {
         <UsersTable
           users={users}
           isLoading={isLoading}
+          searchTerm={searchQuery}
+          hasFilters={tierFilter !== 'All Tiers'}
           currentPage={currentPage}
           totalPages={totalPages}
           totalUsers={totalUsers}
@@ -697,6 +709,7 @@ const Users = () => {
               username: userData.username,
               isInfluencer: userData.influencerBadge === 'Yes',
               referralCode: userData.referralCode,
+              role: userData.role === 'admin' ? 'admin' : 'user',
               // Tier follows totalPoints when tier metadata is loaded; otherwise keep the stored value
               tierLevel: resolvedTierLevel || previousTierString,
               // Date of birth: send ISO string for datetime attribute (YYYY-MM-DD -> YYYY-MM-DDT00:00:00.000Z)
@@ -847,6 +860,7 @@ const Users = () => {
             username: String(u.username ?? ''),
             email: u.email,
             tierLevel: String(u.tierLevel ?? ''),
+            role: String(u.role ?? 'user'),
             checkInReviewPoints: String(u.checkInReviewPoints ?? '0'),
             influencerBadge: (u.isInfluencer ?? u.influencerBadge) ? 'Yes' : 'No',
             lastLogin: u.$updatedAt ? new Date(u.$updatedAt).toISOString().split('T')[0] : '',
@@ -869,7 +883,7 @@ const Users = () => {
         }}
         onConfirm={handleBlockUser}
         type={(blockModalState.user as { isBlocked?: boolean })?.isBlocked ? 'unblock' : 'block'}
-        itemName="user"
+        itemName={describeUser(blockModalState.user)}
         isLoading={blockModalState.isLoading}
       />
 
@@ -884,7 +898,7 @@ const Users = () => {
         }}
         onConfirm={handleDeleteUser}
         type="delete"
-        itemName="user"
+        itemName={describeUser(userToDelete)}
         isLoading={isDeleteLoading}
       />
     </DashboardLayout>

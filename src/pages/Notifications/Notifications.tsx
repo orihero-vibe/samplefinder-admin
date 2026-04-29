@@ -539,6 +539,8 @@ const Notifications = () => {
         <NotificationsTable
           notifications={sortedNotifications}
           isLoading={isLoading}
+          searchTerm={searchQuery}
+          hasFilters={typeFilter !== 'All Types'}
           currentPage={currentPage}
           totalPages={totalPages}
           totalNotifications={totalNotifications}

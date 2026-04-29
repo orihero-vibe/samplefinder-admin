@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react'
-import { Pagination } from '../../../components'
+import { Pagination, TableEmptyState, TableLoadingState } from '../../../components'
 
 interface User {
   $id?: string
@@ -29,6 +29,8 @@ interface UsersTableProps {
   pageSize?: number
   onPageChange?: (page: number) => void
   isLoading?: boolean
+  searchTerm?: string
+  hasFilters?: boolean
 }
 
 const UsersTable = ({
@@ -41,7 +43,10 @@ const UsersTable = ({
   pageSize = 25,
   onPageChange,
   isLoading = false,
+  searchTerm = '',
+  hasFilters = false,
 }: UsersTableProps) => {
+  const isFiltered = searchTerm.trim().length > 0 || hasFilters
   // Format date-only (e.g. DOB) as local calendar date to avoid timezone shift (UTC midnight -> previous day)
   const formatDateOnly = (dateStr: string | undefined): string => {
     if (!dateStr) return '-'
@@ -75,9 +80,7 @@ const UsersTable = ({
   }
 
   return (
-    <div
-      className={`bg-white border border-gray-200 rounded-lg overflow-hidden transition-opacity ${isLoading ? 'opacity-60 pointer-events-none' : ''}`}
-    >
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
@@ -148,12 +151,24 @@ const UsersTable = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {users.length === 0 ? (
-              <tr>
-                <td colSpan={11} className="px-6 py-8 text-center text-sm text-gray-500">
-                  No users found
-                </td>
-              </tr>
+            {isLoading ? (
+              <TableLoadingState colSpan={11} />
+            ) : users.length === 0 ? (
+              isFiltered ? (
+                <TableEmptyState
+                  colSpan={11}
+                  icon="mdi:magnify"
+                  title="No results found"
+                  description="Try adjusting your search or filters."
+                />
+              ) : (
+                <TableEmptyState
+                  colSpan={11}
+                  icon="mdi:account-multiple-outline"
+                  title="No users yet"
+                  description="App users will appear here once they sign up."
+                />
+              )
             ) : (
               users.map((user) => (
                 <tr 

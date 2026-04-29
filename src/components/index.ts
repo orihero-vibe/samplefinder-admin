@@ -26,6 +26,7 @@ export {
 } from './Shimmer'
 export { ProtectedRoute } from './ProtectedRoute'
 export { default as Pagination } from './Pagination'
+export { TableLoadingState, TableEmptyState } from './TableState'
 export { default as LocationPicker } from './LocationPicker'
 export { default as ImageCropper } from './ImageCropper'
 

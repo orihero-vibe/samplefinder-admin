@@ -35,8 +35,7 @@ const SearchAndFilter = ({
       tierLevel: 'Tier Level',
       dob: 'Date of Birth',
     }
-    const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
-    return `Sort by: ${sortLabels[sortBy] || 'Date'} ${orderIcon}`
+    return `Sort by: ${sortLabels[sortBy] || 'Date'}`
   }
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">

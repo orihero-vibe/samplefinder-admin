@@ -378,6 +378,7 @@ const Locations = () => {
         <LocationsTable
           locations={locations}
           isLoading={isLoading}
+          searchTerm={searchTerm}
           currentPage={currentPage}
           totalPages={totalPages}
           totalLocations={totalLocations}
@@ -427,7 +428,7 @@ const Locations = () => {
         }}
         onConfirm={handleConfirmDelete}
         type="delete"
-        itemName="location"
+        itemName={locationToDelete?.name ? `"${locationToDelete.name}"` : 'location'}
       />
     </DashboardLayout>
   )

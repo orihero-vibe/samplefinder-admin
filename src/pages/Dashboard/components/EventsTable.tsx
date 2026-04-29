@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react'
-import { Pagination } from '../../../components'
+import { Pagination, TableEmptyState, TableLoadingState } from '../../../components'
 
 interface Event {
   date: string
@@ -28,6 +28,9 @@ interface EventsTableProps {
   totalEvents?: number
   pageSize?: number
   onPageChange?: (page: number) => void
+  isLoading?: boolean
+  searchTerm?: string
+  hasFilters?: boolean
 }
 
 const EventsTable = ({
@@ -44,7 +47,11 @@ const EventsTable = ({
   totalEvents = 0,
   pageSize = 25,
   onPageChange,
+  isLoading = false,
+  searchTerm = '',
+  hasFilters = false,
 }: EventsTableProps) => {
+  const isFiltered = searchTerm.trim().length > 0 || hasFilters
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="p-6 border-b border-gray-200 flex items-center justify-between">
@@ -125,16 +132,24 @@ const EventsTable = ({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {events.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
-                  <div className="flex flex-col items-center">
-                    <Icon icon="mdi:calendar-remove" className="w-12 h-12 text-gray-400 mb-4" />
-                    <p className="text-lg font-medium text-gray-900 mb-1">No events found</p>
-                    <p className="text-gray-500">Get started by creating a new event.</p>
-                  </div>
-                </td>
-              </tr>
+            {isLoading ? (
+              <TableLoadingState colSpan={9} />
+            ) : events.length === 0 ? (
+              isFiltered ? (
+                <TableEmptyState
+                  colSpan={9}
+                  icon="mdi:magnify"
+                  title="No results found"
+                  description="Try adjusting your search or filters."
+                />
+              ) : (
+                <TableEmptyState
+                  colSpan={9}
+                  icon="mdi:calendar-remove"
+                  title="No events yet"
+                  description="Create your first event to see it here."
+                />
+              )
             ) : (
               events.map((event, index) => (
               <tr

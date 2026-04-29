@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react'
-import { Pagination } from '../../../components'
+import { Pagination, TableEmptyState, TableLoadingState } from '../../../components'
 
 interface Notification {
   id: string
@@ -15,6 +15,8 @@ interface Notification {
 interface NotificationsTableProps {
   notifications: Notification[]
   isLoading?: boolean
+  searchTerm?: string
+  hasFilters?: boolean
   onEditClick: (notification: Notification) => void
   onDuplicateClick: (notification: Notification) => void
   onDeleteClick: (notification: Notification) => void
@@ -28,6 +30,8 @@ interface NotificationsTableProps {
 const NotificationsTable = ({
   notifications,
   isLoading = false,
+  searchTerm = '',
+  hasFilters = false,
   onEditClick,
   onDuplicateClick,
   onDeleteClick,
@@ -37,6 +41,7 @@ const NotificationsTable = ({
   pageSize = 25,
   onPageChange,
 }: NotificationsTableProps) => {
+  const isFiltered = searchTerm.trim().length > 0 || hasFilters
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'Notification':
@@ -149,14 +154,23 @@ const NotificationsTable = ({
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
-              <tr>
-                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                  <div className="flex items-center justify-center gap-2">
-                    <Icon icon="mdi:loading" className="w-6 h-6 animate-spin" />
-                    <span>Loading...</span>
-                  </div>
-                </td>
-              </tr>
+              <TableLoadingState colSpan={8} />
+            ) : notifications.length === 0 ? (
+              isFiltered ? (
+                <TableEmptyState
+                  colSpan={8}
+                  icon="mdi:magnify"
+                  title="No results found"
+                  description="Try adjusting your search or filters."
+                />
+              ) : (
+                <TableEmptyState
+                  colSpan={8}
+                  icon="mdi:bell-outline"
+                  title="No notifications yet"
+                  description="Create your first notification to see it here."
+                />
+              )
             ) : (
             notifications.map((notification) => (
               <tr

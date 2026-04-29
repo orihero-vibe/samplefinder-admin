@@ -76,8 +76,26 @@ const Categories = () => {
   const [pageSize] = useState(25)
   const [totalCategories, setTotalCategories] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
+  const [newThisMonthCount, setNewThisMonthCount] = useState(0)
   const [sortBy, setSortBy] = useState<'createdAt' | 'title'>('createdAt')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+
+  // Count categories created this month directly from the DB so the
+  // summary card stays accurate regardless of which page is currently
+  // loaded into the table.
+  const fetchCategoryStats = async () => {
+    try {
+      const now = new Date()
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      const result = await categoriesService.list([
+        Query.greaterThanEqual('$createdAt', startOfMonth.toISOString()),
+        Query.limit(1),
+      ])
+      setNewThisMonthCount(result.total)
+    } catch (err) {
+      console.error('Error fetching category stats:', err)
+    }
+  }
 
   // Fetch categories from Appwrite with pagination and sorting
   const fetchCategories = async (page: number = currentPage) => {
@@ -148,30 +166,23 @@ const Categories = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, sortBy, sortOrder])
 
-  // Calculate summary statistics
-  // Note: For summary stats, we use the totalCategories state (total from DB)
-  // not the length of the current page's categories array
-  const newThisMonth = categories.filter((category) => {
-    if (!category.createdAt) return false
-    const createdDate = new Date(category.createdAt)
-    const now = new Date()
-    return (
-      createdDate.getMonth() === now.getMonth() &&
-      createdDate.getFullYear() === now.getFullYear()
-    )
-  }).length
+  // Initial stats load (totalCategories is refreshed by fetchCategories)
+  useEffect(() => {
+    fetchCategoryStats()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const summaryCards = [
     {
       label: 'Total Categories',
-      value: totalCategories.toString(), // Use state variable for total count
+      value: totalCategories.toString(),
       icon: 'mdi:tag-multiple',
       iconBg: 'bg-blue-100',
       iconColor: 'text-blue-600',
     },
     {
       label: 'New This Month',
-      value: newThisMonth.toString(),
+      value: newThisMonthCount.toString(),
       icon: 'mdi:chart-line',
       iconBg: 'bg-green-100',
       iconColor: 'text-green-600',
@@ -195,9 +206,9 @@ const Categories = () => {
         // Check if we need to go back a page if current page becomes empty
         if (categories.length === 1 && currentPage > 1) {
           setCurrentPage(currentPage - 1)
-          await fetchCategories(currentPage - 1)
+          await Promise.all([fetchCategories(currentPage - 1), fetchCategoryStats()])
         } else {
-          await fetchCategories(currentPage) // Refresh list
+          await Promise.all([fetchCategories(currentPage), fetchCategoryStats()])
         }
         setIsDeleteModalOpen(false)
         setCategoryToDelete(null)
@@ -234,7 +245,7 @@ const Categories = () => {
 
       await categoriesService.create(categoryData)
       setCurrentPage(1)
-      await fetchCategories(1) // Refresh list - reset to page 1 after creating
+      await Promise.all([fetchCategories(1), fetchCategoryStats()])
       
       // Show success notification
       addNotification({
@@ -324,6 +335,7 @@ const Categories = () => {
           onSortOrderChange={setSortOrder}
         />
         <CategoriesTable
+          searchTerm={searchTerm}
           categories={categories}
           isLoading={isLoading}
           currentPage={currentPage}

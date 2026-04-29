@@ -28,8 +28,7 @@ const SearchAndFilter = ({
       incorrect: 'Incorrect',
       winners: 'Winners',
     }
-    const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
-    return `Sort by: ${sortLabels[sortBy] || 'Date'} ${orderIcon}`
+    return `Sort by: ${sortLabels[sortBy] || 'Date'}`
   }
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
@@ -69,14 +68,14 @@ const SearchAndFilter = ({
           </select>
           <button
             onClick={() => onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc')}
-            className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1 text-gray-700"
+            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-gray-700"
             title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
           >
             <Icon
               icon={sortOrder === 'asc' ? 'mdi:arrow-up' : 'mdi:arrow-down'}
-              className="w-4 h-4"
+              className="w-5 h-5"
             />
-            <span className="text-xs">{getSortDisplayText()}</span>
+            {getSortDisplayText()}
           </button>
         </div>
       </div>

@@ -541,36 +541,41 @@ const EventReviews = () => {
       />
 
       {/* Delete Confirmation Modal */}
-      {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="fixed inset-0 bg-black/50"
-            onClick={() => setDeleteConfirmId(null)}
-          />
-          <div className="relative bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Delete Review
-            </h3>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to permanently delete this review? This action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setDeleteConfirmId(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-              >
-                Delete
-              </button>
+      {deleteConfirmId && (() => {
+        const reviewToDelete = reviews.find((r) => r.id === deleteConfirmId)
+        const reviewerName = reviewToDelete?.reviewer.name || 'this reviewer'
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div
+              className="fixed inset-0 bg-black/50"
+              onClick={() => setDeleteConfirmId(null)}
+            />
+            <div className="relative bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Delete review by {reviewerName}?
+              </h3>
+              <p className="text-gray-600 mb-6">
+                This {reviewToDelete ? `${reviewToDelete.rating}-star review` : 'review'} will
+                be permanently deleted. This action cannot be undone.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </DashboardLayout>
   )
 }

@@ -335,9 +335,9 @@ const Trivia = () => {
         // Check if we need to go back a page if current page becomes empty
         if (triviaQuizzes.length === 1 && currentPage > 1) {
           setCurrentPage(currentPage - 1)
-          await fetchTrivia(currentPage - 1, false)
+          await Promise.all([fetchTrivia(currentPage - 1, false), fetchStatistics()])
         } else {
-          await fetchTrivia(currentPage, false) // Refresh list
+          await Promise.all([fetchTrivia(currentPage, false), fetchStatistics()])
         }
         addNotification({
           type: 'success',
@@ -366,7 +366,9 @@ const Trivia = () => {
   }
 
   const handleUpdateTrivia = async () => {
-    await fetchTrivia(currentPage, false) // Refresh list after update
+    // Editing dates can move a quiz between Scheduled/Active/Completed,
+    // so refresh stats alongside the list.
+    await Promise.all([fetchTrivia(currentPage, false), fetchStatistics()])
     addNotification({
       type: 'success',
       title: 'Trivia Updated',
@@ -398,7 +400,7 @@ const Trivia = () => {
       await triviaService.create(dbData)
       setIsCreateModalOpen(false)
       setCurrentPage(1)
-      await fetchTrivia(1, false) // Refresh list - reset to page 1
+      await Promise.all([fetchTrivia(1, false), fetchStatistics()])
       addNotification({
         type: 'success',
         title: 'Trivia Created',
@@ -483,6 +485,7 @@ const Trivia = () => {
         />
         <TriviaTable
           triviaQuizzes={filteredTrivia}
+          searchTerm={searchQuery}
           currentPage={currentPage}
           totalPages={totalPages}
           totalTrivia={totalTrivia}
@@ -524,7 +527,15 @@ const Trivia = () => {
         }}
         onConfirm={handleConfirmDelete}
         type="delete"
-        itemName="trivia quiz"
+        itemName={
+          triviaToDelete?.question
+            ? `the trivia "${
+                triviaToDelete.question.length > 60
+                  ? `${triviaToDelete.question.slice(0, 60)}…`
+                  : triviaToDelete.question
+              }"`
+            : 'trivia quiz'
+        }
         isLoading={isDeletingTrivia}
       />
     </DashboardLayout>

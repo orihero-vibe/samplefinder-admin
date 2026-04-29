@@ -1548,6 +1548,9 @@ const Dashboard = () => {
         />
         <EventsTable
           events={events}
+          isLoading={isLoading}
+          searchTerm={searchTerm}
+          hasFilters={statusFilter !== 'all' || !!dateRange.start || !!dateRange.end}
           currentPage={currentPage}
           totalPages={totalPages}
           totalEvents={totalEvents}
@@ -1738,7 +1741,9 @@ const Dashboard = () => {
                 console.error('Error archiving event:', err)
               }
             },
-            itemName: 'this event',
+            itemName: (selectedEvent as Event | null)?.venueName
+              ? `event "${(selectedEvent as Event).venueName}"`
+              : 'this event',
           })
         }}
         onShowHideConfirm={() => {
@@ -1773,7 +1778,9 @@ const Dashboard = () => {
                 console.error('Error hiding event:', err)
               }
             },
-            itemName: 'this event',
+            itemName: (selectedEvent as Event | null)?.venueName
+              ? `event "${(selectedEvent as Event).venueName}"`
+              : 'this event',
           })
         }}
         onShowDeleteConfirm={() => {
@@ -1808,7 +1815,9 @@ const Dashboard = () => {
                 console.error('Error deleting event:', err)
               }
             },
-            itemName: 'this event',
+            itemName: (selectedEvent as Event | null)?.venueName
+              ? `event "${(selectedEvent as Event).venueName}"`
+              : 'this event',
           })
         }}
         initialData={editModalInitialData || undefined}

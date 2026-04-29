@@ -134,9 +134,13 @@ const DateFilterModal = ({
   }
 
   const handleToday = () => {
-    const today = new Date()
+    // Normalize to midnight so comparisons against grid cells (which are
+    // constructed at midnight) succeed, and select today as a single day
+    // rather than a today–today range so the label isn't duplicated.
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     setSelectedStartDate(today)
-    setSelectedEndDate(today)
+    setSelectedEndDate(null)
     setCurrentMonth(today)
   }
 

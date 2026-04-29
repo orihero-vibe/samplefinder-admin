@@ -23,7 +23,7 @@ const ForgotPassword = () => {
         title: 'Reset email sent',
         message: 'Please check your email for password reset instructions.',
       })
-      navigate('/email-confirmation')
+      navigate('/email-confirmation', { state: { email } })
     } catch (err: unknown) {
       addNotification({
         type: 'error',

@@ -52,8 +52,7 @@ const SearchAndFilter = ({
       numberOfCheckIns: 'Number of Check Ins',
       totalPoints: 'Total Points',
     }
-    const orderIcon = sortOrder === 'asc' ? '↑' : '↓'
-    return `${sortLabels[sortBy] || 'Sort'} ${orderIcon}`
+    return sortLabels[sortBy] || 'Sort'
   }
 
   return (

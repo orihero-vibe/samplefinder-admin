@@ -301,11 +301,11 @@ const ClientsBrands = () => {
         // Check if we need to go back a page if current page becomes empty
         if (clients.length === 1 && currentPage > 1) {
           setCurrentPage(currentPage - 1)
-          await fetchClients(currentPage - 1)
+          await Promise.all([fetchClients(currentPage - 1), fetchStatistics()])
         } else {
-          await fetchClients(currentPage) // Refresh list
+          await Promise.all([fetchClients(currentPage), fetchStatistics()])
         }
-        
+
         // Show success notification
         addNotification({
           type: 'success',
@@ -376,8 +376,8 @@ const ClientsBrands = () => {
       
       await clientsService.create(formData)
       setCurrentPage(1)
-      await fetchClients(1) // Refresh list - reset to page 1 after creating
-      
+      await Promise.all([fetchClients(1), fetchStatistics()])
+
       // Show success notification
       addNotification({
         type: 'success',
@@ -485,6 +485,7 @@ const ClientsBrands = () => {
         <ClientsTable
           clients={clients}
           isLoading={isLoading}
+          searchTerm={searchTerm}
           currentPage={currentPage}
           totalPages={totalPages}
           totalClients={totalClients}
@@ -532,7 +533,7 @@ const ClientsBrands = () => {
         }}
         onConfirm={handleConfirmDelete}
         type="delete"
-        itemName="client"
+        itemName={clientToDelete?.clientName ? `"${clientToDelete.clientName}"` : 'client'}
       />
     </DashboardLayout>
   )

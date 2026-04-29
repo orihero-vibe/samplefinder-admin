@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@iconify/react'
 import LocationPicker from '../../../components/LocationPicker'
+import AddressAutocomplete from '../../../components/AddressAutocomplete'
 import { useUnsavedChanges } from '../../../hooks/useUnsavedChanges'
 import { useNotificationStore } from '../../../stores/notificationStore'
 import { UnsavedChangesModal } from '../../../components'
@@ -148,18 +149,26 @@ const AddLocationModal = ({ isOpen, onClose, onSave }: AddLocationModalProps) =>
         {/* Form */}
           <div className="overflow-y-auto flex-1 min-h-0">
         <form onSubmit={handleSubmit} data-location-form className="p-6">
-          {/* Location Name Input */}
-          <div className="mb-6">
+          {/* Location Name — also drives a place-name search (e.g. "Giant Aston PA")
+              that pre-fills address / city / state / zip / lat / lng below. */}
+          <div className="mb-6 relative z-[1100]">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Location Name <span className="text-red-500">*</span>
             </label>
-            <input
-              type="text"
-              placeholder="Enter Location Name"
+            <AddressAutocomplete
               value={formData.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
+              onChange={(value) => handleInputChange('name', value)}
+              valueOnSelect="name"
+              placeholder="Search by name (e.g. Giant Aston PA) or type a custom name"
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              onAddressSelect={(components) => {
+                if (components.address) handleInputChange('address', components.address)
+                if (components.city) handleInputChange('city', components.city)
+                if (components.state) handleInputChange('state', components.state)
+                if (components.zipCode) handleInputChange('zipCode', components.zipCode)
+                if (components.latitude) handleInputChange('latitude', components.latitude)
+                if (components.longitude) handleInputChange('longitude', components.longitude)
+              }}
             />
           </div>
 
