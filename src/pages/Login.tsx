@@ -8,16 +8,29 @@ import { useNotificationStore } from '../stores/notificationStore'
 const Login = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { login, isAuthenticated, isLoading, error, clearError } = useAuthStore()
+  const { login, getCurrentUser, isAuthenticated, isLoading, error, clearError } = useAuthStore()
   const { addNotification } = useNotificationStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+
   // Combined: local state for immediate feedback + store state for async operations
   const isLoggingIn = isSubmitting || isLoading
+
+  // On mount, resolve the existing session (if any) so a returning authed
+  // user is redirected to /dashboard instead of seeing the login form.
+  useEffect(() => {
+    let cancelled = false
+    getCurrentUser().finally(() => {
+      if (!cancelled) setIsCheckingAuth(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [getCurrentUser])
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -68,6 +81,17 @@ const Login = () => {
       setIsSubmitting(false)
       // Error is handled by the store and shown via notification
     }
+  }
+
+  // While we resolve an existing session (or right after a successful check
+  // resolves to authenticated), render a spinner instead of the login form
+  // so the user doesn't see a flash of the login UI before redirecting.
+  if (isCheckingAuth || isAuthenticated) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-blue"></div>
+      </div>
+    )
   }
 
   return (
