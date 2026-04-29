@@ -242,7 +242,8 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
             <p className="text-sm text-blue-800 font-semibold">Important Instructions:</p>
             <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
               <li>The first row must be the header row with exact column names</li>
-              <li><strong>Brand Name</strong> and <strong>Category</strong> must match existing values in the database</li>
+              <li><strong>Brand Name</strong>, <strong>Category</strong>, and <strong>Products</strong> must match existing values in the database</li>
+              <li><strong>Products</strong> must be comma-separated and each product name must already exist on the chosen Brand</li>
               <li><strong>Location Name</strong> must match an existing Location name in the admin panel (exact match)</li>
               <li>Address and coordinates are taken from the Location record, not from the CSV</li>
               <li><strong>Date</strong> format: YYYY-MM-DD (e.g., 2026-01-25)</li>
