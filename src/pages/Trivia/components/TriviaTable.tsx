@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react'
-import { Pagination } from '../../../components'
+import { Pagination, TableEmptyState, TableLoadingState } from '../../../components'
 
 // Winner object with user profile data
 export interface TriviaWinner {
@@ -34,6 +34,8 @@ interface TriviaTableProps {
   pageSize?: number
   onPageChange?: (page: number) => void
   isLoading?: boolean
+  searchTerm?: string
+  hasFilters?: boolean
 }
 
 const TriviaTable = ({
@@ -47,7 +49,10 @@ const TriviaTable = ({
   pageSize = 25,
   onPageChange,
   isLoading = false,
+  searchTerm = '',
+  hasFilters = false,
 }: TriviaTableProps) => {
+  const isFiltered = searchTerm.trim().length > 0 || hasFilters
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Scheduled':
@@ -169,26 +174,23 @@ const TriviaTable = ({
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
-              <tr>
-                <td colSpan={10} className="px-6 py-12 text-center">
-                  <div className="flex flex-col items-center justify-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1D0A74] mb-4"></div>
-                    <p className="text-gray-500 text-lg font-medium">Loading trivia quizzes...</p>
-                  </div>
-                </td>
-              </tr>
+              <TableLoadingState colSpan={10} />
             ) : triviaQuizzes.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="px-6 py-12 text-center">
-                  <div className="flex flex-col items-center justify-center">
-                    <Icon icon="mdi:help-circle-outline" className="w-12 h-12 text-gray-400 mb-4" />
-                    <p className="text-gray-500 text-lg font-medium">No trivia quizzes found</p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      Create your first trivia quiz to get started
-                    </p>
-                  </div>
-                </td>
-              </tr>
+              isFiltered ? (
+                <TableEmptyState
+                  colSpan={10}
+                  icon="mdi:magnify"
+                  title="No results found"
+                  description="Try adjusting your search or filters."
+                />
+              ) : (
+                <TableEmptyState
+                  colSpan={10}
+                  icon="mdi:help-circle-outline"
+                  title="No trivia quizzes yet"
+                  description="Create your first trivia quiz to see it here."
+                />
+              )
             ) : (
               triviaQuizzes.map((trivia) => (
                 <tr

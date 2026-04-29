@@ -335,6 +335,7 @@ const Categories = () => {
           onSortOrderChange={setSortOrder}
         />
         <CategoriesTable
+          searchTerm={searchTerm}
           categories={categories}
           isLoading={isLoading}
           currentPage={currentPage}

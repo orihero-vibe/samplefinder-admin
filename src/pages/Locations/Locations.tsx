@@ -378,6 +378,7 @@ const Locations = () => {
         <LocationsTable
           locations={locations}
           isLoading={isLoading}
+          searchTerm={searchTerm}
           currentPage={currentPage}
           totalPages={totalPages}
           totalLocations={totalLocations}

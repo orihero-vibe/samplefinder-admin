@@ -592,6 +592,8 @@ const Users = () => {
         <UsersTable
           users={users}
           isLoading={isLoading}
+          searchTerm={searchQuery}
+          hasFilters={tierFilter !== 'All Tiers'}
           currentPage={currentPage}
           totalPages={totalPages}
           totalUsers={totalUsers}

@@ -485,6 +485,7 @@ const ClientsBrands = () => {
         <ClientsTable
           clients={clients}
           isLoading={isLoading}
+          searchTerm={searchTerm}
           currentPage={currentPage}
           totalPages={totalPages}
           totalClients={totalClients}

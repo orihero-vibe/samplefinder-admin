@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react'
-import { Pagination } from '../../../components'
+import { Pagination, TableEmptyState, TableLoadingState } from '../../../components'
 
 interface Category {
   id?: string
@@ -11,6 +11,7 @@ interface Category {
 interface CategoriesTableProps {
   categories: Category[]
   isLoading?: boolean
+  searchTerm?: string
   onEditClick: (category: Category) => void
   onDeleteClick: (category: Category) => void
   currentPage?: number
@@ -23,6 +24,7 @@ interface CategoriesTableProps {
 const CategoriesTable = ({
   categories,
   isLoading = false,
+  searchTerm = '',
   onEditClick,
   onDeleteClick,
   currentPage = 1,
@@ -31,6 +33,7 @@ const CategoriesTable = ({
   pageSize = 25,
   onPageChange,
 }: CategoriesTableProps) => {
+  const isFiltered = searchTerm.trim().length > 0
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
@@ -62,20 +65,23 @@ const CategoriesTable = ({
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {isLoading ? (
-              <tr>
-                <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
-                  <div className="flex items-center justify-center gap-2">
-                    <Icon icon="mdi:loading" className="w-6 h-6 animate-spin" />
-                    <span>Loading...</span>
-                  </div>
-                </td>
-              </tr>
+              <TableLoadingState colSpan={4} />
             ) : categories.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
-                  No categories found. Click "Add Category" to create one.
-                </td>
-              </tr>
+              isFiltered ? (
+                <TableEmptyState
+                  colSpan={4}
+                  icon="mdi:magnify"
+                  title="No results found"
+                  description="Try adjusting your search or filters."
+                />
+              ) : (
+                <TableEmptyState
+                  colSpan={4}
+                  icon="mdi:tag-multiple"
+                  title="No categories yet"
+                  description="Add your first category to organize events."
+                />
+              )
             ) : (
               categories.map((category) => (
                 <tr

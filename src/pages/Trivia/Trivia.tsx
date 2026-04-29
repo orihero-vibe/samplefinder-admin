@@ -485,6 +485,7 @@ const Trivia = () => {
         />
         <TriviaTable
           triviaQuizzes={filteredTrivia}
+          searchTerm={searchQuery}
           currentPage={currentPage}
           totalPages={totalPages}
           totalTrivia={totalTrivia}

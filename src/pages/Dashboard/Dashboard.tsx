@@ -1548,6 +1548,9 @@ const Dashboard = () => {
         />
         <EventsTable
           events={events}
+          isLoading={isLoading}
+          searchTerm={searchTerm}
+          hasFilters={statusFilter !== 'all' || !!dateRange.start || !!dateRange.end}
           currentPage={currentPage}
           totalPages={totalPages}
           totalEvents={totalEvents}
