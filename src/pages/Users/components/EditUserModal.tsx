@@ -14,6 +14,7 @@ interface UserData {
   phoneNumber?: string
   userPoints?: string
   tierLevel?: string
+  role?: string
   baBadge?: string
   signUpDate?: string
   password?: string
@@ -59,6 +60,7 @@ const EditUserModal = ({
     phoneNumber: '',
     userPoints: '',
     tierLevel: '',
+    role: 'user',
     baBadge: '',
     signUpDate: '',
     password: '',
@@ -141,6 +143,7 @@ const EditUserModal = ({
       phoneNumber: initialData.phoneNumber || '',
       userPoints: initialData.userPoints || '',
       tierLevel: initialData.tierLevel || '',
+      role: initialData.role || 'user',
       baBadge: initialData.baBadge || '',
       signUpDate: initialData.signUpDate || '',
       password: initialData.password || '',
@@ -903,6 +906,28 @@ const EditUserModal = ({
                   value={formData.triviasWon}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
                 />
+              </div>
+
+              {/* Role */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Role <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.role || 'user'}
+                    onChange={(e) => handleInputChange('role', e.target.value)}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
+                  >
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <Icon
+                    icon="mdi:chevron-down"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+                  />
+                </div>
               </div>
             </div>
           </div>

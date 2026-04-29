@@ -709,6 +709,7 @@ const Users = () => {
               username: userData.username,
               isInfluencer: userData.influencerBadge === 'Yes',
               referralCode: userData.referralCode,
+              role: userData.role === 'admin' ? 'admin' : 'user',
               // Tier follows totalPoints when tier metadata is loaded; otherwise keep the stored value
               tierLevel: resolvedTierLevel || previousTierString,
               // Date of birth: send ISO string for datetime attribute (YYYY-MM-DD -> YYYY-MM-DDT00:00:00.000Z)
@@ -859,6 +860,7 @@ const Users = () => {
             username: String(u.username ?? ''),
             email: u.email,
             tierLevel: String(u.tierLevel ?? ''),
+            role: String(u.role ?? 'user'),
             checkInReviewPoints: String(u.checkInReviewPoints ?? '0'),
             influencerBadge: (u.isInfluencer ?? u.influencerBadge) ? 'Yes' : 'No',
             lastLogin: u.$updatedAt ? new Date(u.$updatedAt).toISOString().split('T')[0] : '',
