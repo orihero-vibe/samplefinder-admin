@@ -615,7 +615,9 @@ async function submitTriviaAnswer(databases, userId, triviaId, answerIndex, log)
 }
 /**
  * Record that a user skipped/dismissed a trivia question (no answer submitted).
- * Adds the user's profile ID to the trivia's skippedUsers array so it won't be shown again.
+ * Adds the user's profile ID to the trivia's skippedUsers array so it won't be shown again,
+ * and returns the correctAnswerIndex so the client can reveal the correct answer in the
+ * "Times Up" UI.
  */
 async function dismissTrivia(databases, userId, triviaId, log) {
     try {
@@ -637,12 +639,14 @@ async function dismissTrivia(databases, userId, triviaId, log) {
     catch {
         throw { code: 404, message: 'Trivia question not found' };
     }
+    const correctIndex = Number(trivia.correctOptionIndex);
+    const correctAnswerIndex = Number.isFinite(correctIndex) ? correctIndex : -1;
     const skippedUsers = Array.isArray(trivia.skippedUsers)
         ? [...trivia.skippedUsers]
         : [];
     if (skippedUsers.includes(userId)) {
         log(`User ${userId} already in skippedUsers for trivia ${triviaId}, no update`);
-        return;
+        return { correctAnswerIndex };
     }
     skippedUsers.push(userId);
     const updatePayload = {
@@ -654,6 +658,7 @@ async function dismissTrivia(databases, userId, triviaId, log) {
     }
     await databases.updateDocument(DATABASE_ID, TRIVIA_TABLE_ID, triviaId, updatePayload);
     log(`Added user ${userId} to skippedUsers for trivia ${triviaId}`);
+    return { correctAnswerIndex };
 }
 // ============================================================================
 // USER STATUS MANAGEMENT FUNCTION
@@ -1190,8 +1195,8 @@ export default async function handler({ req, res, log, error, }) {
                 return res.json({ success: false, error: 'triviaId is required' }, 400);
             }
             try {
-                await dismissTrivia(databases, body.userId, body.triviaId, log);
-                return res.json({ success: true });
+                const dismissResult = await dismissTrivia(databases, body.userId, body.triviaId, log);
+                return res.json({ success: true, ...dismissResult });
             }
             catch (err) {
                 const typedErr = err;
