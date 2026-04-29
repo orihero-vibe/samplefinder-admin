@@ -27,23 +27,25 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
 
   if (!isOpen) return null
 
-  // Required columns in dashboard order (Start Time -> End Time -> Timezone)
+  // Required columns — leading columns mirror the dashboard Events table order
+  // (Date, Event Name, Brand, Start Time, End Time, Time Zone), remaining
+  // required fields follow.
   const requiredColumns = [
-    'Brand Name',
-    'Category',
     'Date',
+    'Event Name',
+    'Brand Name',
     'Start Time',
     'End Time',
-    'Timezone',
+    'Time Zone',
+    'Category',
     'Event Info',
-    'Event Name',
-    'Location',
+    'Location Name',
     'Points',
     'Products',
     'Review Points',
   ]
-  
-  // Optional columns (alphabetical)
+
+  // Optional columns
   const optionalColumns = [
     'Discount',
     'Discount Image URL',
@@ -99,24 +101,25 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
   }
 
   const handleDownloadTemplate = () => {
-    // Create CSV template with headers and sample data (required + optional columns)
+    // Create CSV template with headers and [REPLACE WITH ...] placeholders for every column.
+    // Order mirrors the requiredColumns / optionalColumns arrays above.
     const allColumns = [...requiredColumns, ...optionalColumns]
     const headers = allColumns.join(',')
     const sampleValues = [
-      '[REPLACE WITH EXISTING BRAND]',      // Brand Name - Must exist in your database
-      '[REPLACE WITH EXISTING CATEGORY]',   // Category - Must exist in your database
-      '2026-01-25',                         // Date (YYYY-MM-DD format)
-      '09:00',                              // Start Time (HH:MM)
-      '17:00',                              // End Time (HH:MM)
-      'ET',                                 // Timezone (ET/CT/PT... or IANA like America/New_York)
-      'Event description goes here',       // Event Info
-      'My Event Name',                      // Event Name - Replace with your event name
-      'Main Street Store',                 // Location - MUST match an existing Location in admin
-      '100',                                // Points (Check In Points)
-      'Beer, Wine',                         // Products (comma-separated)
-      '50',                                 // Review Points
-      '10%',                                // Discount (optional)
-      'https://example.com/image.jpg',      // Discount Image URL (optional)
+      '[REPLACE WITH DATE YYYY-MM-DD]',                  // Date
+      '[REPLACE WITH EVENT NAME]',                       // Event Name
+      '[REPLACE WITH EXISTING BRAND NAME]',              // Brand Name
+      '[REPLACE WITH START TIME e.g. 09:00 AM]',         // Start Time (12-hour)
+      '[REPLACE WITH END TIME e.g. 05:00 PM]',           // End Time (12-hour)
+      '[REPLACE WITH TIME ZONE e.g. ET]',                // Time Zone
+      '[REPLACE WITH EXISTING CATEGORY]',                // Category
+      '[REPLACE WITH EVENT INFO]',                       // Event Info
+      '[REPLACE WITH EXISTING LOCATION NAME]',           // Location Name
+      '[REPLACE WITH POINTS e.g. 10]',                   // Points (default 10)
+      '[REPLACE WITH PRODUCTS comma-separated]',         // Products
+      '[REPLACE WITH REVIEW POINTS e.g. 50]',            // Review Points
+      '[REPLACE WITH DISCOUNT (optional)]',              // Discount
+      '[REPLACE WITH DISCOUNT IMAGE URL (optional)]',    // Discount Image URL
     ]
     // Properly escape CSV values (wrap in quotes if contains comma, quote, or newline)
     const escapeCSV = (value: string) => {
@@ -240,13 +243,13 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
             <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
               <li>The first row must be the header row with exact column names</li>
               <li><strong>Brand Name</strong> and <strong>Category</strong> must match existing values in the database</li>
-              <li><strong>Location</strong> must match an existing Location name in the admin panel (exact match)</li>
+              <li><strong>Location Name</strong> must match an existing Location name in the admin panel (exact match)</li>
               <li>Address and coordinates are taken from the Location record, not from the CSV</li>
               <li><strong>Date</strong> format: YYYY-MM-DD (e.g., 2026-01-25)</li>
-              <li><strong>Time</strong> format: HH:MM (e.g., 09:00, 17:00)</li>
-              <li><strong>Timezone</strong>: app code (NT, ET, CT, MT, PT, AKT, HAT) or supported IANA timezone (e.g., America/New_York);</li>
-              <li>If <strong>Start Time</strong>, <strong>End Time</strong>, <strong>Event Info</strong>, <strong>Points</strong>, or <strong>Review Points</strong> are left empty, defaults are applied: Start 00:00, End 23:59, Event info text, 10 and 50 points</li>
-              <li>Download the template and replace sample values with your actual data</li>
+              <li><strong>Time</strong> format: 12-hour with AM/PM (e.g., 09:00 AM, 05:00 PM)</li>
+              <li><strong>Time Zone</strong>: app code (NT, ET, CT, MT, PT, AKT, HAT) or supported IANA timezone (e.g., America/New_York)</li>
+              <li>If <strong>Start Time</strong>, <strong>End Time</strong>, <strong>Event Info</strong>, <strong>Points</strong>, or <strong>Review Points</strong> are left empty, defaults are applied: Start 12:00 AM, End 11:59 PM, Event info text, 10 and 50 points</li>
+              <li>Download the template and replace every <code>[REPLACE WITH ...]</code> placeholder with your actual data</li>
             </ul>
           </div>
         </div>
