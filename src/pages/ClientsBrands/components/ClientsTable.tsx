@@ -57,7 +57,7 @@ const ClientsTable = ({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Icon icon="mdi:filter" className="w-4 h-4" />
-                  Number of Favorit
+                  Number of Favorites
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
