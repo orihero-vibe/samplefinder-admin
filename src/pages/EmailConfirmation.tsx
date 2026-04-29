@@ -1,9 +1,11 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
 import { AuthLayout, Button } from '../components'
 
 const EmailConfirmation = () => {
   const navigate = useNavigate()
+  const location = useLocation()
+  const email = (location.state as { email?: string } | null)?.email
 
   const handleOpenEmailApp = () => {
     navigate('/password-reset')
@@ -19,7 +21,13 @@ const EmailConfirmation = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2 m-0">Check your email</h1>
           <p className="text-[0.95rem] text-gray-500 m-0">
-            We sent a password reset link to <strong className="text-gray-800 font-semibold">olivia@untitledui.com</strong>
+            {email ? (
+              <>
+                We sent a password reset link to <strong className="text-gray-800 font-semibold">{email}</strong>
+              </>
+            ) : (
+              <>We sent a password reset link to your email.</>
+            )}
           </p>
         </div>
 
