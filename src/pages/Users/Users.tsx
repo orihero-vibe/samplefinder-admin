@@ -421,7 +421,7 @@ const Users = () => {
     try {
       await appUsersService.create(userData)
       setCurrentPage(1)
-      await fetchUsers(1) // Refresh list - reset to page 1
+      await Promise.all([fetchUsers(1), fetchStatistics()])
       setIsAddUserModalOpen(false)
       addNotification({
         type: 'success',
@@ -448,9 +448,9 @@ const Users = () => {
       // Check if we need to go back a page if current page becomes empty
       if (users.length === 1 && currentPage > 1) {
         setCurrentPage(currentPage - 1)
-        await fetchUsers(currentPage - 1)
+        await Promise.all([fetchUsers(currentPage - 1), fetchStatistics()])
       } else {
-        await fetchUsers(currentPage) // Refresh list
+        await Promise.all([fetchUsers(currentPage), fetchStatistics()])
       }
       setIsDeleteModalOpen(false)
       setUserToDelete(null)
