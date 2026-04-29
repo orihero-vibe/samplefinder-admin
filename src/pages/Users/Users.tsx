@@ -29,6 +29,16 @@ import {
 import { Query, storage, appwriteConfig, ID } from '../../lib/appwrite'
 import { storedDobToDateInputValue } from '../../lib/formUtils'
 
+// Build a human-readable label for confirmation modals (e.g. "user
+// John Smith", "user @jsmith", "user jsmith@example.com"). Returns
+// 'user' as a fallback when no identifier is available.
+const describeUser = (user: { firstName?: string; lastName?: string; username?: string; email?: string } | null | undefined): string => {
+  if (!user) return 'user'
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim()
+  const label = fullName || user.username || user.email
+  return label ? `user "${label}"` : 'user'
+}
+
 const Users = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { addNotification } = useNotificationStore()
@@ -871,7 +881,7 @@ const Users = () => {
         }}
         onConfirm={handleBlockUser}
         type={(blockModalState.user as { isBlocked?: boolean })?.isBlocked ? 'unblock' : 'block'}
-        itemName="user"
+        itemName={describeUser(blockModalState.user)}
         isLoading={blockModalState.isLoading}
       />
 
@@ -886,7 +896,7 @@ const Users = () => {
         }}
         onConfirm={handleDeleteUser}
         type="delete"
-        itemName="user"
+        itemName={describeUser(userToDelete)}
         isLoading={isDeleteLoading}
       />
     </DashboardLayout>

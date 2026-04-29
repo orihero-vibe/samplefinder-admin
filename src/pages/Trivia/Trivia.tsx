@@ -527,7 +527,15 @@ const Trivia = () => {
         }}
         onConfirm={handleConfirmDelete}
         type="delete"
-        itemName="trivia quiz"
+        itemName={
+          triviaToDelete?.question
+            ? `the trivia "${
+                triviaToDelete.question.length > 60
+                  ? `${triviaToDelete.question.slice(0, 60)}…`
+                  : triviaToDelete.question
+              }"`
+            : 'trivia quiz'
+        }
         isLoading={isDeletingTrivia}
       />
     </DashboardLayout>

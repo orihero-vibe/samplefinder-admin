@@ -428,7 +428,7 @@ const Locations = () => {
         }}
         onConfirm={handleConfirmDelete}
         type="delete"
-        itemName="location"
+        itemName={locationToDelete?.name ? `"${locationToDelete.name}"` : 'location'}
       />
     </DashboardLayout>
   )

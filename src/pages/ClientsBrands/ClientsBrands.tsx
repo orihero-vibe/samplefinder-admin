@@ -533,7 +533,7 @@ const ClientsBrands = () => {
         }}
         onConfirm={handleConfirmDelete}
         type="delete"
-        itemName="client"
+        itemName={clientToDelete?.clientName ? `"${clientToDelete.clientName}"` : 'client'}
       />
     </DashboardLayout>
   )
