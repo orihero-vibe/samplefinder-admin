@@ -59,6 +59,7 @@ interface EditEventModalProps {
   onClose: () => void
   onSave: (eventData: EventFormData) => Promise<void>
   onShowArchiveConfirm?: () => void
+  onShowUnarchiveConfirm?: () => void
   onShowHideConfirm?: () => void
   onShowDeleteConfirm?: () => void
   onDuplicate?: () => void
@@ -75,6 +76,7 @@ const EditEventModal = ({
   onClose,
   onSave,
   onShowArchiveConfirm,
+  onShowUnarchiveConfirm,
   onShowHideConfirm,
   onShowDeleteConfirm,
   onDuplicate,
@@ -913,18 +915,27 @@ const EditEventModal = ({
 
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
-            {onShowArchiveConfirm && (
-              <button
-                type="button"
-                disabled={isArchived}
-                onClick={isArchived ? undefined : onShowArchiveConfirm}
-                title={isArchived ? 'Event is already archived' : undefined}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-orange-500"
-              >
-                <Icon icon="mdi:folder" className="w-5 h-5" />
-                Archive
-              </button>
-            )}
+            {isArchived
+              ? onShowUnarchiveConfirm && (
+                <button
+                  type="button"
+                  onClick={onShowUnarchiveConfirm}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center gap-2"
+                >
+                  <Icon icon="mdi:archive-arrow-up" className="w-5 h-5" />
+                  Unarchive
+                </button>
+              )
+              : onShowArchiveConfirm && (
+                <button
+                  type="button"
+                  onClick={onShowArchiveConfirm}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-semibold flex items-center gap-2"
+                >
+                  <Icon icon="mdi:folder" className="w-5 h-5" />
+                  Archive
+                </button>
+              )}
             {onShowHideConfirm && (
               <button
                 type="button"

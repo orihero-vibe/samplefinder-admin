@@ -1746,6 +1746,43 @@ const Dashboard = () => {
               : 'this event',
           })
         }}
+        onShowUnarchiveConfirm={() => {
+          setConfirmationModal({
+            isOpen: true,
+            type: 'unarchive',
+            onConfirm: async () => {
+              try {
+                const eventId = selectedEventDoc?.$id || (selectedEvent as Event & { id?: string })?.id
+                if (!eventId) {
+                  throw new Error('Event ID not found')
+                }
+                await eventsService.update(eventId, { isArchived: false })
+                addNotification({
+                  type: 'success',
+                  title: 'Event Unarchived',
+                  message: `Event has been restored from the archive.`,
+                })
+                setConfirmationModal({ ...confirmationModal, isOpen: false })
+                setIsEditModalOpen(false)
+                setSelectedEvent(null)
+                setSelectedEventDoc(null)
+                setEditModalInitialData(null)
+                await fetchEvents(currentPage)
+              } catch (err) {
+                const errorMessage = extractErrorMessage(err)
+                addNotification({
+                  type: 'error',
+                  title: 'Error Unarchiving Event',
+                  message: errorMessage,
+                })
+                console.error('Error unarchiving event:', err)
+              }
+            },
+            itemName: (selectedEvent as Event | null)?.venueName
+              ? `event "${(selectedEvent as Event).venueName}"`
+              : 'this event',
+          })
+        }}
         onShowHideConfirm={() => {
           setConfirmationModal({
             isOpen: true,

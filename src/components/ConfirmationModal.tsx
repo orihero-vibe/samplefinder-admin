@@ -1,6 +1,6 @@
 import { Icon } from '@iconify/react'
 
-export type ConfirmationType = 'delete' | 'archive' | 'hide' | 'unhide' | 'block' | 'unblock'
+export type ConfirmationType = 'delete' | 'archive' | 'unarchive' | 'hide' | 'unhide' | 'block' | 'unblock'
 
 interface ConfirmationModalProps {
   isOpen: boolean
@@ -48,6 +48,17 @@ const ConfirmationModal = ({
       defaultMessage: 'All data about your event will be archived.',
       confirmText: 'Yes, archive',
       loadingText: 'Archiving...',
+    },
+    unarchive: {
+      icon: 'mdi:archive-arrow-up',
+      iconColor: 'text-green-500',
+      iconBg: 'bg-green-50',
+      buttonBg: 'bg-green-500 hover:bg-green-600',
+      buttonBgDisabled: 'bg-green-400',
+      defaultTitle: 'Are you sure you want to unarchive?',
+      defaultMessage: 'This event will be restored from the archive.',
+      confirmText: 'Yes, unarchive',
+      loadingText: 'Unarchiving...',
     },
     hide: {
       icon: 'mdi:eye-off',
