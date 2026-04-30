@@ -188,13 +188,22 @@ const EventsTable = ({
                       <Icon icon="mdi:star" className="w-5 h-5" />
                     </button>
                     <button
-                      className="hover:text-gray-900 transition-colors cursor-pointer"
-                      onClick={() => onHideClick(event)}
-                      title={event.status === 'Hidden' ? 'Unhide event' : 'Hide event'}
+                      disabled={event.status === 'Archived'}
+                      className="hover:text-gray-900 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-500"
+                      onClick={
+                        event.status === 'Archived' ? undefined : () => onHideClick(event)
+                      }
+                      title={
+                        event.status === 'Archived'
+                          ? 'Unarchive the event before hiding'
+                          : event.status === 'Hidden'
+                            ? 'Unhide event'
+                            : 'Hide event'
+                      }
                     >
-                      <Icon 
-                        icon={event.status === 'Hidden' ? 'mdi:eye-off' : 'mdi:eye'} 
-                        className="w-5 h-5" 
+                      <Icon
+                        icon={event.status === 'Hidden' ? 'mdi:eye-off' : 'mdi:eye'}
+                        className="w-5 h-5"
                       />
                     </button>
                     <button

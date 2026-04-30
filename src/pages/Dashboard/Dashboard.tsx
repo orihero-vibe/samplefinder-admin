@@ -1820,6 +1820,43 @@ const Dashboard = () => {
               : 'this event',
           })
         }}
+        onShowUnhideConfirm={() => {
+          setConfirmationModal({
+            isOpen: true,
+            type: 'unhide',
+            onConfirm: async () => {
+              try {
+                const eventId = selectedEventDoc?.$id || (selectedEvent as Event & { id?: string })?.id
+                if (!eventId) {
+                  throw new Error('Event ID not found')
+                }
+                await eventsService.update(eventId, { isHidden: false })
+                addNotification({
+                  type: 'success',
+                  title: 'Event Unhidden',
+                  message: `Event is visible to users again.`,
+                })
+                setConfirmationModal({ ...confirmationModal, isOpen: false })
+                setIsEditModalOpen(false)
+                setSelectedEvent(null)
+                setSelectedEventDoc(null)
+                setEditModalInitialData(null)
+                await fetchEvents(currentPage)
+              } catch (err) {
+                const errorMessage = extractErrorMessage(err)
+                addNotification({
+                  type: 'error',
+                  title: 'Error Unhiding Event',
+                  message: errorMessage,
+                })
+                console.error('Error unhiding event:', err)
+              }
+            },
+            itemName: (selectedEvent as Event | null)?.venueName
+              ? `event "${(selectedEvent as Event).venueName}"`
+              : 'this event',
+          })
+        }}
         onShowDeleteConfirm={() => {
           setConfirmationModal({
             isOpen: true,

@@ -61,6 +61,7 @@ interface EditEventModalProps {
   onShowArchiveConfirm?: () => void
   onShowUnarchiveConfirm?: () => void
   onShowHideConfirm?: () => void
+  onShowUnhideConfirm?: () => void
   onShowDeleteConfirm?: () => void
   onDuplicate?: () => void
   initialData?: EventData
@@ -78,6 +79,7 @@ const EditEventModal = ({
   onShowArchiveConfirm,
   onShowUnarchiveConfirm,
   onShowHideConfirm,
+  onShowUnhideConfirm,
   onShowDeleteConfirm,
   onDuplicate,
   initialData,
@@ -929,25 +931,38 @@ const EditEventModal = ({
               : onShowArchiveConfirm && (
                 <button
                   type="button"
-                  onClick={onShowArchiveConfirm}
-                  className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-semibold flex items-center gap-2"
+                  disabled={isHidden}
+                  onClick={isHidden ? undefined : onShowArchiveConfirm}
+                  title={isHidden ? 'Unhide the event before archiving' : undefined}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-orange-500"
                 >
                   <Icon icon="mdi:folder" className="w-5 h-5" />
                   Archive
                 </button>
               )}
-            {onShowHideConfirm && (
-              <button
-                type="button"
-                disabled={isArchived || isHidden}
-                onClick={isArchived || isHidden ? undefined : onShowHideConfirm}
-                title={isHidden ? 'Event is already hidden' : isArchived ? 'Event is already archived' : undefined}
-                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-500"
-              >
-                <Icon icon="mdi:eye-off" className="w-5 h-5" />
-                Hide
-              </button>
-            )}
+            {isHidden
+              ? onShowUnhideConfirm && (
+                <button
+                  type="button"
+                  onClick={onShowUnhideConfirm}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center gap-2"
+                >
+                  <Icon icon="mdi:eye" className="w-5 h-5" />
+                  Unhide
+                </button>
+              )
+              : onShowHideConfirm && (
+                <button
+                  type="button"
+                  disabled={isArchived}
+                  onClick={isArchived ? undefined : onShowHideConfirm}
+                  title={isArchived ? 'Unarchive the event before hiding' : undefined}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-500"
+                >
+                  <Icon icon="mdi:eye-off" className="w-5 h-5" />
+                  Hide
+                </button>
+              )}
             {onShowDeleteConfirm && (
               <button
                 type="button"
