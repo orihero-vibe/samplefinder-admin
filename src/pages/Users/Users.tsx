@@ -709,7 +709,7 @@ const Users = () => {
               username: userData.username,
               isInfluencer: userData.influencerBadge === 'Yes',
               referralCode: userData.referralCode,
-              role: userData.role === 'admin' ? 'admin' : 'user',
+              // Role is set at creation only and is intentionally NOT part of the edit payload.
               // Tier follows totalPoints when tier metadata is loaded; otherwise keep the stored value
               tierLevel: resolvedTierLevel || previousTierString,
               // Date of birth: send ISO string for datetime attribute (YYYY-MM-DD -> YYYY-MM-DDT00:00:00.000Z)

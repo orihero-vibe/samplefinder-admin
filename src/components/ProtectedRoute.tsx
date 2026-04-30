@@ -7,7 +7,7 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
-  const { isAuthenticated, isLoading, getCurrentUser } = useAuthStore()
+  const { isAuthenticated, isLoading, getCurrentUser, userProfile, logout } = useAuthStore()
   const location = useLocation()
   const [authCheckStarted, setAuthCheckStarted] = useState(false)
 
@@ -16,6 +16,14 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     getCurrentUser()
     setAuthCheckStarted(true)
   }, [getCurrentUser])
+
+  // Defense-in-depth: if a non-admin session somehow leaked through the
+  // store-level checks, terminate the Appwrite session immediately.
+  useEffect(() => {
+    if (isAuthenticated && userProfile && userProfile.role !== 'admin') {
+      logout().catch(() => {})
+    }
+  }, [isAuthenticated, userProfile, logout])
 
   if (!authCheckStarted || isLoading) {
     return (
@@ -28,6 +36,18 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   if (!isAuthenticated) {
     // Redirect to login with return url
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // Explicit role gate — the admin panel is admin-only. Any authenticated
+  // session without an admin profile is rejected at the route level.
+  if (!userProfile || userProfile.role !== 'admin') {
+    return (
+      <Navigate
+        to="/login"
+        state={{ from: location, error: 'Admin access required.' }}
+        replace
+      />
+    )
   }
 
   return <>{children}</>
