@@ -246,7 +246,7 @@ const CSVUploadModal = ({ isOpen, onClose, onUpload }: CSVUploadModalProps) => {
               <li><strong>Products</strong> must be comma-separated and each product name must already exist on the chosen Brand</li>
               <li><strong>Location Name</strong> must match an existing Location name in the admin panel (exact match)</li>
               <li>Address and coordinates are taken from the Location record, not from the CSV</li>
-              <li><strong>Date</strong> format: YYYY-MM-DD (e.g., 2026-01-25)</li>
+              <li><strong>Date</strong> format: MM/DD/YYYY (e.g., 01/25/2026).</li>
               <li><strong>Time</strong> format: 12-hour with AM/PM (e.g., 09:00 AM, 05:00 PM)</li>
               <li><strong>Time Zone</strong>: app code (NT, ET, CT, MT, PT, AKT, HAT) or supported IANA timezone (e.g., America/New_York)</li>
               <li>If <strong>Start Time</strong>, <strong>End Time</strong>, <strong>Event Info</strong>, <strong>Points</strong>, or <strong>Review Points</strong> are left empty, defaults are applied: Start 12:00 AM, End 11:59 PM, Event info text, 10 and 50 points</li>

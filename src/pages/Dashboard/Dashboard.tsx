@@ -798,18 +798,18 @@ const Dashboard = () => {
 
           let eventDateStr: string
 
-          // Try DD-MM-YYYY format (e.g., "20-01-2026")
-          if (/^\d{2}-\d{2}-\d{4}$/.test(rawDateStr)) {
-            const [day, month, year] = rawDateStr.split('-')
+          // Preferred: MM/DD/YYYY (e.g., "01/20/2026")
+          if (/^\d{2}\/\d{2}\/\d{4}$/.test(rawDateStr)) {
+            const [month, day, year] = rawDateStr.split('/')
             eventDateStr = `${year}-${month}-${day}`
           }
-          // Try YYYY-MM-DD format (e.g., "2026-01-20")
+          // Also accept YYYY-MM-DD (e.g., "2026-01-20")
           else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDateStr)) {
             eventDateStr = rawDateStr
           }
-          // Try MM/DD/YYYY format (e.g., "01/20/2026")
-          else if (/^\d{2}\/\d{2}\/\d{4}$/.test(rawDateStr)) {
-            const [month, day, year] = rawDateStr.split('/')
+          // Also accept DD-MM-YYYY (e.g., "20-01-2026")
+          else if (/^\d{2}-\d{2}-\d{4}$/.test(rawDateStr)) {
+            const [day, month, year] = rawDateStr.split('-')
             eventDateStr = `${year}-${month}-${day}`
           }
           // Fallback to default Date parsing, then format as YYYY-MM-DD
@@ -817,7 +817,7 @@ const Dashboard = () => {
             const parsed = new Date(rawDateStr)
             if (isNaN(parsed.getTime())) {
               throw new Error(
-                `Invalid date format: ${row['Date']}. Expected formats: DD-MM-YYYY, YYYY-MM-DD, or MM/DD/YYYY`
+                `Invalid date format: ${row['Date']}. Expected formats: MM/DD/YYYY (preferred), YYYY-MM-DD, or DD-MM-YYYY`
               )
             }
             const year = parsed.getFullYear()
