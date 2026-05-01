@@ -635,8 +635,21 @@ const Users = () => {
       <AddUserModal
         isOpen={isAddUserModalOpen}
         onClose={() => setIsAddUserModalOpen(false)}
-        onSave={(userData) =>
-          handleCreateUser({
+        onSave={async (userData) => {
+          let avatarURL: string | undefined = undefined
+          if (userData.image instanceof File) {
+            try {
+              avatarURL = (await uploadFile(userData.image)) || undefined
+            } catch (uploadError) {
+              console.error('Error uploading profile picture:', uploadError)
+              addNotification({
+                type: 'error',
+                title: 'Upload Failed',
+                message: 'Failed to upload profile picture. The user will be created without one.',
+              })
+            }
+          }
+          await handleCreateUser({
             email: userData.email,
             password: userData.password,
             firstname: userData.firstName,
@@ -647,8 +660,10 @@ const Users = () => {
             tierLevel: userData.tierLevel,
             totalPoints: userData.totalPoints,
             dob: userData.dob,
+            zipCode: userData.zipCode,
+            avatarURL,
           })
-        }
+        }}
       />
 
       {/* Edit User Modal */}

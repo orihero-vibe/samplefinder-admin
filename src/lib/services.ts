@@ -810,6 +810,7 @@ export interface UserFormData {
   phoneNumber?: string
   dob?: string
   zipCode?: string
+  avatarURL?: string
   role?: 'admin' | 'user'
   tierLevel?: string
   totalPoints?: number
@@ -893,6 +894,8 @@ export const appUsersService = {
         tierLevel: userData.tierLevel ?? '',
         totalPoints: userData.totalPoints ?? 100,
         dob: userData.dob ?? '',
+        zipCode: userData.zipCode ?? '',
+        avatarURL: userData.avatarURL ?? '',
       }
 
       const execution = await functions.createExecution({

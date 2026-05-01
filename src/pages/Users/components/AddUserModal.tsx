@@ -20,6 +20,8 @@ interface AddUserModalProps {
     tierLevel?: string
     totalPoints?: number
     dob?: string
+    zipCode?: string
+    image?: File | null
   }) => void
 }
 
@@ -34,10 +36,13 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     role: 'user', // Default role
     tierLevel: '',
     dob: '',
+    zipCode: '',
+    image: null as File | null,
   }
-  
+
   const [formData, setFormData] = useState(initialFormData)
   const initialDataRef = useRef(initialFormData)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
 
   const [showPassword, setShowPassword] = useState(false)
   const [tiers, setTiers] = useState<TierDocument[]>([])
@@ -80,6 +85,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
   const [usernameError, setUsernameError] = useState('')
   const [emailError, setEmailError] = useState('')
   const [dobError, setDobError] = useState('')
+  const [zipCodeError, setZipCodeError] = useState('')
   
   const hasUnsavedChanges = useUnsavedChanges(formData, initialDataRef.current, isOpen)
 
@@ -128,6 +134,13 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
   // DOB validation: required on admin add user flow
   const validateDob = (dob: string): string => {
     if (!dob) return 'Date of Birth is required'
+    return ''
+  }
+
+  // Zip code: required, 5 or 6 digits (US ZIP plus optional extended)
+  const validateZipCode = (zipCode: string): string => {
+    if (!zipCode) return 'Zip Code is required'
+    if (zipCode.length < 5) return 'Zip Code must be at least 5 digits'
     return ''
   }
 
@@ -320,11 +333,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       }
       
       if (field === 'lastName') {
-        if (capitalizedValue.trim()) {
-          setLastNameError(validateName(capitalizedValue, 'Last Name'))
-        } else {
-          setLastNameError('')
-        }
+        setLastNameError(validateName(capitalizedValue, 'Last Name'))
       }
       return
     }
@@ -410,7 +419,15 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       setDobError(validateDob(value.trim()))
       return
     }
-    
+
+    // Zip code - digits only, max 6 chars (mirrors EditUserModal)
+    if (field === 'zipCode') {
+      const numericValue = value.replace(/\D/g, '').slice(0, 6)
+      setFormData((prev) => ({ ...prev, [field]: numericValue }))
+      setZipCodeError(validateZipCode(numericValue))
+      return
+    }
+
     setFormData((prev) => ({ ...prev, [field]: value }))
 
     if (field === 'password') {
@@ -418,26 +435,45 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     }
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setFormData((prev) => ({ ...prev, image: file }))
+    const reader = new FileReader()
+    reader.onloadend = () => setImagePreview(reader.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  const handleDeleteImage = () => {
+    setFormData((prev) => ({ ...prev, image: null }))
+    setImagePreview(null)
+    const input = document.getElementById('add-user-image-upload') as HTMLInputElement | null
+    if (input) input.value = ''
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    const trimmed = trimFormStrings(formData)
+
+    const { image, ...stringFields } = formData
+    const trimmed = { ...trimFormStrings(stringFields), image }
     
     const pwdError = validatePassword(trimmed.password)
     const fnError = validateName(trimmed.firstName, 'First Name')
-    const lnError = trimmed.lastName ? validateName(trimmed.lastName, 'Last Name') : ''
+    const lnError = validateName(trimmed.lastName, 'Last Name')
     const unError = validateUsername(trimmed.username)
     const emailFormatErr = validateEmailFormat(trimmed.email)
     const birthDateError = validateDob(trimmed.dob)
-    
+    const zipErr = validateZipCode(trimmed.zipCode)
+
     setPasswordError(pwdError)
     setFirstNameError(fnError)
     setLastNameError(lnError)
     setUsernameError(unError)
     setEmailError(emailFormatErr)
     setDobError(birthDateError)
-    
-    if (pwdError || fnError || lnError || unError || emailFormatErr || birthDateError) return
+    setZipCodeError(zipErr)
+
+    if (pwdError || fnError || lnError || unError || emailFormatErr || birthDateError || zipErr) return
 
     // Prevent submission if email or phone are known to be unavailable
     if (trimmed.email && emailValidation.isAvailable === false) {
@@ -461,6 +497,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       setShowUnsavedChangesModal(false)
       // Reset form and validation state
       setFormData(initialFormData)
+      setImagePreview(null)
       setShowPassword(false)
       setPasswordError('')
       setFirstNameError('')
@@ -468,6 +505,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       setUsernameError('')
       setEmailError('')
       setDobError('')
+      setZipCodeError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -498,6 +536,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
     } else {
       // Reset form on close
       setFormData(initialFormData)
+      setImagePreview(null)
       setShowPassword(false)
       setPasswordError('')
       setFirstNameError('')
@@ -505,6 +544,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
       setUsernameError('')
       setEmailError('')
       setDobError('')
+      setZipCodeError('')
       setUsernameValidation({
         isChecking: false,
         isAvailable: null,
@@ -527,6 +567,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
   const handleDiscardChanges = () => {
     setShowUnsavedChangesModal(false)
     setFormData(initialFormData)
+    setImagePreview(null)
     setShowPassword(false)
     setPasswordError('')
     setFirstNameError('')
@@ -602,6 +643,50 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
             aria-hidden="true"
             className="hidden"
           />
+          {/* Image Section (optional) */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Image
+              <span className="text-xs text-gray-500 font-normal ml-2">(optional)</span>
+            </label>
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                {imagePreview ? (
+                  <img
+                    src={imagePreview}
+                    alt="User profile preview"
+                    className="w-24 h-24 rounded-full object-cover border-2 border-gray-200"
+                  />
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center border-2 border-gray-300">
+                    <Icon icon="mdi:account" className="w-12 h-12 text-gray-400" />
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <label className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer font-medium text-sm">
+                  {imagePreview ? 'Change' : 'Upload'}
+                  <input
+                    id="add-user-image-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </label>
+                {imagePreview && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteImage}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Form Fields */}
           <div className="space-y-4 mb-6">
             {/* Email */}
@@ -701,43 +786,44 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               )}
             </div>
 
-            {/* First Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                First Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Enter First Name"
-                value={formData.firstName}
-                onChange={(e) => handleInputChange('firstName', e.target.value)}
-                required
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
-                  firstNameError ? 'border-red-500' : 'border-gray-300'
-                }`}
-              />
-              {firstNameError && (
-                <p className="mt-1 text-xs text-red-500">{firstNameError}</p>
-              )}
-            </div>
-
-            {/* Last Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Last Name
-              </label>
-              <input
-                type="text"
-                placeholder="Enter Last Name"
-                value={formData.lastName}
-                onChange={(e) => handleInputChange('lastName', e.target.value)}
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
-                  lastNameError ? 'border-red-500' : 'border-gray-300'
-                }`}
-              />
-              {lastNameError && (
-                <p className="mt-1 text-xs text-red-500">{lastNameError}</p>
-              )}
+            {/* First Name + Last Name */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  First Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter First Name"
+                  value={formData.firstName}
+                  onChange={(e) => handleInputChange('firstName', e.target.value)}
+                  required
+                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                    firstNameError ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {firstNameError && (
+                  <p className="mt-1 text-xs text-red-500">{firstNameError}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Last Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter Last Name"
+                  value={formData.lastName}
+                  onChange={(e) => handleInputChange('lastName', e.target.value)}
+                  required
+                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                    lastNameError ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {lastNameError && (
+                  <p className="mt-1 text-xs text-red-500">{lastNameError}</p>
+                )}
+              </div>
             </div>
 
             {/* Date of Birth */}
@@ -759,69 +845,90 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
               )}
             </div>
 
-            {/* Username */}
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 flex items-center justify-between">
-                <span>
-                  Username <span className="text-red-500">*</span>
-                </span>
-                <span className="text-xs text-gray-500 font-normal">
-                  {formData.username.length}/20 characters
-                </span>
-              </label>
-              <div className="relative">
+            {/* Zip Code + Username */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Zip Code <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
-                  placeholder="Enter Username"
-                  value={formData.username}
-                  onChange={(e) => handleInputChange('username', e.target.value)}
-                  maxLength={20}
+                  placeholder="Enter Zip Code"
+                  value={formData.zipCode}
+                  onChange={(e) => handleInputChange('zipCode', e.target.value)}
+                  inputMode="numeric"
                   required
-                  className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
-                    formData.username.trim()
-                      ? usernameValidation.isAvailable === false
-                        ? 'border-red-500'
-                        : usernameValidation.isAvailable === true
-                        ? 'border-green-500'
-                        : 'border-gray-300'
-                      : 'border-gray-300'
+                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                    zipCodeError ? 'border-red-500' : 'border-gray-300'
                   }`}
                 />
-                {formData.username.trim() && usernameValidation.isChecking && (
-                  <Icon
-                    icon="mdi:loading"
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 animate-spin"
-                  />
-                )}
-                {formData.username.trim() && !usernameValidation.isChecking && usernameValidation.isAvailable === true && (
-                  <Icon
-                    icon="mdi:check-circle"
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-500"
-                  />
-                )}
-                {formData.username.trim() && !usernameValidation.isChecking && usernameValidation.isAvailable === false && (
-                  <Icon
-                    icon="mdi:close-circle"
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500"
-                  />
+                {zipCodeError && (
+                  <p className="mt-1 text-xs text-red-500">{zipCodeError}</p>
                 )}
               </div>
-              {usernameError && (
-                <p className="mt-1 text-xs text-red-500">{usernameError}</p>
-              )}
-              {!usernameError && formData.username.trim() && usernameValidation.message && (
-                <p
-                  className={`mt-1 text-xs ${
-                    usernameValidation.isAvailable === false
-                      ? 'text-red-500'
-                      : usernameValidation.isAvailable === true
-                      ? 'text-green-500'
-                      : 'text-gray-500'
-                  }`}
-                >
-                  {usernameValidation.message}
-                </p>
-              )}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 flex items-center justify-between">
+                  <span>
+                    Username <span className="text-red-500">*</span>
+                  </span>
+                  <span className="text-xs text-gray-500 font-normal">
+                    {formData.username.length}/20 characters
+                  </span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Enter Username"
+                    value={formData.username}
+                    onChange={(e) => handleInputChange('username', e.target.value)}
+                    maxLength={20}
+                    required
+                    className={`w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent ${
+                      formData.username.trim()
+                        ? usernameValidation.isAvailable === false
+                          ? 'border-red-500'
+                          : usernameValidation.isAvailable === true
+                          ? 'border-green-500'
+                          : 'border-gray-300'
+                        : 'border-gray-300'
+                    }`}
+                  />
+                  {formData.username.trim() && usernameValidation.isChecking && (
+                    <Icon
+                      icon="mdi:loading"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 animate-spin"
+                    />
+                  )}
+                  {formData.username.trim() && !usernameValidation.isChecking && usernameValidation.isAvailable === true && (
+                    <Icon
+                      icon="mdi:check-circle"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-500"
+                    />
+                  )}
+                  {formData.username.trim() && !usernameValidation.isChecking && usernameValidation.isAvailable === false && (
+                    <Icon
+                      icon="mdi:close-circle"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500"
+                    />
+                  )}
+                </div>
+                {usernameError && (
+                  <p className="mt-1 text-xs text-red-500">{usernameError}</p>
+                )}
+                {!usernameError && formData.username.trim() && usernameValidation.message && (
+                  <p
+                    className={`mt-1 text-xs ${
+                      usernameValidation.isAvailable === false
+                        ? 'text-red-500'
+                        : usernameValidation.isAvailable === true
+                        ? 'text-green-500'
+                        : 'text-gray-500'
+                    }`}
+                  >
+                    {usernameValidation.message}
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Phone Number */}
@@ -884,54 +991,60 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
             )}
             </div>
 
-            {/* Role */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Role <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.role}
-                onChange={(e) => handleInputChange('role', e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
-              >
-                <option value="admin">Admin</option>
-                <option value="user">User</option>
-              </select>
-            </div>
-
-            {/* Tier Level */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tier Level <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <select
-                  value={formData.tierLevel}
-                  onChange={(e) => handleInputChange('tierLevel', e.target.value)}
-                  required
-                  disabled={isLoadingTiers}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                >
-                  {isLoadingTiers ? (
-                    <option value="">Loading tiers...</option>
-                  ) : tiers.length === 0 ? (
-                    <option value="">No tiers available</option>
-                  ) : (
-                    <>
-                      <option value="">Select a tier</option>
-                      {tiers.map((tier) => (
-                        <option key={tier.$id} value={tier.name}>
-                          {tier.name}
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
-                <Icon
-                  icon="mdi:chevron-down"
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
-                />
+            {/* Role + Tier Level */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Role <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.role}
+                    onChange={(e) => handleInputChange('role', e.target.value)}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10"
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="user">User</option>
+                  </select>
+                  <Icon
+                    icon="mdi:chevron-down"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tier Level <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.tierLevel}
+                    onChange={(e) => handleInputChange('tierLevel', e.target.value)}
+                    required
+                    disabled={isLoadingTiers}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent appearance-none bg-white pr-10 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  >
+                    {isLoadingTiers ? (
+                      <option value="">Loading tiers...</option>
+                    ) : tiers.length === 0 ? (
+                      <option value="">No tiers available</option>
+                    ) : (
+                      <>
+                        <option value="">Select a tier</option>
+                        {tiers.map((tier) => (
+                          <option key={tier.$id} value={tier.name}>
+                            {tier.name}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                  <Icon
+                    icon="mdi:chevron-down"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -957,6 +1070,7 @@ const AddUserModal = ({ isOpen, onClose, onSave }: AddUserModalProps) => {
                 !!usernameError ||
                 !!emailError ||
                 !!dobError ||
+                !!zipCodeError ||
                 (!!formData.username.trim() && usernameValidation.isAvailable === false) ||
                 (!!formData.email.trim() && emailValidation.isAvailable === false) ||
                 (formData.phoneNumber.replace(/\D/g, '').length === 10 && phoneValidation.isAvailable === false)

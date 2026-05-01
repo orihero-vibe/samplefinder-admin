@@ -789,6 +789,11 @@ async function createUser(users, databases, data, log) {
             isBlocked: false,
             idAdult: true,
             referralCode,
+            // Welcome bonus: match mobile signup so admin-created users start with
+            // the tier minimum (typically 100) instead of 0.
+            totalPoints: typeof data.totalPoints === 'number' ? data.totalPoints : 100,
+            ...(data.zipCode?.trim() ? { zipCode: data.zipCode.trim() } : {}),
+            ...(data.avatarURL?.trim() ? { avatarURL: data.avatarURL.trim() } : {}),
             ...(data.dob?.trim()
                 ? {
                     dob: data.dob.trim().length === 10
