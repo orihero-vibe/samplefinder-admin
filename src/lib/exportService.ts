@@ -305,10 +305,19 @@ function normalizeEventProducts(event: EventDocument & Record<string, unknown>):
   return [String(raw)]
 }
 
+// Replace characters jsPDF's default helvetica (WinAnsi) cannot render —
+// notably emoji and supplementary-plane chars — so they don't appear as
+// garbage bytes in exported PDFs (SAM-523). Each non-renderable codepoint
+// (or surrogate pair) collapses to a single "?".
+// eslint-disable-next-line no-misleading-character-class
+const sanitizeForPdf = (text: string): string =>
+  text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\x00-\xFF]/g, '?')
+
 // Wrap long text at word boundaries so PDF table cells don't crop (max chars per line)
 const wrapTextForPdf = (text: string, maxCharsPerLine = 35): string => {
-  if (!text || text.length <= maxCharsPerLine) return text
-  const words = text.split(/\s+/)
+  const safe = sanitizeForPdf(text)
+  if (!safe || safe.length <= maxCharsPerLine) return safe
+  const words = safe.split(/\s+/)
   const lines: string[] = []
   let current = ''
   for (const word of words) {
@@ -1300,8 +1309,51 @@ export const exportService = {
 
     const rows: Record<string, string | number>[] = []
 
-    // Handle different entity types
-    if (entityType === 'events' || (entityType === 'all' && needsEvents)) {
+    // For named entities, route to the matching fetcher.
+    // For 'all', pick a single primary fetcher whose joins can populate every
+    // selected column. Concatenating rows from multiple fetchers (the previous
+    // behavior) produced rows with mismatched columns — see SAM-523.
+    if (entityType === 'all') {
+      // Reviews fetcher already joins user + event (+ client/category for
+      // brand/product), so prefer it whenever review-side columns are needed.
+      if (needsReviews) {
+        const reviewRows = await this.fetchReviewDataForCustomReport(
+          selectedColumnKeys,
+          dateRange,
+          appTimezone
+        )
+        rows.push(...reviewRows)
+      } else if (needsEvents) {
+        const eventRows = await this.fetchEventDataForCustomReport(
+          selectedColumnKeys,
+          dateRange,
+          appTimezone,
+          { needsClients, needsReviews, needsLocations }
+        )
+        rows.push(...eventRows)
+      } else if (needsTrivia) {
+        const triviaRows = await this.fetchTriviaDataForCustomReport(
+          selectedColumnKeys,
+          dateRange,
+          appTimezone
+        )
+        rows.push(...triviaRows)
+      } else if (needsUsers) {
+        const userRows = await this.fetchUserDataForCustomReport(
+          selectedColumnKeys,
+          dateRange,
+          appTimezone
+        )
+        rows.push(...userRows)
+      } else if (needsClients) {
+        const clientRows = await this.fetchClientDataForCustomReport(
+          selectedColumnKeys,
+          dateRange,
+          appTimezone
+        )
+        rows.push(...clientRows)
+      }
+    } else if (entityType === 'events') {
       const eventRows = await this.fetchEventDataForCustomReport(
         selectedColumnKeys,
         dateRange,
@@ -1309,36 +1361,28 @@ export const exportService = {
         { needsClients, needsReviews, needsLocations }
       )
       rows.push(...eventRows)
-    }
-
-    if (entityType === 'users' || (entityType === 'all' && needsUsers)) {
+    } else if (entityType === 'users') {
       const userRows = await this.fetchUserDataForCustomReport(
         selectedColumnKeys,
         dateRange,
         appTimezone
       )
       rows.push(...userRows)
-    }
-
-    if (entityType === 'clients' || (entityType === 'all' && needsClients && !needsEvents)) {
+    } else if (entityType === 'clients') {
       const clientRows = await this.fetchClientDataForCustomReport(
         selectedColumnKeys,
         dateRange,
         appTimezone
       )
       rows.push(...clientRows)
-    }
-
-    if (entityType === 'reviews' || (entityType === 'all' && needsReviews && !needsEvents)) {
+    } else if (entityType === 'reviews') {
       const reviewRows = await this.fetchReviewDataForCustomReport(
         selectedColumnKeys,
         dateRange,
         appTimezone
       )
       rows.push(...reviewRows)
-    }
-
-    if (entityType === 'trivia' || (entityType === 'all' && needsTrivia)) {
+    } else if (entityType === 'trivia') {
       const triviaRows = await this.fetchTriviaDataForCustomReport(
         selectedColumnKeys,
         dateRange,
@@ -1694,6 +1738,44 @@ export const exportService = {
       }
     }
 
+    // Fetch clients/categories for brand/product columns (SAM-523)
+    const clientsMap = new Map<string, ClientDocument>()
+    const categoriesMap = new Map<string, string>()
+
+    if (columnKeys.includes('brandName')) {
+      const clientIds = [...new Set(
+        Array.from(eventsMap.values()).filter(e => e.client).map(e => e.client!)
+      )]
+      for (let i = 0; i < clientIds.length; i += 25) {
+        const batch = clientIds.slice(i, i + 25)
+        try {
+          const result = await clientsService.list([Query.equal('$id', batch)])
+          for (const client of (result.documents ?? []) as ClientDocument[]) {
+            clientsMap.set(client.$id, client)
+          }
+        } catch (err) {
+          console.error('Error fetching clients:', err)
+        }
+      }
+    }
+
+    if (columnKeys.includes('productType')) {
+      const categoryIds = [...new Set(
+        Array.from(eventsMap.values()).filter(e => e.categories).map(e => e.categories!)
+      )]
+      for (let i = 0; i < categoryIds.length; i += 25) {
+        const batch = categoryIds.slice(i, i + 25)
+        try {
+          const result = await categoriesService.list([Query.equal('$id', batch)])
+          for (const category of result.documents ?? []) {
+            categoriesMap.set(category.$id, category.title || '')
+          }
+        } catch (err) {
+          console.error('Error fetching categories:', err)
+        }
+      }
+    }
+
     return allReviews.map(review => {
       const row: Record<string, string | number> = {}
       const user = review.user ? usersMap.get(review.user as string) : undefined
@@ -1738,11 +1820,23 @@ export const exportService = {
           case 'username':
             row[key] = (user as any)?.username || ''
             break
+          case 'email':
+            row[key] = (user as { email?: string })?.email || ''
+            break
           case 'eventName':
             row[key] = event?.name || ''
             break
           case 'eventDate':
             row[key] = event ? formatDateForUpload(event.startTime || event.date, appTimezone) : ''
+            break
+          case 'checkInCode':
+            row[key] = event?.checkInCode || ''
+            break
+          case 'brandName':
+            row[key] = event?.client ? (clientsMap.get(event.client)?.name || '') : ''
+            break
+          case 'productType':
+            row[key] = event?.categories ? (categoriesMap.get(event.categories) || '') : ''
             break
         }
       })
@@ -1998,10 +2092,12 @@ export const exportService = {
   },
 
   /**
-   * Download CSV file
+   * Download CSV file. Prepends a UTF-8 BOM so Excel and Numbers detect the
+   * encoding and render emoji / non-ASCII characters correctly (SAM-523).
    */
   downloadCSV(filename: string, csvContent: string): void {
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const BOM = '﻿'
+    const blob = new Blob([BOM, csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
     
@@ -2058,13 +2154,16 @@ export const exportService = {
       const effectiveSortKey = sortKey && columnKeys.has(sortKey) ? sortKey : columns[0]?.key
       const sortedRows = effectiveSortKey ? sortReportRows(rows, effectiveSortKey) : rows
 
-      // Use landscape when 5+ columns so all columns fit on page without being cut off
+      // Use landscape when 5+ columns so all columns fit on page without being
+      // cut off; bump to A3 for very wide reports so columns stay legible
+      // instead of being compressed into unreadable slivers (SAM-523).
       const colCount = columns.length
       const useLandscape = colCount >= 5
+      const useA3 = colCount > 12
       const doc = new jsPDF({
         orientation: useLandscape ? 'landscape' : 'portrait',
         unit: 'mm',
-        format: 'a4',
+        format: useA3 ? 'a3' : 'a4',
       })
       
       // Add title
@@ -2109,8 +2208,14 @@ export const exportService = {
       for (let i = 0; i < numCols; i++) {
         columnStyles[String(i)] = { cellWidth: colWidth, overflow: 'linebreak' }
       }
-      // Smaller font when many columns so all columns remain visible
-      const tableFontSize = numCols > 8 ? 6 : 7
+      // Tier font and padding to column count so wide reports stay legible
+      // instead of being compressed (SAM-523).
+      const tableFontSize =
+        numCols > 15 ? 5 :
+        numCols > 10 ? 6 :
+        numCols > 7  ? 7 :
+                       8
+      const cellPadding = numCols > 10 ? 1 : numCols > 7 ? 1.5 : 2
 
       autoTable(doc, {
         head: [headers],
@@ -2122,13 +2227,14 @@ export const exportService = {
         columnStyles,
         styles: {
           fontSize: tableFontSize,
-          cellPadding: 2,
+          cellPadding,
           overflow: 'linebreak',
         },
         headStyles: {
           fillColor: [145, 1, 104], // Brand Purple - Bright (#910168)
           textColor: 255,
           fontStyle: 'bold',
+          fontSize: tableFontSize,
           halign: 'left',
         },
         bodyStyles: {
@@ -2175,12 +2281,20 @@ export const exportService = {
     appTimezone?: string
   ): Promise<void> {
     try {
-      const doc = new jsPDF({ orientation: 'landscape' })
-      
+      const numCols = columns.length
+      // Use A3 landscape for very wide reports so columns don't get squeezed
+      // beyond legibility; A4 landscape otherwise (SAM-523).
+      const useA3 = numCols > 12
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: useA3 ? 'a3' : 'a4',
+      })
+
       // Add title and metadata
       doc.setFontSize(16)
       doc.text(title, 14, 15)
-      
+
       // Add date range if provided
       if (dateRange?.start || dateRange?.end) {
         doc.setFontSize(10)
@@ -2196,32 +2310,69 @@ export const exportService = {
         }
         doc.text(dateText, 14, 22)
       }
-      
+
       // Add timezone if provided
       if (appTimezone) {
         doc.setFontSize(8)
         doc.text(`Timezone: ${getAppTimezoneShortLabel(appTimezone)}`, 14, 28)
       }
-      
-      // Prepare data for table
+
+      // Prepare data for table; wrap text so cells linebreak instead of crop.
       const headers = columns.map(col => col.header)
-      const data = rows.map(row => 
+      const data = rows.map(row =>
         columns.map(col => {
           const value = col.getValue ? col.getValue(row) : row[col.key]
-          return value?.toString() || ''
+          return wrapTextForPdf(String(value ?? ''))
         })
       )
-      
-      // Add table with autoTable
+
+      // Scale font and padding to column count so wide reports stay legible
+      // instead of being compressed into unreadable slivers (SAM-523).
+      const tableFontSize =
+        numCols > 15 ? 5 :
+        numCols > 10 ? 6 :
+        numCols > 7  ? 7 :
+                       8
+      const cellPadding = numCols > 10 ? 1 : numCols > 7 ? 1.5 : 2
+
+      // Distribute column widths evenly across the printable area so every
+      // column is visible and overflow wraps inside the cell.
+      const pageWidth = doc.internal.pageSize.getWidth
+        ? doc.internal.pageSize.getWidth()
+        : doc.internal.pageSize.width
+      const marginLeft = 10
+      const marginRight = 10
+      const tableWidth = pageWidth - marginLeft - marginRight
+      const colWidth = tableWidth / numCols
+      const columnStyles: Record<string, { cellWidth: number; overflow: 'linebreak' }> = {}
+      for (let i = 0; i < numCols; i++) {
+        columnStyles[String(i)] = { cellWidth: colWidth, overflow: 'linebreak' }
+      }
+
       autoTable(doc, {
         head: [headers],
         body: data,
         startY: 35,
         theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [147, 51, 234] }, // Purple color
+        tableWidth,
+        margin: { left: marginLeft, right: marginRight },
+        columnStyles,
+        styles: {
+          fontSize: tableFontSize,
+          cellPadding,
+          overflow: 'linebreak',
+        },
+        headStyles: {
+          fillColor: [145, 1, 104], // Brand Purple
+          textColor: 255,
+          fontStyle: 'bold',
+          fontSize: tableFontSize,
+        },
+        bodyStyles: {
+          valign: 'top',
+        },
       })
-      
+
       // Save the PDF
       doc.save(filename)
     } catch (error) {
