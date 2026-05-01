@@ -35,11 +35,10 @@ export const REPORT_COLUMNS: ColumnDefinition[] = [
   { key: 'timeZone', header: 'Time Zone', category: 'Location', dataSource: ['events'] },
   
   // Client/Brand columns
-  { key: 'brandName', header: 'Brand Name', category: 'Clients', dataSource: ['events', 'clients', 'reviews'] },
-  { key: 'clientName', header: 'Client Name', category: 'Clients', dataSource: ['clients'] },
+  { key: 'clientName', header: 'Client Name', category: 'Clients', dataSource: ['events', 'clients', 'reviews'] },
   { key: 'logoFile', header: 'Client Logo File?', category: 'Clients', dataSource: ['clients'], format: 'boolean' },
-  { key: 'productType', header: 'Product Type', category: 'Clients', dataSource: ['events', 'clients', 'reviews'] },
-  { key: 'products', header: 'Products', category: 'Clients', dataSource: ['events'] },
+  { key: 'productType', header: 'Product Type', category: 'Clients', dataSource: ['events', 'reviews'] },
+  { key: 'products', header: 'Products', category: 'Clients', dataSource: ['events', 'clients'] },
   { key: 'favorites', header: '# of Favorites', category: 'Clients', dataSource: ['clients'], format: 'number' },
   
   // User columns

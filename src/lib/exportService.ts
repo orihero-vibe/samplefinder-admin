@@ -1433,7 +1433,7 @@ export const exportService = {
     const categoriesMap = new Map<string, string>()
 
     // Batch fetch related data if needed
-    if (options?.needsClients && columnKeys.some(k => k === 'brandName' || k === 'clientName')) {
+    if (options?.needsClients && columnKeys.includes('clientName')) {
       const clientIds = [...new Set(allEvents.filter(e => e.client).map(e => e.client!))]
       for (let i = 0; i < clientIds.length; i += 25) {
         const batch = clientIds.slice(i, i + 25)
@@ -1492,11 +1492,11 @@ export const exportService = {
           case 'reviewPoints':
             row[key] = event.reviewPoints || 0
             break
-          case 'brandName':
-          case 'clientName':
+          case 'clientName': {
             const client = event.client ? clientsMap.get(event.client) : undefined
             row[key] = client?.name || ''
             break
+          }
           case 'productType':
             row[key] = event.categories ? (categoriesMap.get(event.categories) || '') : ''
             break
@@ -1653,7 +1653,6 @@ export const exportService = {
       columnKeys.forEach(key => {
         switch (key) {
           case 'clientName':
-          case 'brandName':
             row[key] = client.name || ''
             break
           case 'logoFile':
@@ -1662,7 +1661,7 @@ export const exportService = {
           case 'signUpDate':
             row[key] = formatDate(client.$createdAt, appTimezone)
             break
-          case 'productType':
+          case 'products':
             row[key] = formatProducts(client.productType)
             break
           case 'favorites':
@@ -1742,7 +1741,7 @@ export const exportService = {
     const clientsMap = new Map<string, ClientDocument>()
     const categoriesMap = new Map<string, string>()
 
-    if (columnKeys.includes('brandName')) {
+    if (columnKeys.includes('clientName')) {
       const clientIds = [...new Set(
         Array.from(eventsMap.values()).filter(e => e.client).map(e => e.client!)
       )]
@@ -1832,7 +1831,7 @@ export const exportService = {
           case 'checkInCode':
             row[key] = event?.checkInCode || ''
             break
-          case 'brandName':
+          case 'clientName':
             row[key] = event?.client ? (clientsMap.get(event.client)?.name || '') : ''
             break
           case 'productType':
