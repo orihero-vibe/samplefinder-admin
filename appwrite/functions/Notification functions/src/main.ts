@@ -1632,10 +1632,14 @@ async function checkAndSendBirthdayNotifications(
     if (!user.dob || !user.authID) continue;
     if (user.birthdayNotifYear === currentYear) continue;
 
-    const dob = new Date(user.dob);
-    if (Number.isNaN(dob.getTime())) continue;
-    const dobParts = getTimePartsInTimezone(dob, EST_TIMEZONE);
-    if (dobParts.month !== currentMonth || dobParts.day !== currentDay) continue;
+    // DOB is a calendar date pinned to UTC midnight (e.g. "1988-08-07T00:00:00.000Z").
+    // Read the calendar M/D from the ISO prefix directly — converting to EST would roll
+    // the day back (UTC midnight Aug 7 → Aug 6 evening EST), firing birthdays one day early.
+    const dobMatch = user.dob.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!dobMatch) continue;
+    const dobMonth = parseInt(dobMatch[2], 10);
+    const dobDay = parseInt(dobMatch[3], 10);
+    if (dobMonth !== currentMonth || dobDay !== currentDay) continue;
 
     log(`Birthday: sending to user ${user.$id}`);
 
