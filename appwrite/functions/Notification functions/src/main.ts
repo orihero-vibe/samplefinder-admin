@@ -863,16 +863,33 @@ async function checkAndSendEventReminders(
     )) as Event[];
     log(`Found ${events.length} total events`);
 
-    // Create a map of events by ID for quick lookup
+    // Index events by ID and cache the parsed start instant. We deliberately do NOT fall
+    // back to event.date (midnight UTC of the event day) because that anchors reminders to
+    // midnight and produces "starts in 1 hour" pushes at 11pm the day before for any event
+    // whose true start time was never set. If startTime is missing or unparseable, skip
+    // the event entirely so the issue surfaces in logs instead of as a wrong-time push.
+    const eventStartInstantById = new Map<string, Date>();
     const eventsMap = new Map<string, Event>();
     const events24h: Event[] = [];
     const events1h: Event[] = [];
+    let eventsSkippedMissingStart = 0;
 
     for (const event of events) {
-      const eventDate = new Date(event.startTime || event.date);
       eventsMap.set(event.$id, event);
-      
-      // Check if event is in 24h window
+
+      if (!event.startTime) {
+        eventsSkippedMissingStart++;
+        log(`Skipping event ${event.$id} "${event.name}": missing startTime (date=${event.date ?? 'n/a'})`);
+        continue;
+      }
+      const eventDate = new Date(event.startTime);
+      if (Number.isNaN(eventDate.getTime())) {
+        eventsSkippedMissingStart++;
+        log(`Skipping event ${event.$id} "${event.name}": unparseable startTime="${event.startTime}"`);
+        continue;
+      }
+      eventStartInstantById.set(event.$id, eventDate);
+
       if (eventDate >= time24hStart && eventDate <= time24hEnd) {
         events24h.push(event);
       }
@@ -883,7 +900,9 @@ async function checkAndSendEventReminders(
       }
     }
 
-    log(`Events in 24h window: ${events24h.length}, in 1h window: ${events1h.length}`);
+    log(
+      `Events in 24h window: ${events24h.length}, in 1h window: ${events1h.length}, skipped (missing/invalid startTime): ${eventsSkippedMissingStart}`
+    );
 
     // Fetch all users
     const allUsers = (await listAllDocuments(
@@ -919,7 +938,8 @@ async function checkAndSendEventReminders(
           const event = eventsMap.get(savedEvent.eventId);
           if (!event) continue;
 
-          const eventDate = new Date(event.startTime || event.date);
+          const eventDate = eventStartInstantById.get(savedEvent.eventId);
+          if (!eventDate) continue; // event was skipped above (no valid startTime)
 
           // Check if user needs 24h reminder for this event
           if (
@@ -927,8 +947,11 @@ async function checkAndSendEventReminders(
             eventDate <= time24hEnd &&
             !savedEvent.reminder24hSent
           ) {
-            log(`User ${user.$id} needs 24h reminder for event "${event.name}"`);
-            
+            const deltaMs = eventDate.getTime() - now.getTime();
+            log(
+              `[24h fire] user=${user.$id} event=${event.$id} startTime=${event.startTime} now=${now.toISOString()} deltaMs=${deltaMs}`
+            );
+
             // Send push notification
             await sendPushNotificationToUsers(
               messaging,
@@ -970,8 +993,11 @@ async function checkAndSendEventReminders(
             eventDate <= time1hEnd &&
             !savedEvent.reminder1hSent
           ) {
-            log(`User ${user.$id} needs 1h reminder for event "${event.name}"`);
-            
+            const deltaMs = eventDate.getTime() - now.getTime();
+            log(
+              `[1h fire] user=${user.$id} event=${event.$id} startTime=${event.startTime} now=${now.toISOString()} deltaMs=${deltaMs}`
+            );
+
             // Send push notification
             await sendPushNotificationToUsers(
               messaging,
