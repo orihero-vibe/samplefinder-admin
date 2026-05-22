@@ -33,7 +33,6 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     correctOptionIndex: 1, // Index of correct answer (default to second option, index 1)
     points: 10, // Default points
     scheduleDate: '',
-    scheduleTime: '',
   }
   
   const [formData, setFormData] = useState(initialFormData)
@@ -182,8 +181,8 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
       return
     }
 
-    if (isCustomTriviaScheduleEnabled && (!trimmed.scheduleDate || !trimmed.scheduleTime)) {
-      alert('Please select both schedule date and time.')
+    if (isCustomTriviaScheduleEnabled && !trimmed.scheduleDate) {
+      alert('Please select a schedule date.')
       return
     }
 
@@ -192,18 +191,10 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
     try {
       setError(null)
       const scheduleWindow = isCustomTriviaScheduleEnabled
-        ? (() => {
-            const startUtc = appTimeToUTC(trimmed.scheduleDate, trimmed.scheduleTime, appTimezone)
-            const endUtc = appTimeToUTC(trimmed.scheduleDate, '23:59', appTimezone)
-            if (startUtc >= endUtc) {
-              alert('Please choose a time earlier than 11:59 PM.')
-              return null
-            }
-            return {
-              startDate: startUtc.toISOString(),
-              endDate: endUtc.toISOString(),
-            }
-          })()
+        ? {
+            startDate: appTimeToUTC(trimmed.scheduleDate, '00:00', appTimezone).toISOString(),
+            endDate: appTimeToUTC(trimmed.scheduleDate, '23:59', appTimezone).toISOString(),
+          }
         : getNextTuesdayWindowUTC(appTimezone)
 
       if (!scheduleWindow) return
@@ -360,26 +351,17 @@ const CreateTriviaModal = ({ isOpen, onClose, onSave }: CreateTriviaModalProps) 
           {isCustomTriviaScheduleEnabled ? (
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Schedule Date and Time <span className="text-red-500">*</span>
+                Schedule Date <span className="text-red-500">*</span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input
-                  type="date"
-                  value={formData.scheduleDate}
-                  onChange={(e) => handleInputChange('scheduleDate', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-                />
-                <input
-                  type="time"
-                  value={formData.scheduleTime}
-                  onChange={(e) => handleInputChange('scheduleTime', e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
-                />
-              </div>
+              <input
+                type="date"
+                value={formData.scheduleDate}
+                onChange={(e) => handleInputChange('scheduleDate', e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D0A74] focus:border-transparent"
+              />
               <p className="text-xs text-gray-500 mt-1">
-                Scheduled in app timezone ({appTimezone}).
+                Trivia runs all day in app timezone ({appTimezone}) — 12:00 AM to 11:59 PM.
               </p>
             </div>
           ) : (

@@ -18,7 +18,7 @@ import { triviaService, triviaResponsesService, clientsService, statisticsServic
 import type { TriviaWinner } from './components/TriviaTable'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useTimezoneStore } from '../../stores/timezoneStore'
-import { formatDateTimeInAppTimezone } from '../../lib/dateUtils'
+import { formatDateInAppTimezone } from '../../lib/dateUtils'
 import { Query } from '../../lib/appwrite'
 
 // Use ServiceTriviaDocument from services.ts
@@ -98,9 +98,9 @@ const Trivia = () => {
 
     // Format date from startDate or createdAt (in app timezone)
     const date = doc.startDate
-      ? formatDateTimeInAppTimezone(doc.startDate, appTimezone)
+      ? formatDateInAppTimezone(doc.startDate, appTimezone)
       : doc.$createdAt
-      ? formatDateTimeInAppTimezone(doc.$createdAt, appTimezone)
+      ? formatDateInAppTimezone(doc.$createdAt, appTimezone)
       : 'N/A'
 
     // Calculate statistics from responses (normalize to number; Appwrite may return integers as strings)
