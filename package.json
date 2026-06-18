@@ -10,7 +10,8 @@
     "build:staging": "tsc -b && vite build --mode staging",
     "lint": "eslint .",
     "preview": "vite preview",
-    "backfill:event-location-ids": "node scripts/backfill-event-location-ids.mjs"
+    "backfill:event-location-ids": "node scripts/backfill-event-location-ids.mjs",
+    "backfill:phone-verified": "node scripts/backfill-phone-verified.mjs"
   },
   "dependencies": {
     "@iconify/react": "^6.0.2",
