@@ -173,7 +173,7 @@ const PreviewReports = () => {
     '9': 'triviaDate'
   }
   // Numeric columns that should sort descending (e.g. points, counts) so higher values appear first
-  const descendingNumericKeys = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites', 'reviewStars', 'totalResponses', 'totalCorrect', 'totalPointsAwarded'])
+  const descendingNumericKeys = new Set(['userPoints', 'checkInReviewPoints', 'checkInPoints', 'reviewPoints', 'triviaPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites', 'reviewStars', 'totalResponses', 'totalCorrect', 'totalPointsAwarded'])
 
   const parseSortableDate = (value: string | number): number => {
     if (value === '' || value === undefined || value === null) return NaN
