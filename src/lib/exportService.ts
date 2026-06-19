@@ -4,7 +4,6 @@ import { Query } from './appwrite'
 import {
   aggregatePointsEarnedInRange,
   breakdownTotalPoints,
-  breakdownCheckInReviewPoints,
   emptyPointsBreakdown,
   type PointsEarnedBreakdown,
   type TriviaPointInfo,
@@ -142,15 +141,20 @@ const pointsEarnedColumns: ReportColumn[] = [
   { header: 'Trivias Won', key: 'triviasWon' },
 ]
 
-// Points Earned (Date Range) columns. Same keys as the "All" report (so sorting/preview behave
-// identically), but headers state that values are scoped to the selected window.
+// Points Earned (Date Range) columns. Unlike the lifetime "All" report — whose total
+// (user_profiles.totalPoints) also folds in referral/signup/badge/birthday bonuses and so
+// cannot be broken down — this report's total is summed purely from dated activity, so we
+// expose the points from EACH action. Invariant: Points Earned (Range) = Check-in Points +
+// Review Points + Trivia Points, letting the row reconcile against its own breakdown.
 const pointsEarnedDateRangeColumns: ReportColumn[] = [
   { header: 'First Name', key: 'firstName' },
   { header: 'Last Name', key: 'lastName' },
   { header: 'Username', key: 'username' },
   { header: 'Tier Level', key: 'tierLevel' },
   { header: 'Points Earned (Range)', key: 'userPoints' },
-  { header: 'Check-in/Review Pts (Range)', key: 'checkInReviewPoints' },
+  { header: 'Check-in Points (Range)', key: 'checkInPoints' },
+  { header: 'Review Points (Range)', key: 'reviewPoints' },
+  { header: 'Trivia Points (Range)', key: 'triviaPoints' },
   { header: 'Check-Ins (Range)', key: 'checkIns' },
   { header: 'Reviews (Range)', key: 'reviews' },
   { header: 'Trivias Won (Range)', key: 'triviasWon' },
@@ -358,7 +362,7 @@ const wrapTextForPdf = (text: string, maxCharsPerLine = 35): string => {
 // Column keys that hold display dates (MM/DD/YYYY or YYYY-MM-DD) for sort order in exports
 const SORT_DATE_COLUMN_KEYS = new Set(['dob', 'signUpDate', 'lastLoginDate', 'date', 'eventDate', 'signupDate'])
 // Numeric columns that sort descending in export so order matches Preview Reports UI
-const SORT_DESCENDING_NUMERIC_KEYS = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites', 'checkInPoints', 'reviewPoints', 'referralsCount'])
+const SORT_DESCENDING_NUMERIC_KEYS = new Set(['userPoints', 'checkInReviewPoints', 'checkIns', 'reviews', 'triviasWon', 'favorites', 'checkInPoints', 'reviewPoints', 'triviaPoints', 'referralsCount'])
 
 // Default sort key per report when the caller doesn't pass one. Points reports rank by points
 // descending (winner first) instead of falling back to the first column (alphabetical by name),
@@ -2035,8 +2039,11 @@ export const exportService = {
           lastLoginDate: formatDate(user.lastLoginDate, appTimezone),
           tierLevel: deriveTier((userRecord.tierLevel as string) || '', lifetimePoints),
           // Points earned in the selected window (check-in + review + trivia); drives the ranking.
+          // The three per-action point columns below sum exactly to userPoints (see breakdownTotalPoints).
           userPoints: breakdownTotalPoints(breakdown).toString(),
-          checkInReviewPoints: breakdownCheckInReviewPoints(breakdown).toString(),
+          checkInPoints: breakdown.checkInPoints.toString(),
+          reviewPoints: breakdown.reviewPoints.toString(),
+          triviaPoints: breakdown.triviaPoints.toString(),
           checkIns: breakdown.checkInCount.toString(),
           reviews: breakdown.reviewCount.toString(),
           triviasWon: breakdown.triviaWins.toString(),
