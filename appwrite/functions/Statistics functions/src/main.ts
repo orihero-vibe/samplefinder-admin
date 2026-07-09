@@ -2,7 +2,8 @@ import { Client, Databases, Query, Users } from 'node-appwrite';
 
 // Type definitions
 interface StatisticsRequest {
-  page: 'dashboard' | 'clients' | 'users' | 'notifications' | 'trivia';
+  page: 'dashboard' | 'clients' | 'users' | 'notifications' | 'trivia' | 'popups';
+  popupId?: string;
 }
 
 interface DashboardStats {
@@ -46,6 +47,21 @@ interface TriviaStats {
   completed: number;
 }
 
+interface PopupsStats {
+  totalPopups: number;
+  scheduled: number;
+  active: number;
+  completed: number;
+}
+
+interface PopupDetailStats {
+  totalImpressions: number;
+  uniqueUsersShown: number;
+  uniqueClickers: number;
+  clickers21Plus: number;
+  ctr: number;
+}
+
 // Constants
 const DATABASE_ID = '69217af50038b9005a61';
 const CLIENTS_TABLE_ID = 'clients';
@@ -54,6 +70,8 @@ const REVIEWS_TABLE_ID = 'reviews';
 const TRIVIA_TABLE_ID = 'trivia';
 const CHECKINS_TABLE_ID = 'checkins';
 const NOTIFICATIONS_TABLE_ID = 'notifications';
+const POPUPS_TABLE_ID = 'popups';
+const POPUP_INTERACTIONS_TABLE_ID = 'popup_interactions';
 
 // Tier thresholds
 const TIER_THRESHOLDS = [
@@ -456,6 +474,114 @@ async function getTriviaStats(
   }
 }
 
+/**
+ * Get Popups list statistics (counts by schedule status), mirroring getTriviaStats.
+ */
+async function getPopupsStats(
+  databases: Databases,
+  log: (message: string) => void
+): Promise<PopupsStats> {
+  try {
+    const nowISO = new Date().toISOString();
+
+    const [totalResponse, scheduledResponse, activeResponse, completedResponse] =
+      await Promise.all([
+        databases.listDocuments(DATABASE_ID, POPUPS_TABLE_ID),
+        databases.listDocuments(DATABASE_ID, POPUPS_TABLE_ID, [
+          Query.greaterThan('startDate', nowISO),
+        ]),
+        databases.listDocuments(DATABASE_ID, POPUPS_TABLE_ID, [
+          Query.lessThanEqual('startDate', nowISO),
+          Query.greaterThanEqual('endDate', nowISO),
+        ]),
+        databases.listDocuments(DATABASE_ID, POPUPS_TABLE_ID, [
+          Query.lessThan('endDate', nowISO),
+        ]),
+      ]);
+
+    return {
+      totalPopups: totalResponse.total,
+      scheduled: scheduledResponse.total,
+      active: activeResponse.total,
+      completed: completedResponse.total,
+    };
+  } catch (error: unknown) {
+    log(`Error getting popups stats: ${(error as Error).message}`);
+    throw error;
+  }
+}
+
+/**
+ * Per-popup detail stats aggregated from popup_interactions rows (cursor-paginated).
+ * uniqueClickers/clickers21Plus dedupe by user; ctr = uniqueClickers / uniqueUsersShown.
+ */
+async function getPopupDetailStats(
+  databases: Databases,
+  popupId: string,
+  log: (message: string) => void
+): Promise<PopupDetailStats> {
+  const PAGE_SIZE = 500;
+  const shownUsers = new Set<string>();
+  const clickedUsers = new Set<string>();
+  const clickers21Plus = new Set<string>();
+  let totalImpressions = 0;
+  let cursor: string | undefined;
+
+  try {
+    for (;;) {
+      const queries = [Query.equal('popup', popupId), Query.limit(PAGE_SIZE)];
+      if (cursor) {
+        queries.push(Query.cursorAfter(cursor));
+      }
+      const page = await databases.listDocuments(
+        DATABASE_ID,
+        POPUP_INTERACTIONS_TABLE_ID,
+        queries
+      );
+
+      for (const row of page.documents as unknown as Array<{
+        $id: string;
+        user?: string | { $id?: string };
+        clicked?: boolean;
+        is21Plus?: boolean;
+      }>) {
+        totalImpressions++;
+        const userRef = row.user;
+        const userId = typeof userRef === 'string' ? userRef : userRef?.$id;
+        if (!userId) continue;
+        shownUsers.add(userId);
+        if (row.clicked === true) {
+          clickedUsers.add(userId);
+          if (row.is21Plus === true) {
+            clickers21Plus.add(userId);
+          }
+        }
+      }
+
+      if (page.documents.length < PAGE_SIZE) break;
+      cursor = page.documents[page.documents.length - 1].$id;
+    }
+
+    const uniqueUsersShown = shownUsers.size;
+    const uniqueClickers = clickedUsers.size;
+    const ctr =
+      uniqueUsersShown > 0
+        ? Math.round((uniqueClickers / uniqueUsersShown) * 10000) / 10000
+        : 0;
+
+    return {
+      totalImpressions,
+      uniqueUsersShown,
+      uniqueClickers,
+      clickers21Plus: clickers21Plus.size,
+      ctr,
+    };
+  } catch (error: unknown) {
+    log(`Error getting popup detail stats for ${popupId}: ${(error as Error).message}`);
+    throw error;
+  }
+}
+
 // Main function handler
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default async function handler({ req, res, log, error }: any) {
@@ -514,7 +640,7 @@ export default async function handler({ req, res, log, error }: any) {
           {
             success: false,
             error:
-              'page parameter is required. Valid values: dashboard, clients, users, notifications, trivia',
+              'page parameter is required. Valid values: dashboard, clients, users, notifications, trivia, popups',
           },
           400
         );
@@ -526,6 +652,7 @@ export default async function handler({ req, res, log, error }: any) {
         'users',
         'notifications',
         'trivia',
+        'popups',
       ];
       if (!validPages.includes(body.page)) {
         return res.json(
@@ -557,6 +684,11 @@ export default async function handler({ req, res, log, error }: any) {
           break;
         case 'trivia':
           statistics = await getTriviaStats(databases, log);
+          break;
+        case 'popups':
+          statistics = body.popupId
+            ? await getPopupDetailStats(databases, String(body.popupId), log)
+            : await getPopupsStats(databases, log);
           break;
         default:
           return res.json(
@@ -855,7 +987,7 @@ export default async function handler({ req, res, log, error }: any) {
     return res.json({
       success: false,
       error:
-        'Invalid endpoint. Use POST /get-statistics with { "page": "dashboard|clients|users|notifications|trivia" }',
+        'Invalid endpoint. Use POST /get-statistics with { "page": "dashboard|clients|users|notifications|trivia|popups" }',
     });
   } catch (err: unknown) {
     error(`Function error: ${(err as Error).message}`);

@@ -101,6 +101,75 @@ interface DismissTriviaRequest {
   triviaId: string;
 }
 
+// Popup (SAM-5) types
+interface GetActivePopupsRequest {
+  userId: string;
+}
+
+interface RecordPopupClickRequest {
+  userId: string;
+  popupId: string;
+}
+
+/** Mirrors the local `targetAudience` union in `Notification functions/src/main.ts` — this
+ * function can't import the admin web type, so a local copy is kept in sync by hand. */
+type PopupAudience =
+  | 'All'
+  | 'NewUsers'
+  | 'BrandAmbassadors'
+  | 'Influencers'
+  | 'Tier1'
+  | 'Tier2'
+  | 'Tier3'
+  | 'Tier4'
+  | 'Tier5'
+  | 'ZipCode'
+  | 'Targeted';
+
+interface PopupDocument {
+  $id: string;
+  title: string;
+  imageUrl: string;
+  link?: string | null;
+  description?: string | null;
+  startDate: string;
+  endDate: string;
+  only21Plus?: boolean;
+  targetAudience?: PopupAudience;
+  selectedUserIds?: string[];
+  selectedZipCodes?: string[];
+  newUsersTimeRange?: number | null;
+  views?: number;
+  clicks?: number;
+}
+
+interface ActivePopupResponse {
+  $id: string;
+  title: string | null;
+  imageUrl: string;
+  link: string | null;
+  description: string | null;
+}
+
+interface PopupTargetingProfile {
+  $id: string;
+  $createdAt: string;
+  idAdult?: boolean;
+  dob?: string | null;
+  isAmbassador?: boolean;
+  isInfluencer?: boolean;
+  tierLevel?: string;
+  zipCode?: string | null;
+}
+
+interface PopupInteractionRow {
+  $id: string;
+  popup?: string | { $id?: string };
+  user?: string | { $id?: string };
+  dayKey?: string;
+  clicked?: boolean;
+}
+
 // Account deletion types
 interface DeleteAccountRequest {
   userId: string;
@@ -444,6 +513,8 @@ const LOCATIONS_TABLE_ID = 'locations';
 const CLIENTS_TABLE_ID = 'clients';
 const TRIVIA_TABLE_ID = 'trivia';
 const TRIVIA_RESPONSES_TABLE_ID = 'trivia_responses';
+const POPUPS_TABLE_ID = 'popups';
+const POPUP_INTERACTIONS_TABLE_ID = 'popup_interactions';
 const USER_PROFILES_TABLE_ID = 'user_profiles';
 const SETTINGS_TABLE_ID = 'settings';
 const DEFAULT_PAGE_SIZE = 10;
@@ -1183,6 +1254,306 @@ async function dismissTrivia(
   );
   log(`Added user ${userId} to skippedUsers for trivia ${triviaId}`);
   return { correctAnswerIndex };
+}
+
+// ============================================================================
+// POPUP FUNCTIONS (SAM-5)
+// ============================================================================
+
+const POPUP_APP_TIMEZONE = 'America/New_York';
+const GET_ACTIVE_POPUPS_LIMIT = 100;
+const POPUP_INTERACTIONS_TODAY_LIMIT = 200;
+
+/** Day key (YYYY-MM-DD) in the app timezone; one serve per user per popup per day key. */
+function getPopupDayKey(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: POPUP_APP_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
+function computeAgeInYears(dobIso: string, now: Date): number | null {
+  const dob = new Date(dobIso);
+  if (isNaN(dob.getTime())) return null;
+  let age = now.getUTCFullYear() - dob.getUTCFullYear();
+  const monthDiff = now.getUTCMonth() - dob.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < dob.getUTCDate())) {
+    age--;
+  }
+  return age;
+}
+
+/**
+ * 21+ eligibility: requires the signup attestation (idAdult) AND, when a birthdate
+ * exists and parses, a computed age of at least 21.
+ */
+function isUser21Plus(profile: PopupTargetingProfile, now: Date): boolean {
+  if (profile.idAdult !== true) return false;
+  if (profile.dob) {
+    const age = computeAgeInYears(profile.dob, now);
+    if (age !== null && age < 21) return false;
+  }
+  return true;
+}
+
+/** Same tier names the Notification function targets. */
+const POPUP_TIER_AUDIENCE_MAP: Record<
+  'Tier1' | 'Tier2' | 'Tier3' | 'Tier4' | 'Tier5',
+  string
+> = {
+  Tier1: 'NewbieSampler',
+  Tier2: 'SampleFan',
+  Tier3: 'SuperSampler',
+  Tier4: 'VIS',
+  Tier5: 'SampleMaster',
+};
+
+const POPUP_NEW_USERS_DEFAULT_DAYS = 30;
+
+/** Serve-time inversion of the notification audience resolution: does THIS user match? */
+function popupAudienceMatches(
+  popup: PopupDocument,
+  profile: PopupTargetingProfile,
+  now: Date
+): boolean {
+  const audience = popup.targetAudience || 'All';
+  switch (audience) {
+    case 'All':
+      return true;
+    case 'NewUsers': {
+      const days =
+        typeof popup.newUsersTimeRange === 'number' && popup.newUsersTimeRange > 0
+          ? popup.newUsersTimeRange
+          : POPUP_NEW_USERS_DEFAULT_DAYS;
+      const cutoffMs = now.getTime() - days * 24 * 60 * 60 * 1000;
+      const createdMs = new Date(profile.$createdAt).getTime();
+      return Number.isFinite(createdMs) && createdMs >= cutoffMs;
+    }
+    case 'BrandAmbassadors':
+      return profile.isAmbassador === true;
+    case 'Influencers':
+      return profile.isInfluencer === true;
+    case 'Tier1':
+    case 'Tier2':
+    case 'Tier3':
+    case 'Tier4':
+    case 'Tier5':
+      return (profile.tierLevel || 'NewbieSampler') === POPUP_TIER_AUDIENCE_MAP[audience];
+    case 'ZipCode':
+      return (
+        Array.isArray(popup.selectedZipCodes) &&
+        !!profile.zipCode &&
+        popup.selectedZipCodes.includes(profile.zipCode)
+      );
+    case 'Targeted':
+      return (
+        Array.isArray(popup.selectedUserIds) &&
+        popup.selectedUserIds.includes(profile.$id)
+      );
+    default: {
+      // Exhaustiveness guard: every PopupAudience must be handled above, so a new
+      // enum value fails the build here instead of silently serving to nobody.
+      // Unknown runtime values still fall through to the safe "no match" default.
+      const _exhaustive: never = audience;
+      void _exhaustive;
+      return false;
+    }
+  }
+}
+
+function extractRelId(ref: string | { $id?: string } | undefined): string | undefined {
+  if (!ref) return undefined;
+  return typeof ref === 'string' ? ref : ref.$id;
+}
+
+/**
+ * Get pop-ups to show this user right now. Serving records the impression
+ * (one popup_interactions row per popup/user/day + views counter), which also
+ * prevents re-serving the same popup to the same user on the same app-TZ day.
+ */
+async function getActivePopups(
+  databases: Databases,
+  userId: string,
+  log: (message: string) => void
+): Promise<ActivePopupResponse[]> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const dayKey = getPopupDayKey(now);
+
+  let profile: PopupTargetingProfile;
+  try {
+    profile = (await databases.getDocument(
+      DATABASE_ID,
+      USER_PROFILES_TABLE_ID,
+      userId
+    )) as unknown as PopupTargetingProfile;
+  } catch {
+    throw { code: 404, message: 'User not found' };
+  }
+
+  const [activePopupsResult, todaysInteractionsResult] = await Promise.all([
+    databases.listDocuments(DATABASE_ID, POPUPS_TABLE_ID, [
+      Query.lessThanEqual('startDate', nowIso),
+      Query.greaterThanEqual('endDate', nowIso),
+      Query.limit(GET_ACTIVE_POPUPS_LIMIT),
+    ]),
+    databases.listDocuments(DATABASE_ID, POPUP_INTERACTIONS_TABLE_ID, [
+      Query.equal('user', userId),
+      Query.equal('dayKey', dayKey),
+      Query.limit(POPUP_INTERACTIONS_TODAY_LIMIT),
+    ]),
+  ]);
+
+  log(
+    `Popups: ${activePopupsResult.total} active, user has ${todaysInteractionsResult.total} interactions for ${dayKey}`
+  );
+
+  const servedTodayIds = new Set<string>();
+  for (const row of todaysInteractionsResult.documents as unknown as PopupInteractionRow[]) {
+    const popupId = extractRelId(row.popup);
+    if (popupId) servedTodayIds.add(popupId);
+  }
+
+  const user21Plus = isUser21Plus(profile, now);
+  const eligible: PopupDocument[] = [];
+  for (const popup of activePopupsResult.documents as unknown as PopupDocument[]) {
+    if (servedTodayIds.has(popup.$id)) continue;
+    // only21Plus defaults to true; treat missing as gated (safe default for ads).
+    if (popup.only21Plus !== false && !user21Plus) continue;
+    if (!popupAudienceMatches(popup, profile, now)) continue;
+    eligible.push(popup);
+  }
+
+  // Serve == impression: create the per-day row and bump the views counter.
+  await Promise.allSettled(
+    eligible.map(async (popup) => {
+      try {
+        await databases.createDocument(
+          DATABASE_ID,
+          POPUP_INTERACTIONS_TABLE_ID,
+          ID.unique(),
+          {
+            popup: popup.$id,
+            user: userId,
+            dayKey,
+            shownAt: nowIso,
+            is21Plus: user21Plus,
+          }
+        );
+        await databases.updateDocument(DATABASE_ID, POPUPS_TABLE_ID, popup.$id, {
+          views: (popup.views ?? 0) + 1,
+        });
+      } catch (err) {
+        log(`Failed to record popup serve for ${popup.$id}: ${String(err)}`);
+      }
+    })
+  );
+
+  log(`Returning ${eligible.length} popups`);
+
+  return eligible.map((p) => ({
+    $id: p.$id,
+    title: p.title ?? null,
+    imageUrl: p.imageUrl,
+    link: p.link ?? null,
+    description: p.description ?? null,
+  }));
+}
+
+/**
+ * Record a banner tap. `clicks` on the popup doc counts UNIQUE clickers:
+ * it is incremented only when this user has never clicked this popup before.
+ */
+async function recordPopupClick(
+  databases: Databases,
+  userId: string,
+  popupId: string,
+  log: (message: string) => void
+): Promise<{ alreadyClicked: boolean }> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const dayKey = getPopupDayKey(now);
+
+  let profile: PopupTargetingProfile;
+  try {
+    profile = (await databases.getDocument(
+      DATABASE_ID,
+      USER_PROFILES_TABLE_ID,
+      userId
+    )) as unknown as PopupTargetingProfile;
+  } catch {
+    throw { code: 404, message: 'User not found' };
+  }
+
+  let popup: PopupDocument;
+  try {
+    popup = (await databases.getDocument(
+      DATABASE_ID,
+      POPUPS_TABLE_ID,
+      popupId
+    )) as unknown as PopupDocument;
+  } catch {
+    throw { code: 404, message: 'Popup not found' };
+  }
+
+  const [previousClicksResult, todaysRowsResult] = await Promise.all([
+    databases.listDocuments(DATABASE_ID, POPUP_INTERACTIONS_TABLE_ID, [
+      Query.equal('user', userId),
+      Query.equal('popup', popupId),
+      Query.equal('clicked', true),
+      Query.limit(1),
+    ]),
+    databases.listDocuments(DATABASE_ID, POPUP_INTERACTIONS_TABLE_ID, [
+      Query.equal('user', userId),
+      Query.equal('popup', popupId),
+      Query.equal('dayKey', dayKey),
+      Query.limit(1),
+    ]),
+  ]);
+
+  const hadClickedBefore = previousClicksResult.total > 0;
+  const todaysRow = todaysRowsResult.documents[0] as unknown as
+    | PopupInteractionRow
+    | undefined;
+
+  if (todaysRow) {
+    if (todaysRow.clicked !== true) {
+      await databases.updateDocument(
+        DATABASE_ID,
+        POPUP_INTERACTIONS_TABLE_ID,
+        todaysRow.$id,
+        { clicked: true, clickedAt: nowIso }
+      );
+    }
+  } else {
+    // Edge: app-TZ day rolled over while the modal stayed open — record the
+    // click on a fresh row for today rather than losing it.
+    await databases.createDocument(
+      DATABASE_ID,
+      POPUP_INTERACTIONS_TABLE_ID,
+      ID.unique(),
+      {
+        popup: popupId,
+        user: userId,
+        dayKey,
+        shownAt: nowIso,
+        clicked: true,
+        clickedAt: nowIso,
+        is21Plus: isUser21Plus(profile, now),
+      }
+    );
+  }
+
+  if (!hadClickedBefore) {
+    await databases.updateDocument(DATABASE_ID, POPUPS_TABLE_ID, popupId, {
+      clicks: (popup.clicks ?? 0) + 1,
+    });
+    log(`First click by user ${userId} on popup ${popupId}; clicks incremented`);
+  }
+
+  return { alreadyClicked: hadClickedBefore };
 }
 
 // ============================================================================
@@ -1974,6 +2345,68 @@ export default async function handler({
           log
         );
         return res.json({ success: true, ...dismissResult });
+      } catch (err: unknown) {
+        const typedErr = err as { code?: number; message?: string };
+        if (typedErr.code != null && typedErr.message) {
+          return res.json(
+            { success: false, error: typedErr.message },
+            typedErr.code
+          );
+        }
+        throw err;
+      }
+    }
+
+    // ========================================================================
+    // POPUP ENDPOINTS (SAM-5)
+    // ========================================================================
+
+    // GET active popups for user (serving also records the impression)
+    if (req.path === '/get-active-popups' && req.method === 'POST') {
+      log('Processing get-active-popups request');
+
+      const body = req.body as GetActivePopupsRequest;
+
+      if (!body || !body.userId) {
+        return res.json({ success: false, error: 'userId is required' }, 400);
+      }
+
+      try {
+        const popups = await getActivePopups(databases, body.userId, log);
+        return res.json({ success: true, popups, count: popups.length });
+      } catch (err: unknown) {
+        const typedErr = err as { code?: number; message?: string };
+        if (typedErr.code != null && typedErr.message) {
+          return res.json(
+            { success: false, error: typedErr.message },
+            typedErr.code
+          );
+        }
+        throw err;
+      }
+    }
+
+    // RECORD popup click (banner tapped; opens link in browser client-side)
+    if (req.path === '/record-popup-click' && req.method === 'POST') {
+      log('Processing record-popup-click request');
+
+      const body = req.body as RecordPopupClickRequest;
+
+      if (!body || !body.userId) {
+        return res.json({ success: false, error: 'userId is required' }, 400);
+      }
+      if (!body.popupId) {
+        return res.json({ success: false, error: 'popupId is required' }, 400);
+      }
+
+      try {
+        const result = await recordPopupClick(
+          databases,
+          body.userId,
+          body.popupId,
+          log
+        );
+        return res.json({ success: true, ...result });
       } catch (err: unknown) {
         const typedErr = err as { code?: number; message?: string };
         if (typedErr.code != null && typedErr.message) {

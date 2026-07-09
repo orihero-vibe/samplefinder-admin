@@ -1529,6 +1529,22 @@ export interface TriviaStats {
   completed: number
 }
 
+export interface PopupsStats {
+  totalPopups: number
+  scheduled: number
+  active: number
+  completed: number
+}
+
+export interface PopupDetailStatistics {
+  totalImpressions: number
+  uniqueUsersShown: number
+  uniqueClickers: number
+  clickers21Plus: number
+  /** uniqueClickers / uniqueUsersShown, 0–1 */
+  ctr: number
+}
+
 // Statistics Service
 export const statisticsService = {
   /**
@@ -1536,15 +1552,16 @@ export const statisticsService = {
    * @param page - The page to get statistics for: 'dashboard' | 'clients' | 'users' | 'notifications' | 'trivia'
    * @returns Statistics object for the requested page
    */
-  getStatistics: async <T extends DashboardStats | ClientsStats | UsersStats | NotificationsStats | TriviaStats>(
-    page: 'dashboard' | 'clients' | 'users' | 'notifications' | 'trivia'
+  getStatistics: async <T extends DashboardStats | ClientsStats | UsersStats | NotificationsStats | TriviaStats | PopupsStats | PopupDetailStatistics>(
+    page: 'dashboard' | 'clients' | 'users' | 'notifications' | 'trivia' | 'popups',
+    extra?: { popupId?: string }
   ): Promise<T> => {
     try {
       const execution = await functions.createExecution({
         functionId: appwriteConfig.functions.statisticsFunctionId,
         xpath: '/get-statistics',
         method: ExecutionMethod.POST,
-        body: JSON.stringify({ page }),
+        body: JSON.stringify({ page, ...(extra ?? {}) }),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -2085,6 +2102,46 @@ export const notificationsService = {
       throw error
     }
   },
+}
+
+// ============================================================================
+// Popups (SAM-5)
+// ============================================================================
+
+// Popup Document interface — banner image pop-ups shown in the mobile app
+export interface PopupDocument extends Models.Document {
+  title: string
+  imageUrl: string
+  imageFileId: string
+  link?: string | null
+  /** Optional body text shown under the title on the pop-up. */
+  description?: string | null
+  startDate: string
+  endDate: string
+  /** Display gate: only serve to 21+ verified users. Defaults to true. */
+  only21Plus?: boolean
+  targetAudience: NotificationAudience
+  selectedUserIds?: string[]
+  selectedZipCodes?: string[]
+  newUsersTimeRange?: number | null
+  /** Serve events (impressions), maintained by the Mobile API function */
+  views?: number
+  /** Unique clickers, maintained by the Mobile API function */
+  clicks?: number
+  [key: string]: unknown
+}
+
+export const popupsService = {
+  create: (data: Record<string, unknown>) =>
+    DatabaseService.create<PopupDocument>(appwriteConfig.collections.popups, data),
+  getById: (id: string) =>
+    DatabaseService.getById<PopupDocument>(appwriteConfig.collections.popups, id),
+  list: (queries?: string[]) =>
+    DatabaseService.list<PopupDocument>(appwriteConfig.collections.popups, queries),
+  update: (id: string, data: Record<string, unknown>) =>
+    DatabaseService.update<PopupDocument>(appwriteConfig.collections.popups, id, data),
+  delete: (id: string) =>
+    DatabaseService.delete(appwriteConfig.collections.popups, id),
 }
 
 // Review Document interface
